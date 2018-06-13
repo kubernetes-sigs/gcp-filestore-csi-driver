@@ -1,0 +1,8 @@
+commonLabels:
+  app: gcp-filestore-csi-driver
+resources:
+- node.yaml
+- controller.yaml
+patches:
+- dev/controller_image.yaml
+- dev/node_image.yaml
