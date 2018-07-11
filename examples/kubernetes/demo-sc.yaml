@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore
+provisioner: com.google.csi.filestore
+parameters:
+  # Available locations can be found at: TODO
+  location: us-central1-c
+  # # standard (default) or premier
+  # tier: premier
+  # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
+  # network: default

@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gcp-filestore-csi-node
+  namespace: gcp-filestore-csi-driver
+spec:
+  template:
+    spec:
+      containers:
+        - name: gcp-filestore-driver
+          image: gcr.io/msau-k8s-dev/gcp-filestore-csi-driver
+        - name: nfs-services
+          image: gcr.io/msau-k8s-dev/gcp-filestore-csi-driver

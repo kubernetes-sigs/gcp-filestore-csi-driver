@@ -1,0 +1,8 @@
+apiVersion: skaffold/v1alpha2
+kind: Config
+build:
+  artifacts:
+  - imageName: gcr.io/msau-k8s-dev/gcp-filestore-csi-driver
+deploy:
+  kustomize:
+    kustomizePath: deploy/kubernetes/manifests
