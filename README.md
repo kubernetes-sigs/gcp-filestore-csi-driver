@@ -1,7 +1,18 @@
 # gcp-filestore-csi-driver
-Google Cloud Filestore CSI driver for use in Kubernetes and other container orchestrators.
+[Google Cloud Filestore](https://cloud.google.com/filestore) CSI driver for
+use in Kubernetes and other container orchestrators.
 
 Disclaimer: This is not an officially supported Google product.
+
+## Project Overview
+This driver allows volumes backed by Google Cloud Filestore instances to be
+dynamically created and mounted by workloads.
+
+If multiple volumes are not needed, then Google Cloud Filestore instances can be
+manually created without this CSI driver and mounted using existing NFS volume
+plugins. Please see the Cloud Filestore
+[documentation](https://cloud.google.com/filestore/docs/accessing-fileshares)
+for more details.
 
 ## Project Status
 Status: Alpha
@@ -12,6 +23,9 @@ Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
 ### CSI Compatibility
 This plugin is compatible with CSI version 0.2.0 and 0.3.0.
+
+### Kubernetes Compatibility
+This plugin can be used beginning with Kubernetes v1.10.5
 
 ## Plugin Features
 
@@ -27,6 +41,8 @@ volume. Customizable parameters for volume creation include:
 
 For Kubernetes clusters, these parameters are specified in the StorageClass.
 
+Note that non-default networks require extra [firewall setup](https://cloud.google.com/filestore/docs/configuring-firewall)
+
 ## Future Features
 * Reserved IP range: To avoid IP conflict issues, add a CreateVolume parameter
   to provide an IP block that is reserved for dynamically provisioning GCFS instances.
@@ -40,7 +56,7 @@ For Kubernetes clusters, these parameters are specified in the StorageClass.
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
 * Volume resizing: CSI does not have volume resizing support yet, but Cloud Filestore
-  instances can currently be manually resized through the GCP API.
+  instances can currently be [manually resized](https://cloud.google.com/filestore/docs/editing-instances).
 * Topology preferences: For better performance, it is recommended to run
   workloads in the same zone where the Cloud Filestore instance is provisioned in. In the
   future, the location where to create a Cloud Filestore instance could be automatically
