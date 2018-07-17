@@ -78,15 +78,15 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 ```
 3. Create example StorageClass
 ```
-kubectl apply -f ./examples/demo-sc.yaml
+kubectl apply -f ./examples/kubernetes/demo-sc.yaml
 ```
 3. Create example PVC and Pod
 ```
-kubectl apply -f ./examples/demo-pod.yaml
+kubectl apply -f ./examples/kubernetes/demo-pod.yaml
 ```
 
 ## Kubernetes Development
-[Setup](#kubernetes-user-guide) GCP service account first and setup Kubernetes cluster
+Setup GCP service account first and setup Kubernetes cluster
 ```
 $ ./deploy/project_setup.sh
 $ ./deploy/kubernetes/cluster_setup.sh
@@ -101,7 +101,7 @@ $ ./deploy/kubernetes/driver_start.sh
 ```
 
 ### Automatic using [Skaffold](http://github.com/GoogleContainerTools/skaffold) and [Kustomize](https://github.com/kubernetes-sigs/kustomize)
-1. Modify deploy/skaffold/skaffold.yaml and deploy/kubernetes/manifests/dev/
+1. Modify [Skaffold configuration](deploy/skaffold/skaffold.yaml) and [Kustomize overlays](deploy/kubernetes/manifests/dev/)
    with your image registry
 2. Run skaffold
 ```
