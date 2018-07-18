@@ -133,3 +133,67 @@ func TestCompareInstances(t *testing.T) {
 		}
 	}
 }
+
+func TestGetInstanceNameFromURI(t *testing.T) {
+	cases := []struct {
+		name      string
+		uri       string
+		project   string
+		location  string
+		instance  string
+		expectErr bool
+	}{
+		{
+			name:     "good",
+			uri:      "projects/test-project1/locations/test-$location/instances/test-^instance",
+			project:  "test-project1",
+			location: "test-$location",
+			instance: "test-^instance",
+		},
+		{
+			name:      "bad prefix",
+			uri:       "badprojects/test-project/locations/test-location/instances/test-instance",
+			expectErr: true,
+		},
+		{
+			name:      "bad suffix",
+			uri:       "projects/test-project/locations/test-location/instances/test-instance/bad",
+			expectErr: true,
+		},
+		{
+			name:      "missing instance",
+			uri:       "projects/test-project/locations/test-location/instances/",
+			expectErr: true,
+		},
+		{
+			name:      "missing location",
+			uri:       "projects/test-project/locations//instances/test-instance",
+			expectErr: true,
+		},
+		{
+			name:      "missing project",
+			uri:       "projects//locations/test-location/instances/test-instance",
+			expectErr: true,
+		},
+	}
+
+	for _, test := range cases {
+		project, location, instance, err := getInstanceNameFromURI(test.uri)
+		if err == nil && test.expectErr {
+			t.Errorf("test %v failed: got success", test.name)
+		}
+		if err != nil && !test.expectErr {
+			t.Errorf("test %v failed: got error: %v", test.name, err)
+		}
+
+		if project != test.project {
+			t.Errorf("test %v failed: got project %q, expected %q", test.name, project, test.project)
+		}
+		if location != test.location {
+			t.Errorf("test %v failed: got location %q, expected %q", test.name, location, test.location)
+		}
+		if instance != test.instance {
+			t.Errorf("test %v failed: got instance %q, expected %q", test.name, instance, test.instance)
+		}
+	}
+}
