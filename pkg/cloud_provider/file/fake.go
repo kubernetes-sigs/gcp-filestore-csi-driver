@@ -18,22 +18,24 @@ package file
 
 import (
 	"context"
+
+	"google.golang.org/api/googleapi"
 )
 
 type fakeServiceManager struct {
-	createdInstances map[string]*Instance
+	createdInstances map[string]*ServiceInstance
 }
 
 var _ Service = &fakeServiceManager{}
 
 func NewFakeService() (Service, error) {
 	return &fakeServiceManager{
-		createdInstances: map[string]*Instance{},
+		createdInstances: map[string]*ServiceInstance{},
 	}, nil
 }
 
-func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Instance) (*Instance, error) {
-	instance := &Instance{
+func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	instance := &ServiceInstance{
 		Project:  "test-project",
 		Location: "test-location",
 		Name:     obj.Name,
@@ -53,11 +55,20 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Inst
 	return instance, nil
 }
 
-func (manager *fakeServiceManager) DeleteInstance(ctx context.Context, obj *Instance) error {
+func (manager *fakeServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
 	return nil
 }
 
-func (manager *fakeServiceManager) GetInstance(ctx context.Context, obj *Instance) (*Instance, error) {
-	instance, _ := manager.createdInstances[obj.Name]
-	return instance, nil
+func (manager *fakeServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	instance, exists := manager.createdInstances[obj.Name]
+	if exists {
+		return instance, nil
+	}
+	return nil, &googleapi.Error{
+		Errors: []googleapi.ErrorItem{
+			{
+				Reason: "notFound",
+			},
+		},
+	}
 }

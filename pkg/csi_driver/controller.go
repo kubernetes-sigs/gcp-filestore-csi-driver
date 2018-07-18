@@ -92,7 +92,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	// Check if the instance already exists
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
-	if err != nil {
+	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if filer != nil {
@@ -154,7 +154,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 
 	filer.Project = s.config.metaService.GetProject()
 	newFiler, err := s.config.fileService.GetInstance(ctx, filer)
-	if err != nil {
+	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {
@@ -206,7 +206,7 @@ func getRequestCapacity(capRange *csi.CapacityRange) int64 {
 
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
-func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string) (*file.Instance, error) {
+func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string) (*file.ServiceInstance, error) {
 	// Set default parameters
 	tier := defaultTier
 	network := defaultNetwork
@@ -228,7 +228,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
 	}
-	return &file.Instance{
+	return &file.ServiceInstance{
 		Project:  s.config.metaService.GetProject(),
 		Name:     name,
 		Location: location,
@@ -245,7 +245,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func fileInstanceToCSIVolume(instance *file.Instance, mode string) *csi.Volume {
+func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
 	return &csi.Volume{
 		Id:            getVolumeIdFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,

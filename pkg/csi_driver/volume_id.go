@@ -36,7 +36,7 @@ const (
 
 // getVolumeIdFromFileInstance generates an id to uniquely identify the GCFS volume.
 // This id is used for volume deletion.
-func getVolumeIdFromFileInstance(obj *file.Instance, mode string) string {
+func getVolumeIdFromFileInstance(obj *file.ServiceInstance, mode string) string {
 	idElements := make([]string, totalIdElements)
 	idElements[idProvisioningMode] = mode
 	idElements[idLocation] = obj.Location
@@ -46,13 +46,13 @@ func getVolumeIdFromFileInstance(obj *file.Instance, mode string) string {
 }
 
 // getFileInstanceFromId generates a GCFS Instance object from the volume id
-func getFileInstanceFromId(id string) (*file.Instance, string, error) {
+func getFileInstanceFromId(id string) (*file.ServiceInstance, string, error) {
 	tokens := strings.Split(id, "/")
 	if len(tokens) != totalIdElements {
 		return nil, "", fmt.Errorf("volume id %q unexpected format: got %v tokens", id, len(tokens))
 	}
 
-	return &file.Instance{
+	return &file.ServiceInstance{
 		Location: tokens[idLocation],
 		Name:     tokens[idInstance],
 		Volume:   file.Volume{Name: tokens[idVolume]},

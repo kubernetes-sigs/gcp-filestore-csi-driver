@@ -19,17 +19,20 @@ package file
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	beta "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/generated/file/v1beta1"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
-type Instance struct {
+type ServiceInstance struct {
 	Project  string
 	Name     string
 	Location string
@@ -50,9 +53,9 @@ type Network struct {
 }
 
 type Service interface {
-	CreateInstance(ctx context.Context, obj *Instance) (*Instance, error)
-	DeleteInstance(ctx context.Context, obj *Instance) error
-	GetInstance(ctx context.Context, obj *Instance) (*Instance, error)
+	CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
+	DeleteInstance(ctx context.Context, obj *ServiceInstance) error
+	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 }
 
 type gcfsServiceManager struct {
@@ -62,8 +65,9 @@ type gcfsServiceManager struct {
 }
 
 const (
-	locationURIFmt = "projects/%s/locations/%s"
-	instanceURIFmt = locationURIFmt + "/instances/%s"
+	locationURIFmt  = "projects/%s/locations/%s"
+	instanceURIFmt  = locationURIFmt + "/instances/%s"
+	operationURIFmt = locationURIFmt + "/operations/%s"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -87,7 +91,7 @@ func NewGCFSService(version string) (Service, error) {
 	}, nil
 }
 
-func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Instance) (*Instance, error) {
+func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	// TODO: add some labels to to tag this plugin
 	betaObj := &beta.Instance{
 		Tier: obj.Tier,
@@ -114,22 +118,32 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Inst
 		betaObj.FileShares[0].CapacityGb,
 		betaObj.Networks[0].Network,
 		betaObj.Networks[0].ReservedIpRange)
-	_, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
+	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
 	}
 
-	// Always return error and check for instance in the subsequent calls
-	return nil, fmt.Errorf("CreateInstance operation started")
+	err = manager.waitForOp(ctx, op)
+	if err != nil {
+		return nil, fmt.Errorf("WaitFor CreateInstance operation failed: %v", err)
+	}
+	instance, err := manager.GetInstance(ctx, obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+	}
+	return instance, nil
 }
 
-func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Instance) (*Instance, error) {
+func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instance, err := manager.instancesService.Get(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
-	if err != nil && !isNotFoundErr(err) {
-		return nil, fmt.Errorf("GetInstance operation failed: %v", err)
+	if err != nil {
+		return nil, err
 	}
 	if instance != nil {
-		newInstance := cloudInstanceToServiceInstance(instance)
+		newInstance, err := cloudInstanceToServiceInstance(instance)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert instance: %v", err)
+		}
 		switch instance.State {
 		case "READY":
 			return newInstance, nil
@@ -138,13 +152,19 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Instanc
 			return newInstance, fmt.Errorf("instance %v is %v", obj.Name, instance.State)
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("failed to get instance")
 }
 
-func cloudInstanceToServiceInstance(instance *beta.Instance) *Instance {
-	return &Instance{
-		Name: instance.Name,
-		Tier: instance.Tier,
+func cloudInstanceToServiceInstance(instance *beta.Instance) (*ServiceInstance, error) {
+	project, location, name, err := getInstanceNameFromURI(instance.Name)
+	if err != nil {
+		return nil, err
+	}
+	return &ServiceInstance{
+		Project:  project,
+		Location: location,
+		Name:     name,
+		Tier:     instance.Tier,
 		Volume: Volume{
 			Name:      instance.FileShares[0].Name,
 			SizeBytes: util.GbToBytes(instance.FileShares[0].CapacityGb),
@@ -154,10 +174,10 @@ func cloudInstanceToServiceInstance(instance *beta.Instance) *Instance {
 			Ip:              instance.Networks[0].IpAddresses[0],
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 		},
-	}
+	}, nil
 }
 
-func CompareInstances(a, b *Instance) error {
+func CompareInstances(a, b *ServiceInstance) error {
 	mismatches := []string{}
 	if strings.ToLower(a.Tier) != strings.ToLower(b.Tier) {
 		mismatches = append(mismatches, "tier")
@@ -178,24 +198,57 @@ func CompareInstances(a, b *Instance) error {
 	return nil
 }
 
-func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Instance) error {
+func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
+		if IsNotFoundErr(err) {
+			glog.Infof("Instance %v not found", obj.Name)
+			return nil
+		}
 		return err
-	}
-	if instance == nil {
-		glog.Infof("Instance %v not found", obj.Name)
-		return nil
 	}
 
 	glog.Infof("Starting DeleteInstance cloud operation")
-	_, err = manager.instancesService.Delete(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
+	op, err := manager.instancesService.Delete(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("DeleteInstance operation failed: %v", err)
 	}
 
-	// Always return error and check for instance in the subsequent calls
-	return fmt.Errorf("DeleteInstance operation started")
+	err = manager.waitForOp(ctx, op)
+	if err != nil {
+		return fmt.Errorf("WaitFor DeleteInstance operation failed: %v", err)
+	}
+
+	instance, err = manager.GetInstance(ctx, obj)
+	if err != nil {
+		return fmt.Errorf("failed to get instance after deletion: %v", err)
+	}
+	if instance != nil {
+		return fmt.Errorf("instance %v still exists after delete operation", obj.Name)
+	}
+
+	glog.Infof("Instance %v has been deleted", obj.Name)
+	return nil
+}
+
+func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *beta.Operation) error {
+	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+		pollOp, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
+		if err != nil {
+			return false, err
+		}
+		return isOpDone(pollOp)
+	})
+}
+
+func isOpDone(op *beta.Operation) (bool, error) {
+	if op == nil {
+		return false, nil
+	}
+	if op.Error != nil {
+		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
+	}
+	return op.Done, nil
 }
 
 func locationURI(project, location string) string {
@@ -206,7 +259,22 @@ func instanceURI(project, location, name string) string {
 	return fmt.Sprintf(instanceURIFmt, project, location, name)
 }
 
-func isNotFoundErr(err error) bool {
+func operationURI(project, location, name string) string {
+	return fmt.Sprintf(operationURIFmt, project, location, name)
+}
+
+func getInstanceNameFromURI(uri string) (project, location, name string, err error) {
+	var uriRegex = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)$`)
+
+	substrings := uriRegex.FindStringSubmatch(uri)
+	if substrings == nil {
+		err = fmt.Errorf("failed to parse uri %v", uri)
+		return
+	}
+	return substrings[1], substrings[2], substrings[3], nil
+}
+
+func IsNotFoundErr(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		return false
