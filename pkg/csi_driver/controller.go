@@ -92,7 +92,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	// Check if the instance already exists
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
-	if err != nil {
+	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if filer != nil {
@@ -154,7 +154,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 
 	filer.Project = s.config.metaService.GetProject()
 	newFiler, err := s.config.fileService.GetInstance(ctx, filer)
-	if err != nil {
+	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {

@@ -10,13 +10,13 @@ import (
 func TestCompareInstances(t *testing.T) {
 	cases := []struct {
 		name               string
-		a                  *Instance
-		b                  *Instance
+		a                  *ServiceInstance
+		b                  *ServiceInstance
 		expectedMismatches []string
 	}{
 		{
 			name: "matches equal",
-			a: &Instance{
+			a: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -26,7 +26,7 @@ func TestCompareInstances(t *testing.T) {
 					Name: "networkName",
 				},
 			},
-			b: &Instance{
+			b: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -39,7 +39,7 @@ func TestCompareInstances(t *testing.T) {
 		},
 		{
 			name: "matches equal rounded capacity",
-			a: &Instance{
+			a: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -49,7 +49,7 @@ func TestCompareInstances(t *testing.T) {
 					Name: "networkName",
 				},
 			},
-			b: &Instance{
+			b: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -62,7 +62,7 @@ func TestCompareInstances(t *testing.T) {
 		},
 		{
 			name: "matches equal tier lowercase",
-			a: &Instance{
+			a: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -72,7 +72,7 @@ func TestCompareInstances(t *testing.T) {
 					Name: "networkName",
 				},
 			},
-			b: &Instance{
+			b: &ServiceInstance{
 				Tier: "TIER",
 				Volume: Volume{
 					Name:      "volName",
@@ -85,7 +85,7 @@ func TestCompareInstances(t *testing.T) {
 		},
 		{
 			name: "nothing matches",
-			a: &Instance{
+			a: &ServiceInstance{
 				Tier: "tier",
 				Volume: Volume{
 					Name:      "volName",
@@ -95,7 +95,7 @@ func TestCompareInstances(t *testing.T) {
 					Name: "networkName",
 				},
 			},
-			b: &Instance{
+			b: &ServiceInstance{
 				Tier: "tier2",
 				Volume: Volume{
 					Name:      "volName2",

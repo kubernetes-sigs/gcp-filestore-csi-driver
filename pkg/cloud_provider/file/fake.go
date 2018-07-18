@@ -18,6 +18,8 @@ package file
 
 import (
 	"context"
+
+	"google.golang.org/api/googleapi"
 )
 
 type fakeServiceManager struct {
@@ -58,6 +60,15 @@ func (manager *fakeServiceManager) DeleteInstance(ctx context.Context, obj *Serv
 }
 
 func (manager *fakeServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	instance, _ := manager.createdInstances[obj.Name]
-	return instance, nil
+	instance, exists := manager.createdInstances[obj.Name]
+	if exists {
+		return instance, nil
+	}
+	return nil, &googleapi.Error{
+		Errors: []googleapi.ErrorItem{
+			{
+				Reason: "notFound",
+			},
+		},
+	}
 }

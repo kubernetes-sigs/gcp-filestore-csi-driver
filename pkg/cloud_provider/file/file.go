@@ -136,8 +136,8 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 
 func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instance, err := manager.instancesService.Get(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
-	if err != nil && !isNotFoundErr(err) {
-		return nil, fmt.Errorf("GetInstance operation failed: %v", err)
+	if err != nil {
+		return nil, err
 	}
 	if instance != nil {
 		newInstance, err := cloudInstanceToServiceInstance(instance)
@@ -152,7 +152,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 			return newInstance, fmt.Errorf("instance %v is %v", obj.Name, instance.State)
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("failed to get instance")
 }
 
 func cloudInstanceToServiceInstance(instance *beta.Instance) (*ServiceInstance, error) {
@@ -201,11 +201,11 @@ func CompareInstances(a, b *ServiceInstance) error {
 func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
+		if IsNotFoundErr(err) {
+			glog.Infof("Instance %v not found", obj.Name)
+			return nil
+		}
 		return err
-	}
-	if instance == nil {
-		glog.Infof("Instance %v not found", obj.Name)
-		return nil
 	}
 
 	glog.Infof("Starting DeleteInstance cloud operation")
@@ -274,7 +274,7 @@ func getInstanceNameFromURI(uri string) (project, location, name string, err err
 	return substrings[1], substrings[2], substrings[3], nil
 }
 
-func isNotFoundErr(err error) bool {
+func IsNotFoundErr(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		return false
