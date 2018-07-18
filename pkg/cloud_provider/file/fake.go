@@ -72,3 +72,27 @@ func (manager *fakeServiceManager) GetInstance(ctx context.Context, obj *Service
 		},
 	}
 }
+
+func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error) {
+	instances := []*ServiceInstance{
+		{
+			Project:  "test-project",
+			Location: "test-location",
+			Name:     "test",
+			Tier:     "test_tier",
+			Network: Network{
+				ReservedIpRange: "192.168.92.32/29",
+			},
+		},
+		{
+			Project:  "test-project",
+			Location: "test-location",
+			Name:     "test",
+			Tier:     "test_tier",
+			Network: Network{
+				ReservedIpRange: "192.168.92.40/29",
+			},
+		},
+	}
+	return instances, nil
+}

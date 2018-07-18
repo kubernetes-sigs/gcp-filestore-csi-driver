@@ -28,12 +28,13 @@ import (
 )
 
 const (
-	testProject   = "test-project"
-	testLocation  = "test-location"
-	testIp        = "test-ip"
-	testCSIVolume = "test-csi"
-	testVolumeId  = "modeInstance/test-location/test-csi/vol1"
-	testBytes     = 1 * util.Tb
+	testProject          = "test-project"
+	testLocation         = "test-location"
+	testIp               = "test-ip"
+	testCSIVolume        = "test-csi"
+	testVolumeId         = "modeInstance/test-location/test-csi/vol1"
+	testReservedIPV4CIDR = "192.168.92.0/26"
+	testBytes            = 1 * util.Tb
 )
 
 func initTestController(t *testing.T) csi.ControllerServer {
