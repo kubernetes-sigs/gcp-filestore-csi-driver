@@ -206,7 +206,7 @@ func getRequestCapacity(capRange *csi.CapacityRange) int64 {
 
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
-func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string) (*file.Instance, error) {
+func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string) (*file.ServiceInstance, error) {
 	// Set default parameters
 	tier := defaultTier
 	network := defaultNetwork
@@ -228,7 +228,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
 	}
-	return &file.Instance{
+	return &file.ServiceInstance{
 		Project:  s.config.metaService.GetProject(),
 		Name:     name,
 		Location: location,
@@ -245,7 +245,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func fileInstanceToCSIVolume(instance *file.Instance, mode string) *csi.Volume {
+func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
 	return &csi.Volume{
 		Id:            getVolumeIdFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,

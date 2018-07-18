@@ -32,7 +32,7 @@ import (
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
-type Instance struct {
+type ServiceInstance struct {
 	Project  string
 	Name     string
 	Location string
@@ -53,9 +53,9 @@ type Network struct {
 }
 
 type Service interface {
-	CreateInstance(ctx context.Context, obj *Instance) (*Instance, error)
-	DeleteInstance(ctx context.Context, obj *Instance) error
-	GetInstance(ctx context.Context, obj *Instance) (*Instance, error)
+	CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
+	DeleteInstance(ctx context.Context, obj *ServiceInstance) error
+	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 }
 
 type gcfsServiceManager struct {
@@ -91,7 +91,7 @@ func NewGCFSService(version string) (Service, error) {
 	}, nil
 }
 
-func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Instance) (*Instance, error) {
+func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	// TODO: add some labels to to tag this plugin
 	betaObj := &beta.Instance{
 		Tier: obj.Tier,
@@ -134,7 +134,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Inst
 	return instance, nil
 }
 
-func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Instance) (*Instance, error) {
+func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instance, err := manager.instancesService.Get(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
 	if err != nil && !isNotFoundErr(err) {
 		return nil, fmt.Errorf("GetInstance operation failed: %v", err)
@@ -155,12 +155,12 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Instanc
 	return nil, nil
 }
 
-func cloudInstanceToServiceInstance(instance *beta.Instance) (*Instance, error) {
+func cloudInstanceToServiceInstance(instance *beta.Instance) (*ServiceInstance, error) {
 	project, location, name, err := getInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
 	}
-	return &Instance{
+	return &ServiceInstance{
 		Project:  project,
 		Location: location,
 		Name:     name,
@@ -177,7 +177,7 @@ func cloudInstanceToServiceInstance(instance *beta.Instance) (*Instance, error) 
 	}, nil
 }
 
-func CompareInstances(a, b *Instance) error {
+func CompareInstances(a, b *ServiceInstance) error {
 	mismatches := []string{}
 	if strings.ToLower(a.Tier) != strings.ToLower(b.Tier) {
 		mismatches = append(mismatches, "tier")
@@ -198,7 +198,7 @@ func CompareInstances(a, b *Instance) error {
 	return nil
 }
 
-func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Instance) error {
+func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
 		return err

@@ -293,12 +293,12 @@ func TestGenerateNewFileInstance(t *testing.T) {
 	cases := []struct {
 		name      string
 		params    map[string]string
-		instance  *file.Instance
+		instance  *file.ServiceInstance
 		expectErr bool
 	}{
 		{
 			name: "default params",
-			instance: &file.Instance{
+			instance: &file.ServiceInstance{
 				Project:  testProject,
 				Name:     testCSIVolume,
 				Location: testLocation,
@@ -321,7 +321,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				"csiProvisionerSecretName":      "foo-secret",
 				"csiProvisionerSecretNamespace": "foo-namespace",
 			},
-			instance: &file.Instance{
+			instance: &file.ServiceInstance{
 				Project:  testProject,
 				Name:     testCSIVolume,
 				Location: "foo-location",
