@@ -38,7 +38,8 @@
     "pkg/sanity",
     "utils"
   ]
-  revision = "f272f52818d660bf40a9952cbe719ffed9be67e4"
+  revision = "d6869a2704bb7e603ab294a42fbb893c18b8e46e"
+  version = "v0.3.0-2"
 
 [[projects]]
   name = "github.com/onsi/ginkgo"
@@ -253,6 +254,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "8d80c8a2a71b169d44244fe323260bddba0d5877b7c85d736de5f872b85a0395"
+  inputs-digest = "68ff296bc76755bb06725a6f1fb8c7578d2112153da0b41e7e61c6a214b9da43"
   solver-name = "gps-cdcl"
   solver-version = 1
