@@ -59,7 +59,7 @@
 
 [[constraint]]
   name = "github.com/kubernetes-csi/csi-test"
-  revision = "f272f52818d660bf40a9952cbe719ffed9be67e4"
+  version = "v0.3.0-2"
 
 [prune]
   go-tests = true
