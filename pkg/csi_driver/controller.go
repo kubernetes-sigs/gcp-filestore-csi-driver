@@ -48,9 +48,10 @@ const (
 
 // CreateVolume parameters
 const (
-	paramTier     = "tier"
-	paramLocation = "location"
-	paramNetwork  = "network"
+	paramTier             = "tier"
+	paramLocation         = "location"
+	paramNetwork          = "network"
+	paramReservedIPV4CIDR = "reserved-ipv4-cidr"
 )
 
 // controllerServer handles volume provisioning
@@ -62,9 +63,11 @@ type controllerServerConfig struct {
 	driver      *GCFSDriver
 	fileService file.Service
 	metaService metadata.Service
+	ipAllocator *util.IPAllocator
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
+	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
 	return &controllerServer{config: config}
 }
 
@@ -101,6 +104,23 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.AlreadyExists, err.Error())
 		}
 	} else {
+		// If we are creating a new instance, we need pick an unused /29 range from reserved-ipv4-cidr
+		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
+		if reservedIPV4CIDR, ok := req.GetParameters()[paramReservedIPV4CIDR]; ok {
+			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
+
+			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
+			// The ListInstances response will contain the reservedIPRange if the operation was started
+			// In case of abort, the /29 IP is released and available for reservation
+			defer s.config.ipAllocator.ReleaseIPRange(reservedIPRange)
+			if err != nil {
+				return nil, err
+			}
+
+			// Adding the reserved IP range to the instance object
+			newFiler.Network.ReservedIpRange = reservedIPRange
+		}
+
 		// Create the instance
 		filer, err = s.config.fileService.CreateInstance(ctx, newFiler)
 		if err != nil {
@@ -108,6 +128,33 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 	}
 	return &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance)}, nil
+}
+
+// reserveIPRange returns the available IP in the cidr
+func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.ServiceInstance, cidr string) (string, error) {
+	cloudInstancesReservedIPRanges, err := s.getCloudInstancesReservedIPRanges(ctx, filer)
+	if err != nil {
+		return "", err
+	}
+	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, cloudInstancesReservedIPRanges)
+	if err != nil {
+		return "", err
+	}
+	return unreservedIPBlock, nil
+}
+
+// getCloudInstancesReservedIPRanges gets the list of reservedIPRanges from cloud instances
+func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context, filer *file.ServiceInstance) (map[string]bool, error) {
+	instances, err := s.config.fileService.ListInstances(ctx, filer)
+	if err != nil {
+		return nil, status.Error(codes.Aborted, err.Error())
+	}
+	// Initialize an empty reserved list. It will be populated with all the reservedIPRanges obtained from the cloud instances
+	cloudInstancesReservedIPRanges := make(map[string]bool)
+	for _, instance := range instances {
+		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+	}
+	return cloudInstancesReservedIPRanges, nil
 }
 
 // DeleteVolume deletes a GCFS instance
@@ -211,7 +258,6 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	tier := defaultTier
 	network := defaultNetwork
 	location := s.config.metaService.GetZone()
-
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
@@ -222,7 +268,11 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			location = v
 		case paramNetwork:
 			network = v
-		// Unused
+
+		// Ignore the cidr flag as it is not passed to the cloud provider
+		// It will be used to get unreserved IP in the reserveIPV4Range function
+		case paramReservedIPV4CIDR:
+			continue
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
@@ -235,7 +285,6 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		Tier:     tier,
 		Network: file.Network{
 			Name: network,
-			// ReservedIpRange: "10.3.0.0/29", // TODO
 		},
 		Volume: file.Volume{
 			Name:      newInstanceVolume,
