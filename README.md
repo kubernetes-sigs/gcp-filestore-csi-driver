@@ -33,19 +33,18 @@ This plugin can be used beginning with Kubernetes v1.10.5
 This version of the driver creates a new Cloud Filestore instance per
 volume. Customizable parameters for volume creation include:
 
-| Parameter       | Values                  | Default    | Description |
-| --------------- | ----------------------- |----------- | ----------- |
-| tier            | "standard"<br>"premium" | "standard" | storage performance tier |
-| network         | string                  | "default"  | VPC name |
-| location        | string                  | zone where the plugin<br>is running in | zone |
+| Parameter         | Values                  | Default    | Description |
+| ---------------   | ----------------------- |----------- | ----------- |
+| tier              | "standard"<br>"premium" | "standard" | storage performance tier |
+| network           | string                  | "default"  | VPC name |
+| location          | string                  | zone where the plugin<br>is running in | zone |
+| reserved-ipv4-cidr| string		      | ""         | a cidr range from which /29 IP ranges for the filestore instances will be allocated |
 
 For Kubernetes clusters, these parameters are specified in the StorageClass.
 
 Note that non-default networks require extra [firewall setup](https://cloud.google.com/filestore/docs/configuring-firewall)
 
 ## Future Features
-* Reserved IP range: To avoid IP conflict issues, add a CreateVolume parameter
-  to provide an IP block that is reserved for dynamically provisioning GCFS instances.
 * Non-root access: By default, GCFS instances are only writable by the root user
   and readable by all users. Provide a CreateVolume parameter to set non-root
   owners.

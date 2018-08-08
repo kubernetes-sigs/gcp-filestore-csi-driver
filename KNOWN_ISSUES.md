@@ -3,6 +3,10 @@
   service in. This may conflict with other GCP services that do not explicitly
   reserve IP ranges, such as GKE non-IP alias clusters or GKE TPUs. To avoid
   IP conflicts, it is recommended to either:
+    * Pass an isolated CIDR range using the reserved-ipv4-cidr
+	* This will prevent IP conflicts with GKE Pods, Service IPs and TPUs.
+	  the /29 IP ranges for the filestore instances would be exclusively 
+	  allocated from the CIDR range.
     * Use a GKE cluster with [Alias IPs](https://cloud.google.com/kubernetes-engine/docs/how-to/alias-ips)
         * This will prevent IP conflicts with GKE Pod and Service IPs, but not TPUs.
     * Explicitly allocate IP ranges to each GCP service, and this plugin.
