@@ -6,6 +6,8 @@ provisioner: com.google.csi.filestore
 parameters:
   # Available locations can be found at: TODO
   location: us-central1-c
+  # "CIDR range to allocate Filestore IP Ranges from"
+  # reserved-ipv4-cidr: 192.168.92.22/26
   # # standard (default) or premier
   # tier: premier
   # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
