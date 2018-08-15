@@ -33,12 +33,12 @@ This plugin can be used beginning with Kubernetes v1.10.5
 This version of the driver creates a new Cloud Filestore instance per
 volume. Customizable parameters for volume creation include:
 
-| Parameter         | Values                  | Default    | Description                                            										    |
-| ------------------| ----------------------- |----------- | ----------- ---------------------------------------------------------------------------------------------------------------------------										    |
-| tier              | "standard"<br>"premium" | "standard" | storage performance tier                               										    |
-| network           | string                  | "default"  | VPC name 																    |
-| location          | string                  | zone where the plugin<br>is running in | zone                       										    |
-| reserved-ipv4-cidr| string		      | ""         | CIDR range to allocate Filestore IP Ranges from. The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each |
+| Parameter         | Values                  | Default                                | Description |
+| ---------------   | ----------------------- |-----------                             | ----------- |
+| tier              | "standard"<br>"premium" | "standard"                             | storage performance tier |
+| network           | string                  | "default"                              | VPC name |
+| location          | string                  | zone where the plugin<br>is running in | zone |
+| reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each |
 
 For Kubernetes clusters, these parameters are specified in the StorageClass.
 
