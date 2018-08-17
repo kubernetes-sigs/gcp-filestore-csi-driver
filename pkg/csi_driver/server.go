@@ -83,6 +83,8 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, c
 		if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
 			glog.Fatalf("Failed to remove %s, error: %s", addr, err.Error())
 		}
+	} else if u.Scheme == "tcp" {
+		addr = u.Host
 	} else {
 		glog.Fatalf("%v endpoint scheme not supported", u.Scheme)
 	}
