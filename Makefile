@@ -20,8 +20,12 @@ endif
 
 all: image
 
-image:
+image: 
 	docker build --build-arg TAG=$(VERSION) -t $(IMAGE):$(VERSION) .
+
+local:	
+	mkdir -p bin
+	go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/gcfs-csi-driver ./cmd/
 
 push:
 	docker push $(IMAGE):$(VERSION)
