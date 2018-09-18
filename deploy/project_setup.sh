@@ -7,6 +7,7 @@ set -o errexit
 mydir=$(dirname $0)
 source "$mydir/common.sh"
 
+PROJECT=$(gcloud info --format='value(config.project)')
 IAM_NAME="$GCFS_SA_NAME@$PROJECT.iam.gserviceaccount.com"
 
 # Cleanup old service account and key
