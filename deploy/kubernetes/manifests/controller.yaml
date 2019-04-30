@@ -33,7 +33,7 @@ spec:
           args:
             - "--v=4"
             # Remove when https://github.com/kubernetes-csi/external-provisioner/issues/108 is fixed
-            - "--provisioner=com.google.csi.filestore"
+            - "--provisioner=filestore.csi.storage.gke.io"
             - "--csi-address=/csi/csi.sock"
           volumeMounts:
             - name: socket-dir

@@ -24,7 +24,7 @@ spec:
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
-            - "--kubelet-registration-path=/var/lib/kubelet/plugins/com.google.csi.filestore/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock"
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -71,5 +71,5 @@ spec:
             type: Directory
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/com.google.csi.filestore/
+            path: /var/lib/kubelet/plugins/filestore.csi.storage.gke.io/
             type: DirectoryOrCreate

@@ -29,7 +29,6 @@ import (
 
 var (
 	endpoint      = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
-	driverName    = flag.String("drivername", "com.google.csi.filestore", "name of the driver")
 	nodeID        = flag.String("nodeid", "", "node id")
 	runController = flag.Bool("controller", false, "run controller service")
 	runNode       = flag.Bool("node", false, "run node service")
@@ -37,6 +36,8 @@ var (
 	// This is set at compile time
 	version = "unknown"
 )
+
+const driverName = "filestore.csi.storage.gke.io"
 
 func main() {
 	flag.Set("logtostderr", "true")
@@ -52,7 +53,7 @@ func main() {
 	}
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
-		Name:          *driverName,
+		Name:          driverName,
 		Version:       version,
 		NodeID:        *nodeID,
 		RunController: *runController,
