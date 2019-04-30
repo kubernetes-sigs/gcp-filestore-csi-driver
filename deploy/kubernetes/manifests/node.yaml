@@ -39,7 +39,7 @@ spec:
           securityContext:
             privileged: true
           imagePullPolicy: Always
-          image: gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.1.0
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
@@ -58,7 +58,7 @@ spec:
               mountPath: /csi
         - name: nfs-services
           imagePullPolicy: Always
-          image: gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.1.0
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           command: ["/nfs_services_start.sh"]
       volumes:
         - name: registration-dir
