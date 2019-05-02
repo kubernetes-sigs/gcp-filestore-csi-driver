@@ -3,37 +3,11 @@ kind: Namespace
 metadata:
   name: gcp-filestore-csi-driver
 ---
-# TODO: Node roles and bindings won't be needed eventually
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: gcp-filestore-csi-driver-registrar-role
-rules:
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "update"]
-  - apiGroups: [""]
-    resources: ["events"]
-    verbs: ["list", "watch", "create", "update", "patch"]
----
 apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: gcp-filestore-csi-node-sa
   namespace: gcp-filestore-csi-driver
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: gcp-filestore-csi-driver-reigstrar-binding
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
-roleRef:
-  kind: ClusterRole
-  name: gcp-filestore-csi-driver-registrar-role
-  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: v1
 kind: ServiceAccount

@@ -168,7 +168,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	filer, _, err := getFileInstanceFromId(volumeId)
 	if err != nil {
 		// An invalid ID should be treated as doesn't exist
-		glog.V(5).Infof("failed to get instance for deletion: %v", volumeId, err)
+		glog.V(5).Infof("failed to get instance for volume %v deletion: %v", volumeId, err)
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 

@@ -20,13 +20,12 @@ spec:
       containers:
         - name: csi-driver-registrar
           imagePullPolicy: Always
-          image: quay.io/k8scsi/driver-registrar:v0.3.0
+          image: gcr.io/gke-release/csi-driver-registrar:v0.4.1-gke.0
           args:
             - "--v=5"
-            - "--csi-address=$(ADDRESS)"
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock"
           env:
-            - name: ADDRESS
-              value: /csi/csi.sock
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -34,21 +33,19 @@ spec:
           volumeMounts:
             - name: plugin-dir
               mountPath: /csi
-          #  - name: registrar-socket-dir
-          #    mountPath: /var/lib/csi/sockets/
+            - name: registration-dir
+              mountPath: /registration
         - name: gcp-filestore-driver
           securityContext:
             privileged: true
           imagePullPolicy: Always
-          image: gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.1.0
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           args:
             - "--v=5"
-            - "--endpoint=$(CSI_ENDPOINT)"
+            - "--endpoint=unix:/csi/csi.sock"
             - "--nodeid=$(KUBE_NODE_NAME)"
             - "--node=true"
           env:
-            - name: CSI_ENDPOINT
-              value: unix:/csi/csi.sock
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
@@ -61,19 +58,18 @@ spec:
               mountPath: /csi
         - name: nfs-services
           imagePullPolicy: Always
-          image: gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.1.0
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           command: ["/nfs_services_start.sh"]
       volumes:
-        # TODO(dependency): this will work when kublet registrar functionality exists
-        #- name: registrar-socket-dir
-        #  hostPath:
-        #    path: /var/lib/kubelet/device-plugins/
-        #    type: DirectoryOrCreate
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/
+            type: Directory
         - name: kubelet-dir
           hostPath:
             path: /var/lib/kubelet
             type: Directory
         - name: plugin-dir
           hostPath:
-            path: /var/lib/kubelet/plugins/com.google.csi.filestore/
+            path: /var/lib/kubelet/plugins/filestore.csi.storage.gke.io/
             type: DirectoryOrCreate
