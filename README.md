@@ -17,7 +17,7 @@ for more details.
 ## Project Status
 Status: Alpha
 
-Latest image: `gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.1.0`
+Latest image: `gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.2.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -29,6 +29,7 @@ This plugin is compatible with CSI version 0.2.0 and 0.3.0.
 | Filestore CSI Driver\Kubernetes Version | 1.10.5-1.11 | 1.12 | 1.13 | 1.14 |
 | --------------------------------------- | ----------- | ---- | ---- | ---- |
 | v0.1.0 (alpha)                          | yes         | no   | no   | no   |
+| v0.2.0 (alpha)                          | no          | yes  | yes  | yes  |
 | dev                                     | no          | yes  | yes  | yes  |
 
 ## Plugin Features
