@@ -72,11 +72,11 @@ func SetupProwConfig() (project, serviceAccount string) {
 	p, err := boskos.Acquire("gce-project", "free", "busy")
 
 	if err != nil {
-		glog.Fatal("boskos failed to acquire project: %v", err)
+		glog.Fatalf("boskos failed to acquire project: %v", err)
 	}
 
 	if p == nil {
-		glog.Fatal("boskos does not have a free gce-project at the moment")
+		glog.Fatalf("boskos does not have a free gce-project at the moment")
 	}
 
 	project = p.GetName()
@@ -84,7 +84,7 @@ func SetupProwConfig() (project, serviceAccount string) {
 	go func(c *boskosclient.Client, proj string) {
 		for range time.Tick(time.Minute * 5) {
 			if err := c.UpdateOne(p.Name, "busy", nil); err != nil {
-				glog.Warningf("[Boskos] Update %s failed with %v", p, err)
+				glog.Warningf("[Boskos] Update %v failed with %v", p, err)
 			}
 		}
 	}(boskos, p.Name)
@@ -104,7 +104,7 @@ func SetupProwConfig() (project, serviceAccount string) {
 
 	resp, err := cloudresourcemanagerService.Projects.Get(project).Do()
 	if err != nil {
-		glog.Fatal("Failed to get project %v from Cloud Resource Manager: %v", project, err)
+		glog.Fatalf("Failed to get project %v from Cloud Resource Manager: %v", project, err)
 	}
 
 	// Default Compute Engine service account
