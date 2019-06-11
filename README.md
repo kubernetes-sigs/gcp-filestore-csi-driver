@@ -17,7 +17,7 @@ for more details.
 ## Project Status
 Status: Alpha
 
-Latest image: `gcr.io/google-containers/volume-csi/gcp-filestore-csi-driver:v0.2.0`
+Latest image: `gke.gcr.io/gcp-filestore-csi-driver:v0.2.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
