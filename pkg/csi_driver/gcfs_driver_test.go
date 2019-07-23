@@ -135,7 +135,7 @@ func TestDriverValidateVolumeCapability(t *testing.T) {
 					Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
 				},
 			},
-			// TODO: uncomment after https://github.com/kubernetes/kubernetes/issues/65122 fixed
+			// TODO: uncomment after https://github.com/kubernetes-csi/external-provisioner/issues/328
 			// expectErr: true,
 		},
 		{

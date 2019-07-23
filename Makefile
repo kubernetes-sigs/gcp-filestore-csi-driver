@@ -27,6 +27,13 @@ local:
 	mkdir -p bin
 	go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/gcfs-csi-driver ./cmd/
 
+windows: windows-local
+	docker build -f test/experimental/Dockerfile --build-arg TAG=$(VERSION) -t $(IMAGE)-windows:$(VERSION) .
+	
+windows-local:
+	mkdir -p bin
+	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/gcfs-csi-driver.exe ./cmd/
+
 push:
 	docker push $(IMAGE):$(VERSION)
 
