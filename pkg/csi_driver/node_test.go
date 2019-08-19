@@ -41,6 +41,13 @@ var (
 		attrVolume: "test-volume",
 	}
 	testDevice = "1.1.1.1:/test-volume"
+
+	testWindowsValidPath = "C:\\test"
+	testWindowsSecrets   = map[string]string{
+		optionSmbUser:     "foo",
+		optionSmbPassword: "bar",
+	}
+	testWindowsDevice = "\\\\1.1.1.1\\test-volume"
 )
 
 type nodeServerTestEnv struct {
@@ -124,8 +131,8 @@ func TestNodePublishVolume(t *testing.T) {
 				VolumeAttributes: testVolumeAttributes,
 			},
 			actions: []mount.FakeAction{{Action: mount.FakeActionMount}},
-			// TODO: add all mount options into FakeMounter
-			expectedMount: &mount.MountPoint{Device: testDevice, Path: testTargetPath, Type: "nfs"},
+
+			expectedMount: &mount.MountPoint{Device: testDevice, Path: testTargetPath, Type: "nfs", Opts: []string{"foo", "bar"}},
 		},
 		{
 			name: "valid request read only",
@@ -197,6 +204,105 @@ func TestNodePublishVolume(t *testing.T) {
 		validateMountPoint(t, test.name, testEnv.fm, test.expectedMount)
 		validateMountActions(t, testEnv.fm, test.name, test.actions)
 	}
+}
+
+func TestWindowsNodePublishVolume(t *testing.T) {
+	defaultPerm := os.FileMode(0750) + os.ModeDir
+	defaultOsString := goOs
+
+	// Setup mount target path
+	base, err := ioutil.TempDir("", "node-publish-")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	testTargetPath := filepath.Join(base, "mount")
+	if err = os.MkdirAll(testTargetPath, defaultPerm); err != nil {
+		t.Fatalf("failed to setup target path: %v", err)
+	}
+	defer os.RemoveAll(base)
+
+	goOs = "windows"
+
+	cases := []struct {
+		name          string
+		mounts        []mount.MountPoint // already existing mounts
+		req           *csi.NodePublishVolumeRequest
+		actions       []mount.FakeAction
+		expectedMount *mount.MountPoint
+		expectErr     bool
+	}{
+		// TODO: enable this test after https://github.com/kubernetes/kubernetes/issues/81609
+
+		// {
+		// 	name:     "windows target path does exist",
+		// 	req: &csi.NodePublishVolumeRequest{
+		// 		VolumeId:         testVolumeId,
+		// 		TargetPath:       testTargetPath,
+		// 		VolumeCapability: testVolumeCapability,
+		// 		VolumeAttributes: testVolumeAttributes,
+		// 		NodePublishSecrets: testWindowsSecrets
+		// 	},
+		// 	expectErr: true,
+		// },
+		{
+			name: "windows target path doesn't exist",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:           testVolumeId,
+				TargetPath:         testWindowsValidPath,
+				VolumeCapability:   testVolumeCapability,
+				VolumeAttributes:   testVolumeAttributes,
+				NodePublishSecrets: testWindowsSecrets,
+			},
+
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: testWindowsDevice, Path: testWindowsValidPath, Type: "cifs", Opts: []string{"foo", "bar"}},
+		},
+		{
+			name: "windows no user",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:         testVolumeId,
+				TargetPath:       testWindowsValidPath,
+				VolumeCapability: testVolumeCapability,
+				VolumeAttributes: testVolumeAttributes,
+				NodePublishSecrets: map[string]string{
+					optionSmbPassword: "bar",
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "windows no password",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:         testVolumeId,
+				TargetPath:       testWindowsValidPath,
+				VolumeCapability: testVolumeCapability,
+				VolumeAttributes: testVolumeAttributes,
+				NodePublishSecrets: map[string]string{
+					optionSmbUser: "foo",
+				},
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, test := range cases {
+		testEnv := initTestNodeServer(t)
+		if test.mounts != nil {
+			testEnv.fm.MountPoints = test.mounts
+		}
+
+		_, err = testEnv.ns.NodePublishVolume(context.TODO(), test.req)
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if test.expectErr && err == nil {
+			t.Errorf("test %q failed: got success", test.name)
+		}
+
+		validateMountPoint(t, test.name, testEnv.fm, test.expectedMount)
+		validateMountActions(t, testEnv.fm, test.name, test.actions)
+	}
+	goOs = defaultOsString
 }
 
 func TestNodeUnpublishVolume(t *testing.T) {
@@ -348,7 +454,7 @@ func validateMountPoint(t *testing.T, name string, fm *mount.FakeMounter, e *mou
 		t.Errorf("test %q failed: got path %q, expected %q", name, a.Path, e.Path)
 	}
 	if a.Type != e.Type {
-		t.Errorf("test %q failed: got type %q, expected %q", name, a.Path, e.Path)
+		t.Errorf("test %q failed: got type %q, expected %q", name, a.Type, e.Type)
 	}
 
 	// TODO: why does DeepEqual not work???

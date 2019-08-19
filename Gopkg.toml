@@ -65,3 +65,11 @@
   go-tests = true
   unused-packages = true
   non-go = true
+
+[[override]]
+  name = "gopkg.in/fsnotify.v1"
+  source = "https://github.com/fsnotify/fsnotify.git"
+  
+[[constraint]]
+  name = "github.com/kubernetes-csi/csi-lib-utils"
+  version = "0.6.1"

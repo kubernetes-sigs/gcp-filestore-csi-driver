@@ -19,6 +19,7 @@ package driver
 import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/golang/glog"
+	pbSanitizer "github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )
@@ -49,7 +50,7 @@ func NewNodeServiceCapability(cap csi.NodeServiceCapability_RPC_Type) *csi.NodeS
 
 func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	glog.V(3).Infof("GRPC call: %s", info.FullMethod)
-	glog.V(5).Infof("GRPC request: %+v", req)
+	glog.V(5).Infof("GRPC request: %+v", pbSanitizer.StripSecretsCSI03(req).String())
 	resp, err := handler(ctx, req)
 	if err != nil {
 		glog.Errorf("GRPC error: %v", err)

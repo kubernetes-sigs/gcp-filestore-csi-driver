@@ -147,7 +147,7 @@ func (driver *GCFSDriver) validateVolumeCapability(c *csi.VolumeCapability) erro
 		return fmt.Errorf("driver only supports mount access type volume capability")
 	}
 	if mountType.FsType != "" {
-		// TODO: uncomment after https://github.com/kubernetes/kubernetes/issues/65122 is fixed
+		// TODO: uncomment after https://github.com/kubernetes-csi/external-provisioner/issues/328 is fixed.
 		// return fmt.Errorf("driver does not support fstype %v", mountType.FsType)
 	}
 	// TODO: check if we want to whitelist/blacklist certain mount options

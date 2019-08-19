@@ -19,6 +19,7 @@ package driver
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
 	"github.com/golang/glog"
@@ -26,6 +27,16 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/kubernetes/pkg/util/mount"
+)
+
+const (
+	optionSmbUser     = "smbUser"
+	optionSmbPassword = "smbPassword"
+)
+
+var (
+	// For testing purposes
+	goOs = runtime.GOOS
 )
 
 // nodeServer handles mounting and unmounting of GCFS volumes on a node
@@ -43,8 +54,6 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface) csi.NodeServer {
 
 // NodePublishVolume mounts the GCFS volume
 func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-	glog.V(4).Infof("NodePublishVolume called with req: %#v", req)
-
 	// TODO: make this idempotent. Multiple requests for the same volume can come in parallel, this needs to be seralized
 	// We need something like the nestedpendingoperations
 
@@ -68,8 +77,16 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	// Check if mount already exists
 	mounted, err := s.isDirMounted(targetPath)
 	if err != nil {
-		return nil, err
+		// On Windows the mount target must not exist
+		if goOs == "windows" {
+			if !os.IsNotExist(err) {
+				return nil, err
+			}
+		} else {
+			return nil, err
+		}
 	}
+
 	if mounted {
 		// Already mounted
 		// TODO: validate it's the corret mount
@@ -79,8 +96,28 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	// Mount source
 	source := fmt.Sprintf("%s:/%s", attr[attrIp], attr[attrVolume])
 
+	// FileSystem type
+	fstype := "nfs"
+
 	// Mount options
 	options := []string{}
+
+	// Windows specific values
+	if goOs == "windows" {
+		source = fmt.Sprintf("\\\\%s\\%s", attr[attrIp], attr[attrVolume])
+		fstype = "cifs"
+
+		// Login credentials
+
+		secrets := req.GetNodePublishSecrets()
+		if err := validateSmbNodePublishSecrets(secrets); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+
+		options = append(options, secrets[optionSmbUser])
+		options = append(options, secrets[optionSmbPassword])
+	}
+
 	if readOnly {
 		options = append(options, "ro")
 	}
@@ -88,7 +125,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		options = append(options, capMount.GetMountFlags()...)
 	}
 
-	err = s.mounter.Mount(source, targetPath, "nfs", options)
+	err = s.mounter.Mount(source, targetPath, fstype, options)
 	if err != nil {
 		glog.Errorf("Mount %q failed, cleaning up", targetPath)
 		if unmntErr := s.unmountPath(targetPath); unmntErr != nil {
@@ -103,8 +140,6 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 // NodeUnpublishVolume unmounts the GCFS volume
 func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	glog.V(4).Infof("NodeUnpublishVolume called with args: %v", req)
-
 	// TODO: make this idempotent
 
 	// Validate arguments
@@ -121,24 +156,18 @@ func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpub
 }
 
 func (s *nodeServer) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi.NodeGetIdResponse, error) {
-	glog.V(5).Infof("NodeGetId called with req: %#v", req)
-
 	return &csi.NodeGetIdResponse{
 		NodeId: s.driver.config.NodeID,
 	}, nil
 }
 
 func (s *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	glog.V(5).Infof("NodeGetInfo called with req: %#v", req)
-
 	return &csi.NodeGetInfoResponse{
 		NodeId: s.driver.config.NodeID,
 	}, nil
 }
 
 func (s *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	glog.V(5).Infof("NodeGetCapabilities called with req: %#v", req)
-
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: s.driver.nscap,
 	}, nil
@@ -153,6 +182,17 @@ func validateVolumeAttributes(attr map[string]string) error {
 	// TODO: validate allowed characters
 	if attr[attrVolume] == "" {
 		return fmt.Errorf("volume attribute %v not set", attrVolume)
+	}
+	return nil
+}
+
+func validateSmbNodePublishSecrets(secrets map[string]string) error {
+	if secrets[optionSmbUser] == "" {
+		return fmt.Errorf("secret %v not set", optionSmbUser)
+	}
+
+	if secrets[optionSmbPassword] == "" {
+		return fmt.Errorf("secret %v not set", optionSmbPassword)
 	}
 	return nil
 }
