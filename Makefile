@@ -39,3 +39,11 @@ push:
 
 skaffold-dev:
 	skaffold dev -f deploy/skaffold/skaffold.yaml
+
+csi-client:
+	mkdir -p bin
+	go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/csi-client ./hack/csi_client/cmd/
+
+csi-client-windows:
+	mkdir -p bin
+	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/csi-client.exe ./hack/csi_client/cmd/
