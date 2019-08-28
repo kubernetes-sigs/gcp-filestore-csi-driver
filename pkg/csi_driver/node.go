@@ -89,7 +89,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 	if mounted {
 		// Already mounted
-		// TODO: validate it's the corret mount
+		// TODO: validate it's the correct mount
 		return &csi.NodePublishVolumeResponse{}, nil
 	}
 
@@ -116,6 +116,11 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 		options = append(options, secrets[optionSmbUser])
 		options = append(options, secrets[optionSmbPassword])
+
+		//TODO: Remove this workaround after https://github.com/kubernetes/kubernetes/issues/75535
+		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
 	}
 
 	if readOnly {
