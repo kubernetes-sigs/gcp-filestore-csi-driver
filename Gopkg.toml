@@ -47,7 +47,8 @@
 
 [[constraint]]
   name = "google.golang.org/grpc"
-  version = "1.12.2"
+  # match kubernetes (https://github.com/kubernetes/kubernetes/blob/master/vendor/google.golang.org/grpc/version.go)
+  version = "=1.13.0"
 
 [[constraint]]
   branch = "master"
