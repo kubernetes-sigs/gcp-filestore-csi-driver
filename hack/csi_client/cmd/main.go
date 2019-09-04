@@ -1,9 +1,10 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
+
+	flag "github.com/spf13/pflag"
 
 	"sigs.k8s.io/gcp-filestore-csi-driver/hack/csi_client/pkg/csi"
 )
@@ -34,7 +35,7 @@ var (
 
 func main() {
 	flag.CommandLine.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), helpMessage, os.Args[0])
+		fmt.Printf(helpMessage, os.Args[0])
 		flag.PrintDefaults()
 	}
 
