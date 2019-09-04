@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"runtime"
 	"strings"
 	"time"
 
@@ -14,21 +13,8 @@ import (
 )
 
 const (
-	attrIP           = "ip"
-	attrVolume       = "volume"
-	smbUser          = "smbUser"
-	smbPassword      = "smbPassword"
 	reqNodePublish   = "nodepublish"
 	reqNodeUnpublish = "nodeunpublish"
-)
-
-var (
-	goOs          = runtime.GOOS
-	errHost       = fmt.Errorf("host name is required")
-	errVolume     = fmt.Errorf("volume name is required")
-	errTargetPath = fmt.Errorf("targetPath is required")
-	errNoUsername = fmt.Errorf("username is required")
-	errNoPassword = fmt.Errorf("password is required")
 )
 
 // Client is used to send CSI requests to the driver.
@@ -38,7 +24,8 @@ type Client struct {
 }
 
 type Request struct {
-	RequestType, ShareAddr, ShareName, TargetPath, Username, Password string
+	RequestType, TargetPath string
+	VolumeAttr, Secrets     map[string]string
 }
 
 // NewClient constructor for Client.
@@ -62,46 +49,7 @@ func NewClient(endpoint string) (*Client, error) {
 	}, nil
 }
 
-func validateRequest(req *Request) (err error) {
-	switch strings.ToLower(req.RequestType) {
-	case reqNodePublish:
-		if req.ShareAddr == "" {
-			return errHost
-		}
-
-		if req.ShareName == "" {
-			return errVolume
-		}
-
-		if req.TargetPath == "" {
-			return errTargetPath
-		}
-
-		if goOs == "windows" {
-			if req.Username == "" {
-				return errNoUsername
-			}
-
-			if req.Password == "" {
-				return errNoPassword
-			}
-		}
-	case reqNodeUnpublish:
-		if req.TargetPath == "" {
-			return errTargetPath
-		}
-	default:
-		return fmt.Errorf("invalid requestType: %s", req.RequestType)
-	}
-	return nil
-}
-
 func (c *Client) NewRequest(req *Request) (err error) {
-	err = validateRequest(req)
-	if err != nil {
-		return err
-	}
-
 	switch strings.ToLower(req.RequestType) {
 	case reqNodePublish:
 		csiReq := &csi.NodePublishVolumeRequest{
@@ -114,18 +62,10 @@ func (c *Client) NewRequest(req *Request) (err error) {
 					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 				},
 			},
-			VolumeAttributes: map[string]string{
-				attrIP:     req.ShareAddr,
-				attrVolume: req.ShareName,
-			},
+			VolumeAttributes:   req.VolumeAttr,
+			NodePublishSecrets: req.Secrets,
 		}
 
-		if goOs == "windows" {
-			csiReq.NodePublishSecrets = map[string]string{
-				smbUser:     fmt.Sprintf("%s\\%s", req.ShareAddr, req.Username),
-				smbPassword: req.Password,
-			}
-		}
 		_, err := c.node.NodePublishVolume(context.Background(), csiReq)
 
 		if err != nil {
