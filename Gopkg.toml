@@ -74,3 +74,7 @@
 [[constraint]]
   name = "github.com/kubernetes-csi/csi-lib-utils"
   version = "0.6.1"
+
+[[constraint]]
+  name = "github.com/spf13/pflag"
+  version = "1.0.3"

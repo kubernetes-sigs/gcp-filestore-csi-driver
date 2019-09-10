@@ -172,6 +172,14 @@
   version = "v1.4.2"
 
 [[projects]]
+  digest = "1:9d8420bbf131d1618bde6530af37c3799340d3762cc47210c1d9532a4c3a2779"
+  name = "github.com/spf13/pflag"
+  packages = ["."]
+  pruneopts = "NUT"
+  revision = "298182f68c66c05229eb03ac171abe6e309ee79a"
+  version = "v1.0.3"
+
+[[projects]]
   digest = "1:389349011e4eb001d6a0447c9eb837d5388cd131f27b5ddb13a73682605a0e65"
   name = "go.opencensus.io"
   packages = [
@@ -457,6 +465,7 @@
     "github.com/kubernetes-csi/csi-test/pkg/sanity",
     "github.com/onsi/ginkgo",
     "github.com/onsi/gomega",
+    "github.com/spf13/pflag",
     "golang.org/x/net/context",
     "golang.org/x/net/context/ctxhttp",
     "golang.org/x/oauth2",
