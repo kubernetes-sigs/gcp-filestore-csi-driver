@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: powershell-nettest
+spec:
+  # nodeName needs to be set to the name of a node where gcfs-csi-driver.exe has been started manually.
+  # It can be omitted if the driver is running on all Windows nodes in the cluster.
+  nodeName:  <node-name>
+  containers:
+   - name: nettest
+     image: e2eteam/nettest:1.0
+     volumeMounts:
+       - mountPath: C:\SMBShare
+         name: pvfs
+   - name: powershell
+     image: mcr.microsoft.com/powershell:windowsservercore-1809
+     command: ["pwsh.exe", "-c", "sleep", "2147482"]
+     volumeMounts:
+       - mountPath: C:\SMBShare
+         name: pvfs
+  volumes:
+   - name: pvfs
+     persistentVolumeClaim:
+       claimName: pvc-filestore
