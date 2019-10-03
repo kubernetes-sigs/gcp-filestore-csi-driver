@@ -68,7 +68,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 
 ## Kubernetes User Guide
 1. One-time per project: Create GCP service account for the CSI driver and set the Cloud
-   Filestore editor role.
+   Filestore editor role. Also enable Cloud Filestore API for this project.
 ```
 # Optionally set a different directory to download the service account token.
 # Default is $HOME.
