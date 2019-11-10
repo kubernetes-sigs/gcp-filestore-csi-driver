@@ -94,7 +94,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	}
 
 	// Mount source
-	source := fmt.Sprintf("%s:/%s", attr[attrIp], attr[attrVolume])
+	source := fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
 
 	// FileSystem type
 	fstype := "nfs"
@@ -104,7 +104,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 	// Windows specific values
 	if goOs == "windows" {
-		source = fmt.Sprintf("\\\\%s\\%s", attr[attrIp], attr[attrVolume])
+		source = fmt.Sprintf("\\\\%s\\%s", attr[attrIP], attr[attrVolume])
 		fstype = "cifs"
 
 		// Login credentials
@@ -181,8 +181,8 @@ func (s *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCa
 // validateVolumeAttributes checks for all the necessary fields for mounting the volume
 func validateVolumeAttributes(attr map[string]string) error {
 	// TODO: validate ip syntax
-	if attr[attrIp] == "" {
-		return fmt.Errorf("volume attribute %v not set", attrIp)
+	if attr[attrIP] == "" {
+		return fmt.Errorf("volume attribute %v not set", attrIP)
 	}
 	// TODO: validate allowed characters
 	if attr[attrVolume] == "" {

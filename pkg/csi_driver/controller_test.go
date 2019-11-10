@@ -30,9 +30,9 @@ import (
 const (
 	testProject          = "test-project"
 	testLocation         = "test-location"
-	testIp               = "test-ip"
+	testIP               = "test-ip"
 	testCSIVolume        = "test-csi"
-	testVolumeId         = "modeInstance/test-location/test-csi/vol1"
+	testVolumeID         = "modeInstance/test-location/test-csi/vol1"
 	testReservedIPV4CIDR = "192.168.92.0/26"
 	testBytes            = 1 * util.Tb
 )
@@ -79,9 +79,9 @@ func TestCreateVolume(t *testing.T) {
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 1 * util.Tb,
-					Id:            testVolumeId,
+					Id:            testVolumeID,
 					Attributes: map[string]string{
-						attrIp:     testIp,
+						attrIP:     testIP,
 						attrVolume: newInstanceVolume,
 					},
 				},
@@ -167,13 +167,13 @@ func TestDeleteVolume(t *testing.T) {
 		{
 			name: "valid",
 			req: &csi.DeleteVolumeRequest{
-				VolumeId: testVolumeId,
+				VolumeId: testVolumeID,
 			},
 		},
 		{
 			name: "invalid id",
 			req: &csi.DeleteVolumeRequest{
-				VolumeId: testVolumeId + "/foo",
+				VolumeId: testVolumeID + "/foo",
 			},
 		},
 		{
