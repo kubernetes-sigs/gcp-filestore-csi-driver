@@ -37,7 +37,7 @@ var (
 		},
 	}
 	testVolumeAttributes = map[string]string{
-		attrIp:     "1.1.1.1",
+		attrIP:     "1.1.1.1",
 		attrVolume: "test-volume",
 	}
 	testDevice = "1.1.1.1:/test-volume"
@@ -94,7 +94,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "valid request not already mounted",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -106,7 +106,7 @@ func TestNodePublishVolume(t *testing.T) {
 			name:   "valid request already mounted",
 			mounts: []mount.MountPoint{{Device: "/test-device", Path: testTargetPath}},
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -116,7 +116,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "valid request with user mount options",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:   testVolumeId,
+				VolumeId:   testVolumeID,
 				TargetPath: testTargetPath,
 				VolumeCapability: &csi.VolumeCapability{
 					AccessType: &csi.VolumeCapability_Mount{
@@ -137,7 +137,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "valid request read only",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -149,7 +149,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "empty target path",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
 			},
@@ -158,7 +158,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "invalid volume capability",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeAttributes: testVolumeAttributes,
 			},
@@ -167,7 +167,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "invalid volume attribute",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 			},
@@ -176,7 +176,7 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "target path doesn't exist",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       "/node-publish-test-not-exists",
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -236,7 +236,7 @@ func TestWindowsNodePublishVolume(t *testing.T) {
 		// {
 		// 	name:     "windows target path does exist",
 		// 	req: &csi.NodePublishVolumeRequest{
-		// 		VolumeId:         testVolumeId,
+		// 		VolumeId:         testVolumeID,
 		// 		TargetPath:       testTargetPath,
 		// 		VolumeCapability: testVolumeCapability,
 		// 		VolumeAttributes: testVolumeAttributes,
@@ -247,7 +247,7 @@ func TestWindowsNodePublishVolume(t *testing.T) {
 		{
 			name: "windows target path doesn't exist",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:           testVolumeId,
+				VolumeId:           testVolumeID,
 				TargetPath:         testWindowsValidPath,
 				VolumeCapability:   testVolumeCapability,
 				VolumeAttributes:   testVolumeAttributes,
@@ -260,7 +260,7 @@ func TestWindowsNodePublishVolume(t *testing.T) {
 		{
 			name: "windows no user",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testWindowsValidPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -273,7 +273,7 @@ func TestWindowsNodePublishVolume(t *testing.T) {
 		{
 			name: "windows no password",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeId,
+				VolumeId:         testVolumeID,
 				TargetPath:       testWindowsValidPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeAttributes: testVolumeAttributes,
@@ -331,7 +331,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			name:   "successful unmount",
 			mounts: []mount.MountPoint{{Device: testDevice, Path: testTargetPath}},
 			req: &csi.NodeUnpublishVolumeRequest{
-				VolumeId:   testVolumeId,
+				VolumeId:   testVolumeID,
 				TargetPath: testTargetPath,
 			},
 			actions: []mount.FakeAction{{Action: mount.FakeActionUnmount}},
@@ -339,21 +339,21 @@ func TestNodeUnpublishVolume(t *testing.T) {
 		{
 			name: "empty target path",
 			req: &csi.NodeUnpublishVolumeRequest{
-				VolumeId: testVolumeId,
+				VolumeId: testVolumeID,
 			},
 			expectErr: true,
 		},
 		{
 			name: "dir doesn't exist",
 			req: &csi.NodeUnpublishVolumeRequest{
-				VolumeId:   testVolumeId,
+				VolumeId:   testVolumeID,
 				TargetPath: "/node-unpublish-dir-not-exists",
 			},
 		},
 		{
 			name: "dir not mounted",
 			req: &csi.NodeUnpublishVolumeRequest{
-				VolumeId:   testVolumeId,
+				VolumeId:   testVolumeID,
 				TargetPath: testTargetPath,
 			},
 		},
@@ -390,7 +390,7 @@ func TestValidateVolumeAttributes(t *testing.T) {
 		{
 			name: "valid attributes",
 			attrs: map[string]string{
-				attrIp:     "1.1.1.1",
+				attrIP:     "1.1.1.1",
 				attrVolume: "vol1",
 			},
 		},
@@ -404,7 +404,7 @@ func TestValidateVolumeAttributes(t *testing.T) {
 		{
 			name: "invalid volume",
 			attrs: map[string]string{
-				attrIp: "1.1.1.1",
+				attrIP: "1.1.1.1",
 			},
 			expectErr: true,
 		},

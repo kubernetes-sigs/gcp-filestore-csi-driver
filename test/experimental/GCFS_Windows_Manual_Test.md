@@ -35,7 +35,7 @@ req, err := driver.ns.NodePublishVolume(context.TODO(), &csi.NodePublishVolumeRe
 		},
 	},
 	VolumeAttributes: map[string]string{
-		attrIp:     windowsMachineName,
+		attrIP:     windowsMachineName,
 		attrVolume: smbShareName,
 	},
 	NodePublishSecrets: map[string]string{

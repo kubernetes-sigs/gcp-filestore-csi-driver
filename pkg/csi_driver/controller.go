@@ -42,7 +42,7 @@ const (
 
 // Volume attributes
 const (
-	attrIp     = "ip"
+	attrIP     = "ip"
 	attrVolume = "volume"
 )
 
@@ -161,14 +161,14 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	glog.V(4).Infof("DeleteVolume called with request %v", *req)
 
-	volumeId := req.GetVolumeId()
-	if volumeId == "" {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
-	filer, _, err := getFileInstanceFromId(volumeId)
+	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		// An invalid ID should be treated as doesn't exist
-		glog.V(5).Infof("failed to get instance for volume %v deletion: %v", volumeId, err)
+		glog.V(5).Infof("failed to get instance for volume %v deletion: %v", volumeID, err)
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
@@ -183,8 +183,8 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 
 func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
 	// Validate arguments
-	volumeId := req.GetVolumeId()
-	if volumeId == "" {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
 	caps := req.GetVolumeCapabilities()
@@ -193,7 +193,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 	}
 
 	// Check that the volume exists
-	filer, _, err := getFileInstanceFromId(volumeId)
+	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		// An invalid id format is treated as doesn't exist
 		return nil, status.Error(codes.NotFound, err.Error())
@@ -205,7 +205,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("volume %v doesn't exist", volumeId))
+		return nil, status.Error(codes.NotFound, fmt.Sprintf("volume %v doesn't exist", volumeID))
 	}
 
 	// Validate that the volume matches the capabilities
@@ -241,10 +241,9 @@ func getRequestCapacity(capRange *csi.CapacityRange) int64 {
 		if rCap == 0 {
 			// request not set
 			return lCap
-		} else {
-			// request set, round up to min
-			return util.Min(util.Max(rCap, minVolumeSize), lCap)
 		}
+		// request set, round up to min
+		return util.Min(util.Max(rCap, minVolumeSize), lCap)
 	}
 
 	// limit not set
@@ -296,10 +295,10 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
 func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
 	return &csi.Volume{
-		Id:            getVolumeIdFromFileInstance(instance, mode),
+		Id:            getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
 		Attributes: map[string]string{
-			attrIp:     instance.Network.Ip,
+			attrIP:     instance.Network.Ip,
 			attrVolume: instance.Volume.Name,
 		},
 	}
