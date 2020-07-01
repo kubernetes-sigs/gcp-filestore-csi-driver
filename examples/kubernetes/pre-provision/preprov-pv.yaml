@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: my-pre-pv
+  annotations:
+    pv.kubernetes.io/provisioned-by: filestore.csi.storage.gke.io
+spec:
+  storageClassName: "csi-filestore"
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: "Delete"
+  volumeMode: "Filesystem"
+  csi:
+    driver: "filestore.csi.storage.gke.io"
+    volumeHandle: "modeInstance/us-central1-c/test-preprov-fs/vol1"
+    fsType: "nfs"
+    volumeAttributes:
+      ip: 10.175.240.186 # MODIFY THIS TO Pre-provisioned FS INSTANCE IP
+      volume: vol1
+

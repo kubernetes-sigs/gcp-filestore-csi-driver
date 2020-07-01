@@ -18,28 +18,16 @@ spec:
     spec:
       serviceAccount: gcp-filestore-csi-controller-sa
       containers:
-        - name: csi-external-attacher
-          imagePullPolicy: Always
-          image: gcr.io/gke-release/csi-attacher:v0.4.1-gke.0
-          args:
-            - "--v=4"
-            - "--csi-address=/csi/csi.sock"
-          volumeMounts:
-            - name: socket-dir
-              mountPath: /csi
         - name: csi-external-provisioner
-          imagePullPolicy: Always
-          image: gcr.io/gke-release/csi-provisioner:v0.4.1-gke.0
+          image: gcr.io/gke-release/csi-provisioner:v1.6.0-gke.0
           args:
-            - "--v=4"
-            # Remove when https://github.com/kubernetes-csi/external-provisioner/issues/108 is fixed
-            - "--provisioner=filestore.csi.storage.gke.io"
+            - "--v=5"
             - "--csi-address=/csi/csi.sock"
+            - "--timeout=250s"
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
         - name: gcp-filestore-driver
-          imagePullPolicy: Always
           image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           args:
             - "--v=4"

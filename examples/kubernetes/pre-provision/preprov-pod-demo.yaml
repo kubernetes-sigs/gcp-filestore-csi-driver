@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-server-1
+spec:
+  containers:
+   - name: web-server
+     image: nginx
+     volumeMounts:
+       - mountPath: /usr/share/nginx/html
+         name: mypvc
+  volumes:
+   - name: mypvc
+     persistentVolumeClaim:
+       claimName: preprov-pvc

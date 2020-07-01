@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -212,13 +212,16 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 	// Note that there is nothing in the instance that we actually need to validate
 	if err := s.config.driver.validateVolumeCapabilities(caps); err != nil {
 		return &csi.ValidateVolumeCapabilitiesResponse{
-			Supported: false,
-			Message:   err.Error(),
+			Message: err.Error(),
 		}, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	return &csi.ValidateVolumeCapabilitiesResponse{
-		Supported: true,
+		Confirmed: &csi.ValidateVolumeCapabilitiesResponse_Confirmed{
+			VolumeContext:      req.GetVolumeContext(),
+			VolumeCapabilities: req.GetVolumeCapabilities(),
+			Parameters:         req.GetParameters(),
+		},
 	}, nil
 }
 
@@ -295,9 +298,9 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
 func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
 	return &csi.Volume{
-		Id:            getVolumeIDFromFileInstance(instance, mode),
+		VolumeId:      getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
-		Attributes: map[string]string{
+		VolumeContext: map[string]string{
 			attrIP:     instance.Network.Ip,
 			attrVolume: instance.Volume.Name,
 		},

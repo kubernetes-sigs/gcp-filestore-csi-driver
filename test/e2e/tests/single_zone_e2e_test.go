@@ -54,7 +54,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 
 		defer func() {
 			// Delete Disk
-			client.DeleteVolume(vol.GetId())
+			client.DeleteVolume(vol.GetVolumeId())
 			Expect(err).To(BeNil(), "DeleteVolume failed")
 		}()
 
@@ -70,7 +70,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 			Expect(err).To(BeNil(), "Failed to delete remote directory")
 		}()
 
-		err = client.NodePublishVolume(vol.GetId(), publishDir, vol.GetAttributes())
+		err = client.NodePublishVolume(vol.GetVolumeId(), publishDir, vol.GetVolumeContext())
 		Expect(err).To(BeNil(), "NodePublishVolume failed with error")
 
 		err = testutils.ForceChmod(instance, publishDir, "777")
@@ -83,7 +83,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 		Expect(err).To(BeNil(), "Failed to write file")
 
 		// Unmount Disk
-		err = client.NodeUnpublishVolume(vol.GetId(), publishDir)
+		err = client.NodeUnpublishVolume(vol.GetVolumeId(), publishDir)
 		Expect(err).To(BeNil(), "NodeUnpublishVolume failed with error")
 
 		// Mount disk somewhere else
@@ -91,7 +91,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 		_, err = instance.SSH(fmt.Sprint("mkdir -p ", secondPublishDir))
 		Expect(err).To(BeNil(), "Error while making directory on remote")
 
-		err = client.NodePublishVolume(vol.GetId(), secondPublishDir, vol.GetAttributes())
+		err = client.NodePublishVolume(vol.GetVolumeId(), secondPublishDir, vol.GetVolumeContext())
 		Expect(err).To(BeNil(), "NodePublishVolume failed with error")
 
 		err = testutils.ForceChmod(instance, secondPublishDir, "777")
@@ -104,7 +104,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 		Expect(strings.TrimSpace(string(readContents))).To(Equal(testFileContents))
 
 		// Unmount Disk
-		err = client.NodeUnpublishVolume(vol.GetId(), secondPublishDir)
+		err = client.NodeUnpublishVolume(vol.GetVolumeId(), secondPublishDir)
 		Expect(err).To(BeNil(), "NodeUnpublishVolume failed with error")
 
 	})

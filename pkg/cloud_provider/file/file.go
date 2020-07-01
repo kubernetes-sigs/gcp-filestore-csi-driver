@@ -28,7 +28,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/wait"
 
-	beta "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/generated/file/v1beta1"
+	filev1 "google.golang.org/api/file/v1"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -60,9 +60,9 @@ type Service interface {
 }
 
 type gcfsServiceManager struct {
-	fileService       *beta.Service
-	instancesService  *beta.ProjectsLocationsInstancesService
-	operationsService *beta.ProjectsLocationsOperationsService
+	fileService       *filev1.Service
+	instancesService  *filev1.ProjectsLocationsInstancesService
+	operationsService *filev1.ProjectsLocationsOperationsService
 }
 
 const (
@@ -79,7 +79,7 @@ func NewGCFSService(version string) (Service, error) {
 		return nil, err
 	}
 
-	fileService, err := beta.New(client)
+	fileService, err := filev1.New(client)
 	if err != nil {
 		return nil, err
 	}
@@ -87,22 +87,22 @@ func NewGCFSService(version string) (Service, error) {
 
 	return &gcfsServiceManager{
 		fileService:       fileService,
-		instancesService:  beta.NewProjectsLocationsInstancesService(fileService),
-		operationsService: beta.NewProjectsLocationsOperationsService(fileService),
+		instancesService:  filev1.NewProjectsLocationsInstancesService(fileService),
+		operationsService: filev1.NewProjectsLocationsOperationsService(fileService),
 	}, nil
 }
 
 func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	// TODO: add some labels to to tag this plugin
-	betaObj := &beta.Instance{
+	betaObj := &filev1.Instance{
 		Tier: obj.Tier,
-		FileShares: []*beta.FileShareConfig{
+		FileShares: []*filev1.FileShareConfig{
 			{
 				Name:       obj.Volume.Name,
 				CapacityGb: util.RoundBytesToGb(obj.Volume.SizeBytes),
 			},
 		},
-		Networks: []*beta.NetworkConfig{
+		Networks: []*filev1.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -156,7 +156,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	return nil, fmt.Errorf("failed to get instance")
 }
 
-func cloudInstanceToServiceInstance(instance *beta.Instance) (*ServiceInstance, error) {
+func cloudInstanceToServiceInstance(instance *filev1.Instance) (*ServiceInstance, error) {
 	project, location, name, err := getInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
@@ -251,7 +251,7 @@ func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *Servi
 	return activeInstances, nil
 }
 
-func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *beta.Operation) error {
+func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1.Operation) error {
 	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
 		pollOp, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
 		if err != nil {
@@ -261,7 +261,7 @@ func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *beta.Opera
 	})
 }
 
-func isOpDone(op *beta.Operation) (bool, error) {
+func isOpDone(op *filev1.Operation) (bool, error) {
 	if op == nil {
 		return false, nil
 	}

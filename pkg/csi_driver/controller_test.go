@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -79,8 +79,8 @@ func TestCreateVolume(t *testing.T) {
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 1 * util.Tb,
-					Id:            testVolumeID,
-					Attributes: map[string]string{
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
 						attrIP:     testIP,
 						attrVolume: newInstanceVolume,
 					},
