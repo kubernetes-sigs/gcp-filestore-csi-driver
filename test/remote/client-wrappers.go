@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"time"
 
-	csipb "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
 
@@ -121,7 +121,7 @@ func (c *CsiClient) NodePublishVolume(volumeId, publishDir string, volumeAttrs m
 		VolumeId:         volumeId,
 		TargetPath:       publishDir,
 		VolumeCapability: stdVolCap,
-		VolumeAttributes: volumeAttrs,
+		VolumeContext:    volumeAttrs,
 		Readonly:         false,
 	}
 	_, err := c.nodeClient.NodePublishVolume(context.Background(), nodePublishReq)

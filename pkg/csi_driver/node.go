@@ -21,12 +21,12 @@ import (
 	"os"
 	"runtime"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/kubernetes/pkg/util/mount"
+	"k8s.io/utils/mount"
 )
 
 const (
@@ -69,22 +69,16 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	}
 
 	// Validate volume attributes
-	attr := req.GetVolumeAttributes()
+	attr := req.GetVolumeContext()
 	if err := validateVolumeAttributes(attr); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Check if mount already exists
+	// TODO: If target path does not exist create it and then proceed to mount.
+	// Check kubernetes/kubernetes#75535. CO may create only the parent directory.
 	mounted, err := s.isDirMounted(targetPath)
-	if err != nil {
-		// On Windows the mount target must not exist
-		if goOs == "windows" {
-			if !os.IsNotExist(err) {
-				return nil, err
-			}
-		} else {
-			return nil, err
-		}
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
 	}
 
 	if mounted {
@@ -109,7 +103,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 		// Login credentials
 
-		secrets := req.GetNodePublishSecrets()
+		secrets := req.GetSecrets()
 		if err := validateSmbNodePublishSecrets(secrets); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
@@ -158,12 +152,6 @@ func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpub
 	}
 
 	return &csi.NodeUnpublishVolumeResponse{}, nil
-}
-
-func (s *nodeServer) NodeGetId(ctx context.Context, req *csi.NodeGetIdRequest) (*csi.NodeGetIdResponse, error) {
-	return &csi.NodeGetIdResponse{
-		NodeId: s.driver.config.NodeID,
-	}, nil
 }
 
 func (s *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {

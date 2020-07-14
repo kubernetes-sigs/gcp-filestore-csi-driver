@@ -25,12 +25,13 @@ import (
 	"github.com/golang/glog"
 	"golang.org/x/oauth2/google"
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
-	boskosclient "k8s.io/test-infra/boskos/client"
+
+	boskosclient "sigs.k8s.io/boskos/client"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
 )
 
 var (
-	boskos = boskosclient.NewClient(os.Getenv("JOB_NAME"), "http://boskos")
+	boskos, _ = boskosclient.NewClient(os.Getenv("JOB_NAME"), "http://boskos", "", "")
 )
 
 func GCFSClientAndDriverSetup(instance *remote.InstanceInfo) (*remote.TestContext, error) {
@@ -79,7 +80,7 @@ func SetupProwConfig() (project, serviceAccount string) {
 		glog.Fatalf("boskos does not have a free gce-project at the moment")
 	}
 
-	project = p.GetName()
+	project = p.Name
 
 	go func(c *boskosclient.Client, proj string) {
 		for range time.Tick(time.Minute * 5) {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	csi "github.com/container-storage-interface/spec/lib/go/csi/v0"
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 )
 
@@ -62,8 +62,8 @@ func (c *Client) NewRequest(req *Request) (err error) {
 					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 				},
 			},
-			VolumeAttributes:   req.VolumeAttr,
-			NodePublishSecrets: req.Secrets,
+			VolumeContext: req.VolumeAttr,
+			Secrets:       req.Secrets,
 		}
 
 		_, err := c.node.NodePublishVolume(context.Background(), csiReq)

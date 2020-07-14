@@ -15,12 +15,19 @@ limitations under the License.
 package sanitytest
 
 import (
+	"os"
 	"testing"
 
-	sanity "github.com/kubernetes-csi/csi-test/pkg/sanity"
-	"k8s.io/kubernetes/pkg/util/mount"
+	sanity "github.com/kubernetes-csi/csi-test/v3/pkg/sanity"
+	"google.golang.org/grpc"
+	"k8s.io/utils/mount"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
+)
+
+const (
+	Gb = 1024 * 1024 * 1024
+	Tb = 1024 * Gb
 )
 
 func TestSanity(t *testing.T) {
@@ -32,12 +39,23 @@ func TestSanity(t *testing.T) {
 	mountPath := "/tmp/csi/mount"
 	stagePath := "/tmp/csi/stage"
 
+	tmpDir := "/tmp/csi"
+	err := os.MkdirAll(tmpDir, 0755)
+	if err != nil {
+		t.Fatalf("Failed to create sanity temp working dir %s: %v", tmpDir, err)
+	}
+	defer func() {
+		if err = os.RemoveAll(tmpDir); err != nil {
+			t.Fatalf("Failed to clean up sanity temp working dir %s: %v", tmpDir, err)
+		}
+	}()
+
 	// Set up driver and env
 	cloudProvider, err := cloud.NewFakeCloud()
 	if err != nil {
 		t.Fatalf("Failed to get cloud provider: %v", err)
 	}
-	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}, Log: []mount.FakeAction{}}
+	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
 
 	driverConfig := &driver.GCFSDriverConfig{
 		Name:          driverName,
@@ -58,10 +76,13 @@ func TestSanity(t *testing.T) {
 	}()
 
 	// Run test
-	testConfig := &sanity.Config{
-		TargetPath:  mountPath,
-		StagingPath: stagePath,
-		Address:     endpoint,
+	testConfig := sanity.TestConfig{
+		TargetPath:     mountPath,
+		StagingPath:    stagePath,
+		Address:        endpoint,
+		DialOptions:    []grpc.DialOption{grpc.WithInsecure()},
+		IDGen:          &sanity.DefaultIDGenerator{},
+		TestVolumeSize: int64(1 * Tb),
 	}
 	sanity.Test(t, testConfig)
 }
