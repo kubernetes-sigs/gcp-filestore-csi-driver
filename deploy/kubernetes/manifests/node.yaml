@@ -37,6 +37,7 @@ spec:
         - name: gcp-filestore-driver
           securityContext:
             privileged: true
+          # Modify this image for local development with master branch.
           image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           args:
             - "--v=5"
@@ -55,6 +56,7 @@ spec:
             - name: plugin-dir
               mountPath: /csi
         - name: nfs-services
+          # Modify this image for local development with master branch.
           image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           command: ["/nfs_services_start.sh"]
       volumes:

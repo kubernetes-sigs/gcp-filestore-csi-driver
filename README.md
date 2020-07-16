@@ -22,15 +22,14 @@ Latest image: `gke.gcr.io/gcp-filestore-csi-driver:v0.2.0`
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
 ### CSI Compatibility
-This plugin is compatible with CSI version 0.2.0 and 0.3.0.
+This plugin is compatible with CSI version 1.3.0.
 
 ### Kubernetes Compatibility
 
-| Filestore CSI Driver\Kubernetes Version | 1.10.5-1.11 | 1.12 | 1.13 | 1.14 |
-| --------------------------------------- | ----------- | ---- | ---- | ---- |
-| v0.1.0 (alpha)                          | yes         | no   | no   | no   |
-| v0.2.0 (alpha)                          | no          | yes  | yes  | yes  |
-| dev                                     | no          | yes  | yes  | yes  |
+| Filestore CSI Driver\Kubernetes Version | 1.12 | 1.13 | 1.14 | 1.15 | 1.16+ |
+| --------------------------------------- | ---- | ---- | ---- | ---- | ----  |
+| v0.2.0 (alpha)                          | yes  | yes  | yes  |  no  |  no   |
+| master                                  | no   | no   | yes  |  yes |  yes  |
 
 ## Plugin Features
 
@@ -59,7 +58,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
   [nfs-client](https://github.com/kubernetes-incubator/external-storage/tree/master/nfs-client)
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
-* Volume resizing: CSI does not have volume resizing support yet, but Cloud Filestore
+* Volume resizing: CSI Filestore driver does not support volume resizing yet, but Cloud Filestore
   instances can currently be [manually resized](https://cloud.google.com/filestore/docs/editing-instances).
 * Topology preferences: For better performance, it is recommended to run
   workloads in the same zone where the Cloud Filestore instance is provisioned in. In the
