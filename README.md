@@ -97,8 +97,8 @@ $ ./deploy/kubernetes/cluster_setup.sh
 
 ### Manual
 ```
-$ make
-$ make push
+# Build the Filestore CSI driver image and push to a container registry.
+$ PROJECT=your-gcp-project make build-image-and-push
 # Modify manifests under deploy/kubernetes/manifests to use development image
 $ ./deploy/kubernetes/driver_start.sh
 ```
