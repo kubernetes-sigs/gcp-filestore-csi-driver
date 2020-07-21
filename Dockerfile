@@ -12,12 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Build driver
+# Build driver go binary
 FROM golang:1.14.4 as builder
 WORKDIR /go/src/sigs.k8s.io/gcp-filestore-csi-driver
 ADD . .
-ARG TAG
-RUN CGO_ENABLED=0 go build -a -ldflags '-X main.version='"${TAG:-latest}"' -extldflags "-static"' -o bin/gcp-filestore-csi-driver ./cmd
+RUN make driver
 
 # Install nfs packages
 FROM launcher.gcr.io/google/debian9 as deps
@@ -83,7 +82,9 @@ RUN apt-get autoremove -y && \
 
 # Copy driver into image
 FROM deps
-COPY --from=builder /go/src/sigs.k8s.io/gcp-filestore-csi-driver/bin/gcp-filestore-csi-driver /gcp-filestore-csi-driver
+ARG DRIVERBINARY
+COPY --from=builder /go/src/sigs.k8s.io/gcp-filestore-csi-driver/bin/${DRIVERBINARY} /${DRIVERBINARY}
 COPY deploy/kubernetes/nfs_services_start.sh /nfs_services_start.sh
+
 
 ENTRYPOINT ["/gcp-filestore-csi-driver"]
