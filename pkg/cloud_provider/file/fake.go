@@ -18,6 +18,7 @@ package file
 
 import (
 	"context"
+	"fmt"
 
 	"google.golang.org/api/googleapi"
 )
@@ -95,4 +96,15 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 		},
 	}
 	return instances, nil
+}
+
+func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	instance, ok := manager.createdInstances[obj.Name]
+	if !ok {
+		return nil, fmt.Errorf("Instance %v not found", obj.Name)
+	}
+
+	instance.Volume.SizeBytes = obj.Volume.SizeBytes
+	manager.createdInstances[obj.Name] = instance
+	return instance, nil
 }

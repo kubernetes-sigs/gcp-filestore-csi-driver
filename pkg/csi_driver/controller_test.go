@@ -204,11 +204,16 @@ func TestValidateVolumeCapabilities(t *testing.T) {
 func TestControllerGetCapabilities(t *testing.T) {
 }
 
+// TODO:
+func TestControllerExpandVolume(t *testing.T) {
+}
+
 func TestGetRequestCapacity(t *testing.T) {
 	cases := []struct {
-		name     string
-		capRange *csi.CapacityRange
-		bytes    int64
+		name          string
+		capRange      *csi.CapacityRange
+		bytes         int64
+		errorExpected bool
 	}{
 		{
 			name:  "default",
@@ -234,13 +239,6 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 1*util.Tb + 1*util.Gb,
 			},
 			bytes: 1*util.Tb + 1*util.Gb,
-		},
-		{
-			name: "limit below min",
-			capRange: &csi.CapacityRange{
-				LimitBytes: 100 * util.Gb,
-			},
-			bytes: 100 * util.Gb,
 		},
 		{
 			name: "limit equals min",
@@ -270,7 +268,7 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 100 * util.Gb,
 				LimitBytes:    500 * util.Gb,
 			},
-			bytes: 500 * util.Gb,
+			errorExpected: true,
 		},
 		{
 			name: "required above limit",
@@ -278,15 +276,32 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 5 * util.Tb,
 				LimitBytes:    2 * util.Tb,
 			},
-			bytes: 2 * util.Tb,
+			errorExpected: true,
+		},
+		{
+			name: "limit below min",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 100 * util.Gb,
+			},
+			errorExpected: true,
 		},
 	}
 
-	for _, test := range cases {
-		bytes := getRequestCapacity(test.capRange)
-		if bytes != test.bytes {
-			t.Errorf("test %q failed: got %v bytes, expected %v", test.name, bytes, test.bytes)
-		}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bytes, err := getRequestCapacity(tc.capRange)
+			if err != nil && tc.errorExpected {
+				return
+			}
+
+			if err == nil && tc.errorExpected {
+				t.Errorf("Test %q failed: expected error", tc.name)
+			}
+			if bytes != tc.bytes {
+				t.Errorf("test %q failed: got %v bytes, expected %v", tc.name, bytes, tc.bytes)
+			}
+		})
+
 	}
 }
 

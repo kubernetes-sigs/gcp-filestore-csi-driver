@@ -57,6 +57,7 @@ type Service interface {
 	DeleteInstance(ctx context.Context, obj *ServiceInstance) error
 	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
+	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 }
 
 type gcfsServiceManager struct {
@@ -69,6 +70,9 @@ const (
 	locationURIFmt  = "projects/%s/locations/%s"
 	instanceURIFmt  = locationURIFmt + "/instances/%s"
 	operationURIFmt = locationURIFmt + "/operations/%s"
+
+	// Patch update masks
+	fileShareUpdateMask = "file_shares"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -249,6 +253,64 @@ func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *Servi
 		activeInstances = append(activeInstances, serviceInstance)
 	}
 	return activeInstances, nil
+}
+
+func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	instanceuri := instanceURI(obj.Project, obj.Location, obj.Name)
+	instance, err := manager.GetInstance(ctx, obj)
+	if err != nil {
+		glog.Errorf("Failed to get instance %s for resize operation, error %v", instanceuri, err)
+		return nil, err
+	}
+
+	// High Scale tier supports shrink of capacity. However CSI spec does not support it.
+	if util.BytesToGb(obj.Volume.SizeBytes) <= util.BytesToGb(instance.Volume.SizeBytes) {
+		return instance, nil
+	}
+
+	// Create a file instance for the Patch request.
+	betaObj := &filev1.Instance{
+		Tier: obj.Tier,
+		FileShares: []*filev1.FileShareConfig{
+			{
+				Name: instance.Volume.Name,
+				// This is the updated instance size requested.
+				CapacityGb: util.BytesToGb(obj.Volume.SizeBytes),
+			},
+		},
+		Networks: []*filev1.NetworkConfig{
+			{
+				Network:         instance.Network.Name,
+				Modes:           []string{"MODE_IPV4"},
+				ReservedIpRange: instance.Network.ReservedIpRange,
+			},
+		},
+	}
+
+	glog.Infof("Starting Patch instance cloud operation for instance %s", instanceuri)
+	glog.V(4).Infof("Patching instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v",
+		obj.Name,
+		obj.Location,
+		betaObj.Tier,
+		betaObj.FileShares[0].CapacityGb,
+		betaObj.Networks[0].Network,
+		betaObj.Networks[0].ReservedIpRange)
+	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("Patch operation failed: %v", err)
+	}
+
+	err = manager.waitForOp(ctx, op)
+	if err != nil {
+		return nil, fmt.Errorf("WaitFor patch operation failed: %v", err)
+	}
+
+	instance, err = manager.GetInstance(ctx, obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+	}
+	glog.V(4).Infof("After resize got instance %#v", instance)
+	return instance, nil
 }
 
 func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1.Operation) error {

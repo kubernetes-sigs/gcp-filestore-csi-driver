@@ -58,8 +58,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
   [nfs-client](https://github.com/kubernetes-incubator/external-storage/tree/master/nfs-client)
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
-* Volume resizing: CSI Filestore driver does not support volume resizing yet, but Cloud Filestore
-  instances can currently be [manually resized](https://cloud.google.com/filestore/docs/editing-instances).
+* Volume resizing: CSI Filestore driver supports volume expansion for all supported Filestore tiers.
 * Topology preferences: For better performance, it is recommended to run
   workloads in the same zone where the Cloud Filestore instance is provisioned in. In the
   future, the location where to create a Cloud Filestore instance could be automatically

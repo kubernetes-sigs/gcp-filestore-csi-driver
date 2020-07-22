@@ -65,7 +65,7 @@ func TestGetPluginCapabilities(t *testing.T) {
 		t.Fatalf("GetPluginCapabilities resp is nil")
 	}
 
-	if len(resp.Capabilities) != 1 {
+	if len(resp.Capabilities) != 3 {
 		t.Fatalf("returned %v capabilities", len(resp.Capabilities))
 	}
 
@@ -80,6 +80,24 @@ func TestGetPluginCapabilities(t *testing.T) {
 
 	if serviceType := service.GetType(); serviceType != csi.PluginCapability_Service_CONTROLLER_SERVICE {
 		t.Fatalf("returned %v capability service", serviceType)
+	}
+
+	volumeexpansion := resp.Capabilities[1].GetVolumeExpansion()
+	if volumeexpansion == nil {
+		t.Fatalf("returned nil volume expansion capability")
+	}
+
+	if expansiontype := volumeexpansion.GetType(); expansiontype != csi.PluginCapability_VolumeExpansion_ONLINE {
+		t.Fatalf("returned %v capability", expansiontype)
+	}
+
+	volumeexpansion = resp.Capabilities[2].GetVolumeExpansion()
+	if volumeexpansion == nil {
+		t.Fatalf("returned nil volume expansion capability")
+	}
+
+	if expansiontype := volumeexpansion.GetType(); expansiontype != csi.PluginCapability_VolumeExpansion_OFFLINE {
+		t.Fatalf("returned %v capability", expansiontype)
 	}
 }
 

@@ -85,9 +85,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	capBytes := getRequestCapacity(req.GetCapacityRange())
-	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
+	capBytes, err := getRequestCapacity(req.GetCapacityRange())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 
+	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -232,25 +235,35 @@ func (s *controllerServer) ControllerGetCapabilities(ctx context.Context, req *c
 }
 
 // getRequestCapacity returns the volume size that should be provisioned
-func getRequestCapacity(capRange *csi.CapacityRange) int64 {
+func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 	if capRange == nil {
-		return minVolumeSize
+		return minVolumeSize, nil
 	}
 
 	rCap := capRange.GetRequiredBytes()
+	rSet := rCap > 0
 	lCap := capRange.GetLimitBytes()
+	lSet := lCap > 0
+
+	if lSet && rSet && lCap < rCap {
+		return 0, fmt.Errorf("Limit bytes %v is less than required bytes %v", lCap, rCap)
+	}
+
+	if lSet && lCap < minVolumeSize {
+		return 0, fmt.Errorf("Limit bytes %v is less than minimum instance size bytes %v", lCap, minVolumeSize)
+	}
 
 	if lCap > 0 {
 		if rCap == 0 {
 			// request not set
-			return lCap
+			return lCap, nil
 		}
 		// request set, round up to min
-		return util.Min(util.Max(rCap, minVolumeSize), lCap)
+		return util.Min(util.Max(rCap, minVolumeSize), lCap), nil
 	}
 
 	// limit not set
-	return util.Max(rCap, minVolumeSize)
+	return util.Max(rCap, minVolumeSize), nil
 }
 
 // generateNewFileInstance populates the GCFS Instance object using
@@ -305,4 +318,36 @@ func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.V
 			attrVolume: instance.Volume.Name,
 		},
 	}
+}
+
+// ControllerExpandVolume expands a GCFS instance share.
+func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	volumeID := req.GetVolumeId()
+	if volumeID == "" {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
+	}
+
+	reqBytes, err := getRequestCapacity(req.GetCapacityRange())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	filer, _, err := getFileInstanceFromID(volumeID)
+	if err != nil {
+		glog.Errorf("failed to get instance for volumeID %v expansion, error: %v", volumeID, err)
+		return nil, err
+	}
+
+	filer.Project = s.config.metaService.GetProject()
+	filer.Volume.SizeBytes = reqBytes
+	newfiler, err := s.config.fileService.ResizeInstance(ctx, filer)
+	if err != nil {
+		glog.Errorf("failed to resize volumeID %v, error: %v", volumeID, err)
+		return nil, err
+	}
+
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         newfiler.Volume.SizeBytes,
+		NodeExpansionRequired: false,
+	}, nil
 }
