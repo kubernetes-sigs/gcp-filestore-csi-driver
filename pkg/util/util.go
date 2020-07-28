@@ -26,6 +26,10 @@ func RoundBytesToGb(bytes int64) int64 {
 	return (bytes + Gb - 1) / Gb
 }
 
+func BytesToGb(bytes int64) int64 {
+	return bytes / Gb
+}
+
 func GbToBytes(gbs int64) int64 {
 	return gbs * Gb
 }

@@ -12,3 +12,4 @@ parameters:
   # tier: premier
   # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
   # network: default
+allowVolumeExpansion: true
