@@ -47,10 +47,15 @@ func main() {
 	var err error
 	if *runController {
 		provider, err = cloud.NewCloud(version)
-		if err != nil {
-			glog.Fatalf("Failed to initialize cloud provider: %v", err)
-		}
+	} else {
+		// For driver running in worker nodes, initialize cloud provider with only medata service.
+		provider, err = cloud.NewCloudWithMetadataService()
 	}
+
+	if err != nil {
+		glog.Fatalf("Failed to initialize cloud provider: %v", err)
+	}
+
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
 		Name:          driverName,

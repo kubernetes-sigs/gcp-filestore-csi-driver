@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/utils/mount"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 )
 
 const (
@@ -41,14 +42,16 @@ var (
 
 // nodeServer handles mounting and unmounting of GCFS volumes on a node
 type nodeServer struct {
-	driver  *GCFSDriver
-	mounter mount.Interface
+	driver      *GCFSDriver
+	mounter     mount.Interface
+	metaService metadata.Service
 }
 
-func newNodeServer(driver *GCFSDriver, mounter mount.Interface) csi.NodeServer {
+func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service) csi.NodeServer {
 	return &nodeServer{
-		driver:  driver,
-		mounter: mounter,
+		driver:      driver,
+		mounter:     mounter,
+		metaService: metaService,
 	}
 }
 
@@ -157,6 +160,9 @@ func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpub
 func (s *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	return &csi.NodeGetInfoResponse{
 		NodeId: s.driver.config.NodeID,
+		AccessibleTopology: &csi.Topology{
+			Segments: map[string]string{TopologyKeyZone: s.metaService.GetZone()},
+		},
 	}, nil
 }
 

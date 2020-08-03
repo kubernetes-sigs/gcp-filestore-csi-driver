@@ -43,3 +43,14 @@ func NewCloud(version string) (*Cloud, error) {
 		Meta: meta,
 	}, nil
 }
+
+func NewCloudWithMetadataService() (*Cloud, error) {
+	meta, err := metadata.NewMetadataService()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize Metadata service: %v", err)
+	}
+
+	return &Cloud{
+		Meta: meta,
+	}, nil
+}

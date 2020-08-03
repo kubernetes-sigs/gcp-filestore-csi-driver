@@ -25,6 +25,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"k8s.io/utils/mount"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 )
 
 var (
@@ -58,8 +59,12 @@ type nodeServerTestEnv struct {
 func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 	// TODO: make a constructor in FakeMmounter library
 	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	metaserice, err := metadata.NewFakeService()
+	if err != nil {
+		t.Fatalf("Failed to init metadata service")
+	}
 	return &nodeServerTestEnv{
-		ns: newNodeServer(initTestDriver(t), mounter),
+		ns: newNodeServer(initTestDriver(t), mounter, metaserice),
 		fm: mounter,
 	}
 }

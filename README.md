@@ -41,12 +41,26 @@ volume. Customizable parameters for volume creation include:
 | ---------------   | ----------------------- |-----------                             | ----------- |
 | tier              | "standard"<br>"premium" | "standard"                             | storage performance tier |
 | network           | string                  | "default"                              | VPC name |
-| location          | string                  | zone where the plugin<br>is running in | zone |
 | reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each |
 
 For Kubernetes clusters, these parameters are specified in the StorageClass.
 
 Note that non-default networks require extra [firewall setup](https://cloud.google.com/filestore/docs/configuring-firewall)
+
+## Current supported Features
+* Volume resizing: CSI Filestore driver supports volume expansion for all supported Filestore tiers.
+* Topology preferences: Filestore performance and network usage is affected by topology. For example, it is recommended to run
+  workloads in the same zone where the Cloud Filestore instance is provisioned in. The following table describes how provisioning can be tuned by topology. The volumeBindingMode is specified in the StorageClass used for provisioning. 'strict-topology' is a flag passed to the CSI provisioner sidecar. 'allowedTopology' is also specified in the StorageClass. The Filestore driver will use the first topology in the preferred list, or if empty the first in the requisite list. If topology feature is not enabled in CSI provisioner (--feature-gates=Topology=false), CreateVolume.accessibility_requirements will be nil, and the driver simply creates the instance in the zone where the driver deployment running.
+
+
+  | SC Bind Mode         | 'strict-topology' | SC allowedTopology  | CSI provisioner Behavior    |
+  | -------------------- | ----------------- | ------------------- | --------------------------- |
+  | WaitForFirstCustomer |       true        |        Present      | If the topology of the node selected by the schedule is not in allowedTopology, provisioning fails and the scheduler will continue with a different node. Otherwise, CreateVolume is called with requisite and preferred topologies set to that of the selected node |
+  | WaitForFirstCustomer |       false       |        Present      | If the topology of the node selected by the schedule is not in allowedTopology, provisioning fails and the scheduler will continue with a different node. Otherwise, CreateVolume is called with requisite set to allowedTopology and preferred set to allowedTopology rearranged with the selected node topology as the first parameter |
+  | WaitForFirstCustomer |       true        |        Not Present  | Call CreateVolume with requisite set to selected node topology, and preferred set to the same |
+  | WaitForFirstCustomer |       false       |        Not Present  | Call CreateVolume with requisite set to aggregated topology across all nodes, which matches the topology of the selected node, and preferred is set to the sorted and shifted version of requisite, with selected node topology as the first parameter |
+  | Immediate            |       N/A         |        Present      | Call CreateVolume with requisite set to allowedTopology and preferred set to the sorted and shifted version of requisite at a randomized index |
+  | Immediate            |       N/A         |        Not Present  | Call CreateVolume with requisite = aggregated topology across nodes which contain the topology keys of CSINode objects, preferred = sort and shift requisite at a randomized index |
 
 ## Future Features
 * Non-root access: By default, GCFS instances are only writable by the root user
@@ -58,11 +72,6 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
   [nfs-client](https://github.com/kubernetes-incubator/external-storage/tree/master/nfs-client)
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
-* Volume resizing: CSI Filestore driver supports volume expansion for all supported Filestore tiers.
-* Topology preferences: For better performance, it is recommended to run
-  workloads in the same zone where the Cloud Filestore instance is provisioned in. In the
-  future, the location where to create a Cloud Filestore instance could be automatically
-  influenced by where the workload is scheduled.
 
 ## Kubernetes User Guide
 1. One-time per project: Create GCP service account for the CSI driver and set the Cloud

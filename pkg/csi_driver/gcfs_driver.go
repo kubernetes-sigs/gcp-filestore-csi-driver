@@ -82,7 +82,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 	// Setup RPC servers
 	driver.ids = newIdentityServer(driver)
 	if config.RunNode {
-		driver.ns = newNodeServer(driver, config.Mounter)
+		driver.ns = newNodeServer(driver, config.Mounter, config.Cloud.Meta)
 	}
 	if config.RunController {
 		csc := []csi.ControllerServiceCapability_RPC_Type{
