@@ -18,6 +18,7 @@ package driver
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"runtime"
 
@@ -55,57 +56,33 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 	}
 }
 
-// NodePublishVolume mounts the GCFS volume
+// NodePublishVolume bind mounts from the source staging path, where the GCFS volume is mounted.
 func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolumeRequest) (*csi.NodePublishVolumeResponse, error) {
-	// TODO: make this idempotent. Multiple requests for the same volume can come in parallel, this needs to be seralized
-	// We need something like the nestedpendingoperations
-
 	// Validate arguments
 	readOnly := req.GetReadonly()
 	targetPath := req.GetTargetPath()
+	stagingTargetPath := req.GetStagingTargetPath()
 	if len(targetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume target path must be provided")
+	}
+	if len(stagingTargetPath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume stagingTargetPath path must be provided")
 	}
 
 	if err := s.driver.validateVolumeCapabilities([]*csi.VolumeCapability{req.GetVolumeCapability()}); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Validate volume attributes
-	attr := req.GetVolumeContext()
-	if err := validateVolumeAttributes(attr); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
-	// TODO: If target path does not exist create it and then proceed to mount.
-	// Check kubernetes/kubernetes#75535. CO may create only the parent directory.
-	mounted, err := s.isDirMounted(targetPath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, err
-	}
-
-	if mounted {
-		// Already mounted
-		// TODO: validate it's the correct mount
-		return &csi.NodePublishVolumeResponse{}, nil
-	}
-
-	// Mount source
-	source := fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
-
+	var err error
 	// FileSystem type
 	fstype := "nfs"
-
 	// Mount options
-	options := []string{}
-
-	// Windows specific values
+	options := []string{"bind"}
+	// Windows specific values (TODO: Revisit windows specific logic for bind mount)
 	if goOs == "windows" {
-		source = fmt.Sprintf("\\\\%s\\%s", attr[attrIP], attr[attrVolume])
 		fstype = "cifs"
 
 		// Login credentials
-
 		secrets := req.GetSecrets()
 		if err := validateSmbNodePublishSecrets(secrets); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -118,6 +95,17 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
 			return nil, err
 		}
+	} else {
+		// TODO: If target path does not exist create it and then proceed to mount.
+		// (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47)
+		// Check kubernetes/kubernetes#75535. CO may create only the parent directory.
+		mounted, err := s.isDirMounted(targetPath)
+		if err != nil && !os.IsNotExist(err) {
+			return nil, err
+		}
+		if mounted {
+			return &csi.NodePublishVolumeResponse{}, nil
+		}
 	}
 
 	if readOnly {
@@ -127,12 +115,13 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		options = append(options, capMount.GetMountFlags()...)
 	}
 
-	err = s.mounter.Mount(source, targetPath, fstype, options)
+	err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
 	if err != nil {
 		glog.Errorf("Mount %q failed, cleaning up", targetPath)
-		if unmntErr := s.unmountPath(targetPath); unmntErr != nil {
+		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
 			glog.Errorf("Unmount %q failed: %v", targetPath, unmntErr)
 		}
+
 		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", targetPath, err))
 	}
 
@@ -142,15 +131,13 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 // NodeUnpublishVolume unmounts the GCFS volume
 func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublishVolumeRequest) (*csi.NodeUnpublishVolumeResponse, error) {
-	// TODO: make this idempotent
-
 	// Validate arguments
 	targetPath := req.GetTargetPath()
 	if len(targetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume target path must be provided")
 	}
 
-	if err := s.unmountPath(targetPath); err != nil {
+	if err := mount.CleanupMountPoint(targetPath, s.mounter, false /* extensiveMountPointCheck */); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -172,11 +159,147 @@ func (s *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCa
 	}, nil
 }
 
+func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
+	// Validate Arguments
+	volumeID := req.GetVolumeId()
+	stagingTargetPath := req.GetStagingTargetPath()
+	volumeCapability := req.GetVolumeCapability()
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume ID must be provided")
+	}
+	if len(stagingTargetPath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Staging Target Path must be provided")
+	}
+	if volumeCapability == nil {
+		return nil, status.Error(codes.InvalidArgument, "NodeStageVolume Volume Capability must be provided")
+	}
+
+	if err := validateVolumeCapability(volumeCapability); err != nil {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("VolumeCapability is invalid: %v", err))
+	}
+
+	// Validate volume attributes
+	attr := req.GetVolumeContext()
+	if err := validateVolumeAttributes(attr); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Mount source
+	source := fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
+	mounted, err := s.isDirMounted(stagingTargetPath)
+	needsCreateDir := false
+	if err != nil {
+		if os.IsNotExist(err) {
+			needsCreateDir = true
+		} else {
+			return nil, err
+		}
+	}
+
+	if mounted {
+		// Already mounted
+		glog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
+		return &csi.NodeStageVolumeResponse{}, nil
+	}
+
+	if needsCreateDir {
+		glog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
+		if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
+			return nil, fmt.Errorf("mkdir failed for path %s (%v)", stagingTargetPath, err)
+		}
+	}
+
+	fstype := "nfs"
+	options := []string{}
+	if mnt := volumeCapability.GetMount(); mnt != nil {
+		for _, flag := range mnt.MountFlags {
+			options = append(options, flag)
+		}
+	}
+
+	err = s.mounter.Mount(source, stagingTargetPath, fstype, options)
+	if err != nil {
+		glog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
+		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
+			glog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr)
+		}
+		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", stagingTargetPath, err))
+	}
+
+	glog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
+	return &csi.NodeStageVolumeResponse{}, nil
+}
+
+func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstageVolumeRequest) (*csi.NodeUnstageVolumeResponse, error) {
+	// Validate arguments
+	volumeID := req.GetVolumeId()
+	stagingTargetPath := req.GetStagingTargetPath()
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Volume ID must be provided")
+	}
+	if len(stagingTargetPath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Staging Target Path must be provided")
+	}
+
+	if err := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	glog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s", volumeID, stagingTargetPath)
+	return &csi.NodeUnstageVolumeResponse{}, nil
+}
+
+func validateVolumeCapability(vc *csi.VolumeCapability) error {
+	if err := validateAccessMode(vc.GetAccessMode()); err != nil {
+		return err
+	}
+
+	blk := vc.GetBlock()
+	mnt := vc.GetMount()
+	if mnt == nil && blk == nil {
+		return fmt.Errorf("must specify an access type")
+	}
+
+	if mnt != nil && blk != nil {
+		return fmt.Errorf("specified both mount and block access types")
+	}
+
+	if blk != nil {
+		return fmt.Errorf("Block access type not supported")
+	}
+	return nil
+}
+
+func validateAccessMode(am *csi.VolumeCapability_AccessMode) error {
+	if am == nil {
+		return fmt.Errorf("access mode is nil")
+	}
+
+	switch am.GetMode() {
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER:
+	case csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY:
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY:
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER:
+	case csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER:
+	default:
+		return fmt.Errorf("Unkown access mode %v", am.GetMode())
+	}
+	return nil
+}
+
 // validateVolumeAttributes checks for all the necessary fields for mounting the volume
 func validateVolumeAttributes(attr map[string]string) error {
-	// TODO: validate ip syntax
-	if attr[attrIP] == "" {
-		return fmt.Errorf("volume attribute %v not set", attrIP)
+	instanceip, ok := attr[attrIP]
+	if !ok {
+		return fmt.Errorf("volume attribute key %v not set", attrIP)
+	}
+	// Check for valid IPV4 address.
+	if net.ParseIP(instanceip) == nil {
+		return fmt.Errorf("invalid IP address %v in volume attributes", instanceip)
+	}
+
+	_, ok = attr[attrVolume]
+	if !ok {
+		return fmt.Errorf("volume attribute key %v not set", attrVolume)
 	}
 	// TODO: validate allowed characters
 	if attr[attrVolume] == "" {
@@ -210,25 +333,4 @@ func (s *nodeServer) isDirMounted(targetPath string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
-}
-
-// unmountPath unmounts the given path if it a mount point
-func (s *nodeServer) unmountPath(targetPath string) error {
-	mounted, err := s.isDirMounted(targetPath)
-	if os.IsNotExist(err) {
-		// Volume already unmounted
-		glog.V(4).Infof("Mount point %q already unmounted", targetPath)
-		return nil
-	} else if err != nil {
-		return fmt.Errorf("failed to check mount point %q: %v", targetPath, err)
-	}
-
-	if mounted {
-		glog.V(4).Infof("Unmounting %q", targetPath)
-		err := s.mounter.Unmount(targetPath)
-		if err != nil {
-			return fmt.Errorf("unmount %q failed: %v", targetPath, err)
-		}
-	}
-	return nil
 }
