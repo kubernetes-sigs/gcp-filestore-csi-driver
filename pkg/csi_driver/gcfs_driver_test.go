@@ -20,14 +20,21 @@ import (
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 )
 
 func initTestDriver(t *testing.T) *GCFSDriver {
+	c, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to init cloud")
+	}
+
 	config := &GCFSDriverConfig{
 		Name:    "test-driver",
 		NodeID:  "test-node",
 		Version: "test-version",
 		RunNode: true,
+		Cloud:   c,
 	}
 	driver, err := NewGCFSDriver(config)
 	if err != nil {

@@ -38,6 +38,9 @@ const (
 
 	defaultTier    = "standard"
 	defaultNetwork = "default"
+
+	// Keys for Topology.
+	TopologyKeyZone = "topology.gke.io/zone"
 )
 
 // Volume attributes
@@ -91,7 +94,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	}
 
 	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
-	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters())
+	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -101,6 +104,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
+
 	if filer != nil {
 		// Instance already exists, check if it meets the request
 		if err = file.CompareInstances(newFiler, filer); err != nil {
@@ -268,22 +272,24 @@ func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
-func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string) (*file.ServiceInstance, error) {
+func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
+	location, err := s.pickZone(topo)
+	if err != nil {
+		return nil, fmt.Errorf("invalid topology error %v", err.Error())
+	}
+
 	// Set default parameters
 	tier := defaultTier
 	network := defaultNetwork
-	location := s.config.metaService.GetZone()
+
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
 		switch strings.ToLower(k) {
 		// Cloud API will validate these
 		case paramTier:
 			tier = v
-		case paramLocation:
-			location = v
 		case paramNetwork:
 			network = v
-
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		case paramReservedIPV4CIDR:
@@ -350,4 +356,67 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		CapacityBytes:         newfiler.Volume.SizeBytes,
 		NodeExpansionRequired: false,
 	}, nil
+}
+
+func (s *controllerServer) pickZone(top *csi.TopologyRequirement) (string, error) {
+	if top == nil {
+		return s.config.metaService.GetZone(), nil
+	}
+
+	return pickZoneFromTopology(top)
+}
+
+// Pick the first available topology from preferred list or requisite list in that order.
+func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
+	reqZones, err := getZonesFromTopology(top.GetRequisite())
+	if err != nil {
+		return "", fmt.Errorf("could not get zones from requisite topology: %v", err)
+	}
+
+	prefZones, err := getZonesFromTopology(top.GetPreferred())
+	if err != nil {
+		return "", fmt.Errorf("could not get zones from preferred topology: %v", err)
+	}
+
+	if len(prefZones) == 0 && len(reqZones) == 0 {
+		return "", fmt.Errorf("both requisite and preferred topology list empty")
+	}
+
+	if len(prefZones) != 0 {
+		return prefZones[0], nil
+	}
+	return reqZones[0], nil
+}
+
+func getZonesFromTopology(topList []*csi.Topology) ([]string, error) {
+	zones := []string{}
+	for _, top := range topList {
+		if top.GetSegments() == nil {
+			return nil, fmt.Errorf("topologies specified but no segments")
+		}
+
+		zone, err := getZoneFromSegment(top.GetSegments())
+		if err != nil {
+			return nil, fmt.Errorf("could not get zone from topology: %v", err)
+		}
+		zones = append(zones, zone)
+	}
+	return zones, nil
+}
+
+func getZoneFromSegment(seg map[string]string) (string, error) {
+	var zone string
+	for k, v := range seg {
+		switch k {
+		case TopologyKeyZone:
+			zone = v
+		default:
+			return "", fmt.Errorf("topology segment has unknown key %v", k)
+		}
+	}
+
+	if len(zone) == 0 {
+		return "", fmt.Errorf("topology specified but could not find zone in segment: %v", seg)
+	}
+	return zone, nil
 }

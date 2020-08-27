@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore-immediate-binding-allowedtopo
+provisioner: filestore.csi.storage.gke.io
+volumeBindingMode: Immediate
+allowVolumeExpansion: true
+allowedTopologies:
+- matchLabelExpressions:
+  - key: topology.gke.io/zone
+    values:
+    - us-central1-a

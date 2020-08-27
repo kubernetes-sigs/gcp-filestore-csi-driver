@@ -3,7 +3,5 @@ kind: StorageClass
 metadata:
   name: csi-filestore
 provisioner: filestore.csi.storage.gke.io
-parameters:
-  location: us-central1-c
 volumeBindingMode: WaitForFirstConsumer
 allowVolumeExpansion: true

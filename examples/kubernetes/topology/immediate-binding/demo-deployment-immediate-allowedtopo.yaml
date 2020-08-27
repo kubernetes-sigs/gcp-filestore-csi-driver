@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-server-immediate-allowedtopo
+  labels:
+    app: nginx
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - name: nginx
+        image: nginx
+        volumeMounts:
+        - mountPath: /usr/share/nginx/html
+          name: mypvc
+      nodeSelector:
+        topology.gke.io/zone: us-central1-a
+      volumes:
+      - name: mypvc
+        persistentVolumeClaim:
+          claimName: test-pvc-fs-immediate-binding-allowedtopo
+
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-pvc-fs-immediate-binding-allowedtopo
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: csi-filestore-immediate-binding-allowedtopo
+  resources:
+    requests:
+      storage: 1Ti

@@ -22,6 +22,7 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -309,11 +310,12 @@ func TestGenerateNewFileInstance(t *testing.T) {
 	cases := []struct {
 		name      string
 		params    map[string]string
+		toporeq   *csi.TopologyRequirement
 		instance  *file.ServiceInstance
 		expectErr bool
 	}{
 		{
-			name: "default params",
+			name: "default params, nil topology requirement",
 			instance: &file.ServiceInstance{
 				Project:  testProject,
 				Name:     testCSIVolume,
@@ -329,10 +331,99 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			},
 		},
 		{
-			name: "custom params",
+			name: "custom params, non-nil topology requirement",
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+			},
 			params: map[string]string{
 				paramTier:                       "foo-tier",
-				paramLocation:                   "foo-location",
+				paramNetwork:                    "foo-network",
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: "foo-location",
+				Tier:     "foo-tier",
+				Network: file.Network{
+					Name: "foo-network",
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+			},
+		},
+		{
+			name: "custom params, preferred topology requirement",
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "bar-location",
+						},
+					},
+				},
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "bar-location",
+						},
+					},
+				},
+			},
+			params: map[string]string{
+				paramTier:                       "foo-tier",
+				paramNetwork:                    "foo-network",
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: "bar-location",
+				Tier:     "foo-tier",
+				Network: file.Network{
+					Name: "foo-network",
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+			},
+		},
+		{
+			name: "custom params, requisite topology requirement only",
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+			},
+			params: map[string]string{
+				paramTier:                       "foo-tier",
 				paramNetwork:                    "foo-network",
 				"csiProvisionerSecretName":      "foo-secret",
 				"csiProvisionerSecretNamespace": "foo-namespace",
@@ -367,7 +458,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			t.Fatalf("couldn't get internal controller")
 		}
 
-		filer, err := internalServer.generateNewFileInstance(testCSIVolume, testBytes, test.params)
+		filer, err := internalServer.generateNewFileInstance(testCSIVolume, testBytes, test.params, test.toporeq)
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}
@@ -377,5 +468,178 @@ func TestGenerateNewFileInstance(t *testing.T) {
 		if !reflect.DeepEqual(filer, test.instance) {
 			t.Errorf("test %q failed: got filer %+v, expected %+v", test.name, filer, test.instance)
 		}
+	}
+}
+
+func TestGetZoneFromSegment(t *testing.T) {
+	cases := []struct {
+		name         string
+		seg          map[string]string
+		expectErr    bool
+		expectedZone string
+	}{
+		// Error cases
+		{
+			name:      "Empty segment map",
+			seg:       make(map[string]string),
+			expectErr: true,
+		},
+		{
+			name: "Missing zone key in segment map",
+			seg: map[string]string{
+				"zonekey": "z1",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Unknown zone key in segment map",
+			seg: map[string]string{
+				TopologyKeyZone: "z1",
+				"unknown_key":   "z2",
+			},
+			expectErr: true,
+		},
+		// Successful cases
+		{
+			name: "Found expected zone",
+			seg: map[string]string{
+				TopologyKeyZone: "z1",
+			},
+			expectedZone: "z1",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			z, err := getZoneFromSegment(tc.seg)
+			if tc.expectErr && err == nil {
+				t.Errorf("Expected error, got none")
+			}
+
+			if !tc.expectErr && err != nil {
+				t.Errorf("Unexpected error %v", err)
+			}
+
+			if z != tc.expectedZone {
+				t.Errorf("Unexpected zone %v, expected zone %v", z, tc.expectedZone)
+			}
+		})
+	}
+}
+
+func TestGetZonesFromTopology(t *testing.T) {
+	cases := []struct {
+		name          string
+		topo          []*csi.Topology
+		expectErr     bool
+		expectedZones []string
+	}{
+		// Error cases
+		{
+			name:          "nil topology list",
+			topo:          nil,
+			expectedZones: make([]string, 0),
+		},
+		{
+			name:          "Empty topology list",
+			topo:          make([]*csi.Topology, 0),
+			expectedZones: make([]string, 0),
+		},
+		{
+			name:      "Non-Empty topology list with missing segment",
+			topo:      make([]*csi.Topology, 1),
+			expectErr: true,
+		},
+		{
+			name: "Non-Empty topology list with segment missing zone key",
+			topo: []*csi.Topology{
+				{
+					Segments: map[string]string{},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Non-Empty topology list with segment unknown zone key",
+			topo: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						"unknown_zone_key": "z1",
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Non-Empty topology list with empty segment map",
+			topo: []*csi.Topology{
+				{
+					Segments: make(map[string]string),
+				},
+			},
+			expectErr: true,
+		},
+		// two elements, one with error.
+		{
+			name: "Non-Empty topology list with error in one of the elements",
+			topo: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						"unknown_key": "z1",
+					},
+				},
+				{
+					Segments: map[string]string{
+						TopologyKeyZone: "z2",
+					},
+				},
+			},
+			expectErr: true,
+		},
+		// Success cases
+		{
+			name: "Non-Empty topology list with valid segment",
+			topo: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						TopologyKeyZone: "z1",
+					},
+				},
+			},
+			expectedZones: []string{"z1"},
+		},
+		{
+			name: "Non-Empty topology list with multiple zones",
+			topo: []*csi.Topology{
+				{
+					Segments: map[string]string{
+						TopologyKeyZone: "z1",
+					},
+				},
+				{
+					Segments: map[string]string{
+						TopologyKeyZone: "z2",
+					},
+				},
+			},
+			expectedZones: []string{"z1", "z2"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			z, err := getZonesFromTopology(tc.topo)
+			if tc.expectErr && err == nil {
+				t.Errorf("Expected error, got none")
+			}
+
+			if !tc.expectErr && err != nil {
+				t.Errorf("Unexpected error %v", err)
+			}
+
+			if !sets.NewString(z...).Equal(sets.NewString(tc.expectedZones...)) {
+				t.Errorf("Unexpected zone list %v, expected zone list %v", z, tc.expectedZones)
+			}
+		})
 	}
 }
