@@ -50,6 +50,7 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 			Ip:              "test-ip",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
+		Labels: obj.Labels,
 	}
 
 	manager.createdInstances[obj.Name] = instance

@@ -55,6 +55,20 @@ const (
 	paramLocation         = "location"
 	paramNetwork          = "network"
 	paramReservedIPV4CIDR = "reserved-ipv4-cidr"
+
+	// Keys for PV and PVC parameters as reported by external-provisioner
+	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
+	ParameterKeyPVCNamespace = "csi.storage.k8s.io/pvc/namespace"
+	ParameterKeyPVName       = "csi.storage.k8s.io/pv/name"
+
+	// User provided labels
+	ParameterKeyLabels = "labels"
+
+	// Keys for tags to attach to the provisioned disk.
+	tagKeyCreatedForClaimNamespace = "kubernetes_io_created-for_pvc_namespace"
+	tagKeyCreatedForClaimName      = "kubernetes_io_created-for_pvc_name"
+	tagKeyCreatedForVolumeName     = "kubernetes_io_created-for_pv_name"
+	tagKeyCreatedBy                = "storage_gke_io_created-by"
 )
 
 // controllerServer handles volume provisioning
@@ -127,6 +141,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			// Adding the reserved IP range to the instance object
 			newFiler.Network.ReservedIpRange = reservedIPRange
 		}
+
+		// Add labels.
+		labels, err := extractLabels(req.GetParameters(), s.config.driver.config.Name)
+		if err != nil {
+			return nil, err
+		}
+		newFiler.Labels = labels
 
 		// Create the instance
 		filer, err = s.config.fileService.CreateInstance(ctx, newFiler)
@@ -294,6 +315,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		case paramReservedIPV4CIDR:
 			continue
+		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
@@ -419,4 +441,45 @@ func getZoneFromSegment(seg map[string]string) (string, error) {
 		return "", fmt.Errorf("topology specified but could not find zone in segment: %v", seg)
 	}
 	return zone, nil
+}
+
+func extractLabels(parameters map[string]string, driverName string) (map[string]string, error) {
+	labels := make(map[string]string)
+	scLables := make(map[string]string)
+	for k, v := range parameters {
+		switch strings.ToLower(k) {
+		case ParameterKeyPVCName:
+			labels[tagKeyCreatedForClaimName] = v
+		case ParameterKeyPVCNamespace:
+			labels[tagKeyCreatedForClaimNamespace] = v
+		case ParameterKeyPVName:
+			labels[tagKeyCreatedForVolumeName] = v
+		case ParameterKeyLabels:
+			var err error
+			scLables, err = util.ConvertLabelsStringToMap(v)
+			if err != nil {
+				return nil, fmt.Errorf("parameters contain invalid labels parameter: %w", err)
+			}
+		}
+	}
+
+	labels[tagKeyCreatedBy] = strings.ReplaceAll(driverName, ".", "_")
+	return mergeLabels(scLables, labels)
+}
+
+func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (map[string]string, error) {
+	result := make(map[string]string)
+	for k, v := range metedataLabels {
+		result[k] = v
+	}
+
+	for k, v := range scLabels {
+		if _, ok := result[k]; ok {
+			return nil, fmt.Errorf("Storage Class labels cannot contain metadata label key %s", k)
+		}
+
+		result[k] = v
+	}
+
+	return result, nil
 }

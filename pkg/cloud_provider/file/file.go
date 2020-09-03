@@ -39,6 +39,7 @@ type ServiceInstance struct {
 	Tier     string
 	Network  Network
 	Volume   Volume
+	Labels   map[string]string
 }
 
 type Volume struct {
@@ -97,7 +98,6 @@ func NewGCFSService(version string) (Service, error) {
 }
 
 func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	// TODO: add some labels to to tag this plugin
 	betaObj := &filev1.Instance{
 		Tier: obj.Tier,
 		FileShares: []*filev1.FileShareConfig{
@@ -113,16 +113,18 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				ReservedIpRange: obj.Network.ReservedIpRange,
 			},
 		},
+		Labels: obj.Labels,
 	}
 
 	glog.Infof("Starting CreateInstance cloud operation")
-	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v",
+	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, labels %v",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
 		betaObj.FileShares[0].CapacityGb,
 		betaObj.Networks[0].Network,
-		betaObj.Networks[0].ReservedIpRange)
+		betaObj.Networks[0].ReservedIpRange,
+		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
@@ -179,6 +181,7 @@ func cloudInstanceToServiceInstance(instance *filev1.Instance) (*ServiceInstance
 			Ip:              instance.Networks[0].IpAddresses[0],
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 		},
+		Labels: instance.Labels,
 	}, nil
 }
 
