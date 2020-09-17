@@ -106,6 +106,11 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		if mounted {
 			return &csi.NodePublishVolumeResponse{}, nil
 		}
+		if os.IsNotExist(err) {
+			if mkdirErr := os.MkdirAll(targetPath, 0750); mkdirErr != nil {
+				return nil, status.Error(codes.Internal, fmt.Sprintf("mkdir failed on path %s (%v)", targetPath, mkdirErr))
+			}
+		}
 	}
 
 	if readOnly {
