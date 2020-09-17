@@ -81,8 +81,8 @@ func TestNodePublishVolume(t *testing.T) {
 	if err = os.MkdirAll(testTargetPath, defaultPerm); err != nil {
 		t.Fatalf("failed to setup target path: %v", err)
 	}
+	stagingTargetPath := filepath.Join(base, "staging")
 	defer os.RemoveAll(base)
-
 	cases := []struct {
 		name          string
 		mounts        []mount.MountPoint // already existing mounts
@@ -99,30 +99,33 @@ func TestNodePublishVolume(t *testing.T) {
 		{
 			name: "valid request not already mounted",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeID,
-				TargetPath:       testTargetPath,
-				VolumeCapability: testVolumeCapability,
-				VolumeContext:    testVolumeAttributes,
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testVolumeAttributes,
 			},
 			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
-			expectedMount: &mount.MountPoint{Device: testDevice, Path: testTargetPath, Type: "nfs"},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind"}},
 		},
 		{
 			name:   "valid request already mounted",
 			mounts: []mount.MountPoint{{Device: "/test-device", Path: testTargetPath}},
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeID,
-				TargetPath:       testTargetPath,
-				VolumeCapability: testVolumeCapability,
-				VolumeContext:    testVolumeAttributes,
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testVolumeAttributes,
 			},
 			expectedMount: &mount.MountPoint{Device: "/test-device", Path: testTargetPath},
 		},
 		{
 			name: "valid request with user mount options",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:   testVolumeID,
-				TargetPath: testTargetPath,
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
 				VolumeCapability: &csi.VolumeCapability{
 					AccessType: &csi.VolumeCapability_Mount{
 						Mount: &csi.VolumeCapability_MountVolume{
@@ -137,24 +140,36 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			actions: []mount.FakeAction{{Action: mount.FakeActionMount}},
 
-			expectedMount: &mount.MountPoint{Device: testDevice, Path: testTargetPath, Type: "nfs", Opts: []string{"foo", "bar"}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "foo", "bar"}},
 		},
 		{
 			name: "valid request read only",
 			req: &csi.NodePublishVolumeRequest{
-				VolumeId:         testVolumeID,
-				TargetPath:       testTargetPath,
-				VolumeCapability: testVolumeCapability,
-				VolumeContext:    testVolumeAttributes,
-				Readonly:         true,
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testVolumeAttributes,
+				Readonly:          true,
 			},
 			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
-			expectedMount: &mount.MountPoint{Device: testDevice, Path: testTargetPath, Type: "nfs", Opts: []string{"ro"}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "ro"}},
 		},
 		{
 			name: "empty target path",
 			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testVolumeAttributes,
+			},
+			expectErr: true,
+		},
+		{
+			name: "empty staging target path",
+			req: &csi.NodePublishVolumeRequest{
 				VolumeId:         testVolumeID,
+				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 				VolumeContext:    testVolumeAttributes,
 			},
@@ -178,7 +193,7 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			expectErr: true,
 		},
-		// TODO: Revisit this.
+		// TODO: Revisit this (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47).
 		// {
 		// 	name: "target path doesn't exist",
 		// 	req: &csi.NodePublishVolumeRequest{
@@ -212,7 +227,8 @@ func TestNodePublishVolume(t *testing.T) {
 	}
 }
 
-func TestWindowsNodePublishVolume(t *testing.T) {
+// TODO: Revisit windows tests
+func testWindowsNodePublishVolume(t *testing.T) {
 	defaultPerm := os.FileMode(0750) + os.ModeDir
 	defaultOsString := goOs
 

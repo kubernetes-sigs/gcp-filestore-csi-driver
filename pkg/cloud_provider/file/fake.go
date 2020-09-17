@@ -47,7 +47,7 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		},
 		Network: Network{
 			Name:            obj.Network.Name,
-			Ip:              "test-ip",
+			Ip:              "1.1.1.1",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
 		Labels: obj.Labels,

@@ -31,7 +31,7 @@ import (
 const (
 	testProject          = "test-project"
 	testLocation         = "test-location"
-	testIP               = "test-ip"
+	testIP               = "1.1.1.1"
 	testCSIVolume        = "test-csi"
 	testVolumeID         = "modeInstance/test-location/test-csi/vol1"
 	testReservedIPV4CIDR = "192.168.92.0/26"
