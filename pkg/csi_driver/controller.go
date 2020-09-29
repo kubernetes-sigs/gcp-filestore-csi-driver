@@ -106,11 +106,34 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-
 	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// TODO: The workflow to provision a volume from a volume snapshot source needs to be implemented.
+	// The block of code is added to make sanity tests happy, because if the driver supports CREATE_DELETE_VOLUME,
+	// it is expected to support provision a volume from a volume snapshot source.
+	if req.GetVolumeContentSource() != nil {
+		if req.GetVolumeContentSource().GetVolume() != nil {
+			return nil, status.Error(codes.InvalidArgument, "Unsupported volume content source")
+		}
+
+		if req.GetVolumeContentSource().GetSnapshot() != nil {
+			id := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
+			isBackupSource, err := util.IsBackupHandle(id)
+			if err != nil || !isBackupSource {
+				return nil, status.Error(codes.NotFound, fmt.Sprintf("Unsupported volume content source %v", id))
+			}
+			_, err = s.config.fileService.GetBackup(ctx, id)
+			if err != nil {
+				if file.IsNotFoundErr(err) {
+					return nil, status.Error(codes.NotFound, fmt.Sprintf("Failed to get snapshot %v", id))
+				}
+				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err))
+			}
+		}
 	}
 
 	// Check if the instance already exists
@@ -482,4 +505,109 @@ func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (
 	}
 
 	return result, nil
+}
+
+func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	if len(req.Name) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot name must be provided")
+	}
+	volumeID := req.GetSourceVolumeId()
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
+	}
+	filer, _, err := getFileInstanceFromID(volumeID)
+	if err != nil {
+		glog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	filer.Project = s.config.metaService.GetProject()
+	// If parameters are empty we assume 'backup' type by default.
+	if req.GetParameters() != nil {
+		if _, err := util.IsSnapshotTypeSupported(req.GetParameters()); err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	}
+
+	// Check for exisitng snapshot
+	backupUri, _, err := file.CreateBackpURI(filer, req.Name, util.GetBackupLocation(req.GetParameters()))
+	if err != nil {
+		return nil, err
+	}
+	backupInfo, err := s.config.fileService.GetBackup(ctx, backupUri)
+	if err != nil {
+		if !file.IsNotFoundErr(err) {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+	} else {
+		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceVolumeHandle)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle))
+		}
+		if backupSourceCSIHandle != volumeID {
+			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID))
+		}
+		// Check if backup is ready.
+		if backupInfo.Backup.State != "READY" {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+		}
+		tp, err := util.ParseTimestamp(backupInfo.Backup.CreateTime)
+		if err != nil {
+			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to parse create timestamp for backup %v", backupInfo.Backup.Name))
+		}
+		return &csi.CreateSnapshotResponse{
+			Snapshot: &csi.Snapshot{
+				SizeBytes:      util.GbToBytes(backupInfo.Backup.CapacityGb),
+				SnapshotId:     backupInfo.Backup.Name,
+				SourceVolumeId: volumeID,
+				CreationTime:   tp,
+				ReadyToUse:     true,
+			},
+		}, nil
+	}
+
+	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	tp, err := util.ParseTimestamp(backupObj.CreateTime)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	resp := &csi.CreateSnapshotResponse{
+		Snapshot: &csi.Snapshot{
+			SizeBytes:      util.GbToBytes(backupObj.CapacityGb),
+			SnapshotId:     backupObj.Name,
+			SourceVolumeId: volumeID,
+			CreationTime:   tp,
+			ReadyToUse:     true,
+		},
+	}
+	glog.Infof("CreateSnapshot succeeded for Id %s on volume %s", backupObj.Name, volumeID)
+	return resp, nil
+}
+
+func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+	// Validate arguments
+	id := req.GetSnapshotId()
+	if len(id) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "DeleteSnapshot snapshot Id must be provided")
+	}
+
+	isBackup, err := util.IsBackupHandle(id)
+	if err != nil {
+		// Sanity tests expects delete to pass for invalid handles.
+		glog.Warningf("Could not parse snapshot handle %v", id)
+		return &csi.DeleteSnapshotResponse{}, nil
+	}
+
+	if !isBackup {
+		glog.Errorf("Deletion of snapshot type %q not supported", id)
+		return nil, status.Error(codes.Internal, "Deletion of snapshot type not supported")
+	}
+
+	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return &csi.DeleteSnapshotResponse{}, nil
 }

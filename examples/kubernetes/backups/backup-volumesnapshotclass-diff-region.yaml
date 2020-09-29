@@ -1,0 +1,9 @@
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshotClass
+metadata:
+  name: csi-gcp-filestore-backup-snap-class-diff-region
+driver: filestore.csi.storage.gke.io
+parameters:
+  type: backup
+  location: us-east1 # Change it to a region different source filestore instance region
+deletionPolicy: Delete

@@ -19,4 +19,4 @@ set -o pipefail
 
 echo "Verifying govet"
 
-go vet $(go list ./... | grep -v vendor)
+go vet -mod=vendor $(go list ./... | grep -v vendor)
