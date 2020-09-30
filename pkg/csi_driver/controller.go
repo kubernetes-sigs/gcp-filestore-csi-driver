@@ -90,9 +90,7 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 
 // CreateVolume creates a GCFS instance
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	glog.V(4).Infof("CreateVolume called with request %v", *req)
-
-	// Validate arguments
+	glog.V(4).Infof("CreateVolume called with request %+v", req)
 	name := req.GetName()
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
@@ -107,14 +105,8 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
-	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 
-	// TODO: The workflow to provision a volume from a volume snapshot source needs to be implemented.
-	// The block of code is added to make sanity tests happy, because if the driver supports CREATE_DELETE_VOLUME,
-	// it is expected to support provision a volume from a volume snapshot source.
+	sourceSnapshotId := ""
 	if req.GetVolumeContentSource() != nil {
 		if req.GetVolumeContentSource().GetVolume() != nil {
 			return nil, status.Error(codes.InvalidArgument, "Unsupported volume content source")
@@ -129,11 +121,19 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
 				if file.IsNotFoundErr(err) {
+					glog.Errorf("Volume %v source snapshot %v not found", name, id)
 					return nil, status.Error(codes.NotFound, fmt.Sprintf("Failed to get snapshot %v", id))
 				}
+				glog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err)
 				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err))
 			}
+			sourceSnapshotId = id
 		}
+	}
+
+	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	// Check if the instance already exists
@@ -143,9 +143,16 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	}
 
 	if filer != nil {
+		glog.V(4).Infof("Found existing instance %+v, current instance %+v\n", filer, newFiler)
 		// Instance already exists, check if it meets the request
 		if err = file.CompareInstances(newFiler, filer); err != nil {
 			return nil, status.Error(codes.AlreadyExists, err.Error())
+		}
+
+		if filer.State != "READY" {
+			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
+			glog.V(4).Infof(msg)
+			return nil, status.Error(codes.Internal, msg)
 		}
 	} else {
 		// If we are creating a new instance, we need pick an unused /29 range from reserved-ipv4-cidr
@@ -173,12 +180,19 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		newFiler.Labels = labels
 
 		// Create the instance
-		filer, err = s.config.fileService.CreateInstance(ctx, newFiler)
-		if err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+		var createErr error
+		if sourceSnapshotId != "" {
+			filer, createErr = s.config.fileService.CreateInstanceFromBackupSource(ctx, newFiler, sourceSnapshotId)
+		} else {
+			filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
+		}
+		if createErr != nil {
+			return nil, status.Error(codes.Internal, createErr.Error())
 		}
 	}
-	return &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance)}, nil
+	resp := &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
+	glog.Infof("CreateVolume succeeded: %+v", resp)
+	return resp, nil
 }
 
 // reserveIPRange returns the available IP in the cidr
@@ -210,8 +224,7 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 
 // DeleteVolume deletes a GCFS instance
 func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	glog.V(4).Infof("DeleteVolume called with request %v", *req)
-
+	glog.V(4).Infof("DeleteVolume called with request %+v", req)
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
@@ -229,11 +242,11 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	glog.Infof("DeleteVolume succeeded for volume %v", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
 func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *csi.ValidateVolumeCapabilitiesRequest) (*csi.ValidateVolumeCapabilitiesResponse, error) {
-	// Validate arguments
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
@@ -360,8 +373,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
-	return &csi.Volume{
+func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapshotId string) *csi.Volume {
+	resp := &csi.Volume{
 		VolumeId:      getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
 		VolumeContext: map[string]string{
@@ -369,10 +382,22 @@ func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.V
 			attrVolume: instance.Volume.Name,
 		},
 	}
+	if sourceSnapshotId != "" {
+		contentSource := &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{
+					SnapshotId: sourceSnapshotId,
+				},
+			},
+		}
+		resp.ContentSource = contentSource
+	}
+	return resp
 }
 
 // ControllerExpandVolume expands a GCFS instance share.
 func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	glog.V(4).Infof("ControllerExpandVolume called with request %+v", req)
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
@@ -508,6 +533,7 @@ func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (
 }
 
 func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	glog.V(4).Infof("CreateSnapshot called with request %+v", req)
 	if len(req.Name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot name must be provided")
 	}
@@ -528,7 +554,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		}
 	}
 
-	// Check for exisitng snapshot
+	// Check for existing snapshot
 	backupUri, _, err := file.CreateBackpURI(filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		return nil, err
@@ -554,6 +580,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		if err != nil {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to parse create timestamp for backup %v", backupInfo.Backup.Name))
 		}
+		glog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backupInfo.Backup.Name)
 		return &csi.CreateSnapshotResponse{
 			Snapshot: &csi.Snapshot{
 				SizeBytes:      util.GbToBytes(backupInfo.Backup.CapacityGb),
@@ -582,12 +609,11 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 			ReadyToUse:     true,
 		},
 	}
-	glog.Infof("CreateSnapshot succeeded for Id %s on volume %s", backupObj.Name, volumeID)
+	glog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
 	return resp, nil
 }
 
 func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	// Validate arguments
 	id := req.GetSnapshotId()
 	if len(id) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "DeleteSnapshot snapshot Id must be provided")

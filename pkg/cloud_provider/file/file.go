@@ -41,6 +41,7 @@ type ServiceInstance struct {
 	Network  Network
 	Volume   Volume
 	Labels   map[string]string
+	State    string
 }
 
 type Volume struct {
@@ -68,12 +69,14 @@ type Service interface {
 	GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error)
 	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
+	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 }
 
 type gcfsServiceManager struct {
 	fileService              *filev1.Service
 	instancesService         *filev1.ProjectsLocationsInstancesService
 	operationsService        *filev1.ProjectsLocationsOperationsService
+	instancesV1beta1Service  *filev1beta1.ProjectsLocationsInstancesService
 	operationsV1beta1Service *filev1beta1.ProjectsLocationsOperationsService
 	backupService            *filev1beta1.ProjectsLocationsBackupsService
 }
@@ -111,6 +114,7 @@ func NewGCFSService(version string) (Service, error) {
 		fileService:              fileService,
 		instancesService:         filev1.NewProjectsLocationsInstancesService(fileService),
 		operationsService:        filev1.NewProjectsLocationsOperationsService(fileService),
+		instancesV1beta1Service:  filev1beta1.NewProjectsLocationsInstancesService(fileV1beta1Service),
 		operationsV1beta1Service: filev1beta1.NewProjectsLocationsOperationsService(fileV1beta1Service),
 		backupService:            filev1beta1.NewProjectsLocationsBackupsService(fileV1beta1Service),
 	}, nil
@@ -135,7 +139,6 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		Labels: obj.Labels,
 	}
 
-	glog.Infof("Starting CreateInstance cloud operation")
 	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, labels %v",
 		obj.Name,
 		obj.Location,
@@ -149,6 +152,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
 	}
 
+	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
 		return nil, fmt.Errorf("WaitFor CreateInstance operation failed: %v", err)
@@ -160,25 +164,66 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
-func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	instance, err := manager.instancesService.Get(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
+func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
+	instance := &filev1beta1.Instance{
+		Tier: obj.Tier,
+		FileShares: []*filev1beta1.FileShareConfig{
+			{
+				Name:         obj.Volume.Name,
+				CapacityGb:   util.RoundBytesToGb(obj.Volume.SizeBytes),
+				SourceBackup: sourceSnapshotId,
+			},
+		},
+		Networks: []*filev1beta1.NetworkConfig{
+			{
+				Network:         obj.Network.Name,
+				Modes:           []string{"MODE_IPV4"},
+				ReservedIpRange: obj.Network.ReservedIpRange,
+			},
+		},
+		Labels: obj.Labels,
+		State:  obj.State,
+	}
+
+	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, labels %v backup source %v",
+		obj.Name,
+		obj.Location,
+		instance.Tier,
+		instance.FileShares[0].CapacityGb,
+		instance.Networks[0].Network,
+		instance.Networks[0].ReservedIpRange,
+		instance.Labels,
+		instance.FileShares[0].SourceBackup)
+	op, err := manager.instancesV1beta1Service.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
+		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
+	}
+
+	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
+	err = manager.waitForV1beta1Op(ctx, op)
+	if err != nil {
+		return nil, fmt.Errorf("WaitFor CreateInstance operation failed: %v", err)
+	}
+	serviceInstance, err := manager.GetInstance(ctx, obj)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+	}
+	return serviceInstance, nil
+}
+
+func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	instanceUri := instanceURI(obj.Project, obj.Location, obj.Name)
+	instance, err := manager.instancesService.Get(instanceUri).Context(ctx).Do()
+	if err != nil {
+		glog.Errorf("Failed to get instance %v", instanceUri)
 		return nil, err
 	}
+
 	if instance != nil {
-		newInstance, err := cloudInstanceToServiceInstance(instance)
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert instance: %v", err)
-		}
-		switch instance.State {
-		case "READY":
-			return newInstance, nil
-		default:
-			// Instance exists but is not usable
-			return newInstance, fmt.Errorf("instance %v is %v", obj.Name, instance.State)
-		}
+		glog.V(5).Infof("GetInstance call fetched instance %+v", instance)
+		return cloudInstanceToServiceInstance(instance)
 	}
-	return nil, fmt.Errorf("failed to get instance")
+	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
 }
 
 func cloudInstanceToServiceInstance(instance *filev1.Instance) (*ServiceInstance, error) {
@@ -201,6 +246,7 @@ func cloudInstanceToServiceInstance(instance *filev1.Instance) (*ServiceInstance
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 		},
 		Labels: instance.Labels,
+		State:  instance.State,
 	}, nil
 }
 
@@ -247,7 +293,7 @@ func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Serv
 	}
 
 	instance, err = manager.GetInstance(ctx, obj)
-	if err != nil {
+	if err != nil && !IsNotFoundErr(err) {
 		return fmt.Errorf("failed to get instance after deletion: %v", err)
 	}
 	if instance != nil {

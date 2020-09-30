@@ -61,6 +61,7 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
 		Labels: obj.Labels,
+		State:  "READY",
 	}
 
 	manager.createdInstances[obj.Name] = instance
@@ -95,6 +96,7 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 			Network: Network{
 				ReservedIpRange: "192.168.92.32/29",
 			},
+			State: "READY",
 		},
 		{
 			Project:  defaultProject,
@@ -104,6 +106,7 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 			Network: Network{
 				ReservedIpRange: "192.168.92.40/29",
 			},
+			State: "READY",
 		},
 	}
 	return instances, nil
@@ -161,6 +164,29 @@ func (manager *fakeServiceManager) GetBackup(ctx context.Context, backupUri stri
 	}
 
 	return backupInfo, nil
+}
+
+func (manager *fakeServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
+	instance := &ServiceInstance{
+		Project:  defaultProject,
+		Location: defaultZone,
+		Name:     obj.Name,
+		Tier:     obj.Tier,
+		Volume: Volume{
+			Name:      obj.Volume.Name,
+			SizeBytes: obj.Volume.SizeBytes,
+		},
+		Network: Network{
+			Name:            obj.Network.Name,
+			Ip:              "1.1.1.1",
+			ReservedIpRange: obj.Network.ReservedIpRange,
+		},
+		Labels: obj.Labels,
+		State:  "READY",
+	}
+
+	manager.createdInstances[obj.Name] = instance
+	return instance, nil
 }
 
 func notFoundError() *googleapi.Error {
