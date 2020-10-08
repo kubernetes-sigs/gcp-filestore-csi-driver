@@ -79,12 +79,9 @@ const (
 var _ Service = &gcfsServiceManager{}
 
 func NewGCFSService(version string) (Service, error) {
-	client, err := newOauthClient()
-	if err != nil {
-		return nil, err
-	}
 
-	fileService, err := filev1.New(client)
+	ctx := context.Background()
+	fileService, err := filev1.NewService(ctx)
 	if err != nil {
 		return nil, err
 	}
