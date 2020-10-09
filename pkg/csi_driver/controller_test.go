@@ -30,10 +30,10 @@ import (
 
 const (
 	testProject          = "test-project"
-	testLocation         = "test-location"
+	testLocation         = "us-central1-c"
 	testIP               = "1.1.1.1"
 	testCSIVolume        = "test-csi"
-	testVolumeID         = "modeInstance/test-location/test-csi/vol1"
+	testVolumeID         = "modeInstance/us-central1-c/test-csi/vol1"
 	testReservedIPV4CIDR = "192.168.92.0/26"
 	testBytes            = 1 * util.Tb
 )

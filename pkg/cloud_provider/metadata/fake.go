@@ -25,7 +25,7 @@ func NewFakeService() (Service, error) {
 }
 
 func (manager *fakeServiceManager) GetZone() string {
-	return "test-location"
+	return "us-central1-c"
 }
 
 func (manager *fakeServiceManager) GetProject() string {

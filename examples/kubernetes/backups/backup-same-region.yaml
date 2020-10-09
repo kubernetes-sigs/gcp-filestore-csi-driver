@@ -1,0 +1,8 @@
+apiVersion: snapshot.storage.k8s.io/v1beta1
+kind: VolumeSnapshot
+metadata:
+  name: test-backup-same-region
+spec:
+  volumeSnapshotClassName: csi-gcp-filestore-backup-snap-class-same-region
+  source:
+    persistentVolumeClaimName: test-pvc
