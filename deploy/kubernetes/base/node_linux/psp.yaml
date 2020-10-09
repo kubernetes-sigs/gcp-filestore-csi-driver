@@ -1,0 +1,22 @@
+apiVersion: policy/v1beta1
+kind: PodSecurityPolicy
+metadata:
+  name: gcp-filestore-csi-node-psp
+spec:
+  seLinux:
+    rule: RunAsAny
+  supplementalGroups:
+    rule: RunAsAny
+  runAsUser:
+    rule: RunAsAny
+  fsGroup:
+    rule: RunAsAny
+  privileged: true
+  volumes:
+  - '*'
+  hostNetwork: true
+  allowedHostPaths:
+  - pathPrefix: "/var/lib/kubelet/plugins_registry/"
+  - pathPrefix: "/var/lib/kubelet"
+  - pathPrefix: "/var/lib/kubelet/plugins/filestore.csi.storage.gke.io/"
+

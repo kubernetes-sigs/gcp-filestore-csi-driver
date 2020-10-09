@@ -1,0 +1,25 @@
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: gcp-filestore-csi-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: gcp-filestore-driver
+          env:
+            - $patch: delete
+              name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/etc/cloud-sa/gcp_filestore_csi_driver_sa.json"
+          volumeMounts:
+            - $patch: delete
+              name: cloud-sa-volume
+              readOnly: true
+              mountPath: "/etc/cloud_sa"
+      volumes:
+        - $patch: delete
+          name: cloud-sa-volume
+          secret:
+            secretName: gcp-filestore-csi-driver-sa
+
+
