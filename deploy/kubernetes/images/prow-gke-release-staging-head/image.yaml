@@ -1,0 +1,60 @@
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-provisioner-prow-head
+imageTag:
+  name: gcr.io/gke-release/csi-provisioner
+  newName: quay.io/k8scsi/csi-provisioner
+  newTag: "canary"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-attacher-prow-head
+imageTag:
+  name: gcr.io/gke-release/csi-attacher
+  newName: quay.io/k8scsi/csi-provisioner
+  newTag: "canary"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-resize-prow-head
+imageTag:
+  name: gcr.io/gke-release/csi-resizer
+  newName: quay.io/k8scsi/csi-resizer
+  newTag: "canary"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-snapshotter-prow-head
+imageTag:
+  name: gke.gcr.io/csi-snapshotter
+  newName: quay.io/k8scsi/csi-provisioner
+  newTag: "canary"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-gce-driver-prow-head
+imageTag:
+  name: gcr.io/gke-release/gcp-filestore-csi-driver
+  # TODO: Change the image to k8s-cloud-provider-gcp when an image is available
+  newName: "gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver"
+  newTag: "canary"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-csi-node-registrar-prow-head
+imageTag:
+  name: gcr.io/gke-release/csi-node-driver-registrar
+  newName: quay.io/k8scsi/csi-node-driver-registrar
+  newTag: "canary"
+---
