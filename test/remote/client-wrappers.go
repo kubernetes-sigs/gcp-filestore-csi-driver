@@ -116,13 +116,14 @@ func (c *CsiClient) NodeUnpublishVolume(volumeId, publishDir string) error {
 	return err
 }
 
-func (c *CsiClient) NodePublishVolume(volumeId, publishDir string, volumeAttrs map[string]string) error {
+func (c *CsiClient) NodePublishVolume(volumeId, stageDir, publishDir string, volumeAttrs map[string]string) error {
 	nodePublishReq := &csipb.NodePublishVolumeRequest{
-		VolumeId:         volumeId,
-		TargetPath:       publishDir,
-		VolumeCapability: stdVolCap,
-		VolumeContext:    volumeAttrs,
-		Readonly:         false,
+		VolumeId:          volumeId,
+		StagingTargetPath: stageDir,
+		TargetPath:        publishDir,
+		VolumeCapability:  stdVolCap,
+		VolumeContext:     volumeAttrs,
+		Readonly:          false,
 	}
 	_, err := c.nodeClient.NodePublishVolume(context.Background(), nodePublishReq)
 	return err
@@ -131,4 +132,24 @@ func (c *CsiClient) NodePublishVolume(volumeId, publishDir string, volumeAttrs m
 func (c *CsiClient) NodeGetInfo() (*csipb.NodeGetInfoResponse, error) {
 	resp, err := c.nodeClient.NodeGetInfo(context.Background(), &csipb.NodeGetInfoRequest{})
 	return resp, err
+}
+
+func (c *CsiClient) NodeStageVolume(volumeId, stageDir string, volumeAttrs map[string]string) error {
+	nodeStageReq := &csipb.NodeStageVolumeRequest{
+		VolumeId:          volumeId,
+		StagingTargetPath: stageDir,
+		VolumeCapability:  stdVolCap,
+		VolumeContext:     volumeAttrs,
+	}
+	_, err := c.nodeClient.NodeStageVolume(context.Background(), nodeStageReq)
+	return err
+}
+
+func (c *CsiClient) NodeUnstageVolume(volumeId, stageDir string) error {
+	nodeUnpublishReq := &csipb.NodeUnstageVolumeRequest{
+		VolumeId:          volumeId,
+		StagingTargetPath: stageDir,
+	}
+	_, err := c.nodeClient.NodeUnstageVolume(context.Background(), nodeUnpublishReq)
+	return err
 }
