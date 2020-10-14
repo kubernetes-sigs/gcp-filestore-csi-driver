@@ -41,7 +41,7 @@ func GCFSClientAndDriverSetup(instance *remote.InstanceInfo) (*remote.TestContex
 		return nil, fmt.Errorf("Could not find environment variable GOPATH")
 	}
 	pkgPath := path.Join(goPath, "src/sigs.k8s.io/gcp-filestore-csi-driver/")
-	binPath := path.Join(pkgPath, "bin/gcfs-csi-driver")
+	binPath := path.Join(pkgPath, "bin/gcp-filestore-csi-driver")
 
 	// Install NFS Libraries
 	_, err := instance.SSH("apt-get", "install", "-y", "nfs-common")
@@ -51,7 +51,7 @@ func GCFSClientAndDriverSetup(instance *remote.InstanceInfo) (*remote.TestContex
 	endpoint := fmt.Sprintf("tcp://localhost:%s", port)
 
 	workspace := remote.NewWorkspaceDir("gcfs-csi-e2e-")
-	driverRunCmd := fmt.Sprintf("sh -c '/usr/bin/nohup %s/gcfs-csi-driver --endpoint=%s --nodeid=%s --controller=true --node=true > %s/prog.out 2> %s/prog.err < /dev/null &'",
+	driverRunCmd := fmt.Sprintf("sh -c '/usr/bin/nohup %s/gcp-filestore-csi-driver --endpoint=%s --nodeid=%s --controller=true --node=true > %s/prog.out 2> %s/prog.err < /dev/null &'",
 		workspace, endpoint, instance.GetName(), workspace, workspace)
 
 	config := &remote.ClientConfig{

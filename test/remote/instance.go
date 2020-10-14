@@ -84,8 +84,7 @@ func (i *InstanceInfo) CreateOrGetInstance(serviceAccount string) error {
 		return fmt.Errorf("Failed to create firewall rule: %v", err)
 	}
 
-	// TODO: Pick a better boot disk image
-	imageURL := "projects/ml-images/global/images/family/tf-1-9"
+	imageURL := "projects/debian-cloud/global/images/family/debian-9"
 	inst := &compute.Instance{
 		Name:        i.name,
 		MachineType: machineType(i.zone, ""),
@@ -128,11 +127,11 @@ func (i *InstanceInfo) CreateOrGetInstance(serviceAccount string) error {
 
 	if _, err := i.computeService.Instances.Get(i.project, i.zone, inst.Name).Do(); err != nil {
 		op, err := i.computeService.Instances.Insert(i.project, i.zone, inst).Do()
-		glog.V(4).Infof("Inserted instance %v in project %v, i.zone %v", inst.Name, i.project, i.zone)
+		glog.V(4).Infof("Inserted instance %v in project: %v, zone: %v", inst.Name, i.project, i.zone)
 		if err != nil {
 			ret := fmt.Sprintf("could not create instance %s: API error: %v", i.name, err)
 			if op != nil {
-				ret = fmt.Sprintf("%s: %v", ret, op.Error)
+				ret = fmt.Sprintf("%s. op error: %v", ret, op.Error)
 			}
 			return fmt.Errorf(ret)
 		} else if op.Error != nil {
@@ -167,7 +166,7 @@ func (i *InstanceInfo) CreateOrGetInstance(serviceAccount string) error {
 			glog.Warningf("SSH encountered an error: %v, output: %v", err, sshOut)
 			return false, nil
 		}
-		glog.Infof("Instance %v in state RUNNING and vailable by SSH", i.name)
+		glog.Infof("Instance %v in state RUNNING and available by SSH", i.name)
 		return true, nil
 	})
 
