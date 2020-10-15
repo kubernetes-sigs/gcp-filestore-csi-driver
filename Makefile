@@ -88,3 +88,6 @@ csi-client:
 csi-client-windows:
 	mkdir -p bin
 	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/csi-client.exe ./hack/csi_client/cmd/
+
+test-k8s-integration:
+	go build -o bin/k8s-integration-test ./test/k8s-integration
