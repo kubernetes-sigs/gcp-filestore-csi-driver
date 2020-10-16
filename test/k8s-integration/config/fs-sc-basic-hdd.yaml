@@ -1,0 +1,8 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  network: default # Change this network as per the GCE deployment
+volumeBindingMode: WaitForFirstConsumer

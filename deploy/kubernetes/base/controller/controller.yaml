@@ -1,21 +1,26 @@
-kind: StatefulSet
+kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: gcp-filestore-csi-controller
 spec:
-  serviceName: "gcp-filestore-csi-driver"
   replicas: 1
   selector:
     matchLabels:
       app: gcp-filestore-csi-driver
-  updateStrategy:
-    type: RollingUpdate
   template:
     metadata:
       labels:
         app: gcp-filestore-csi-driver
     spec:
+      # Host network must be used for interaction with Workload Identity in GKE
+      # since it replaces GCE Metadata Server with GKE Metadata Server. Remove
+      # this requirement when issue is resolved and before any exposure of
+      # metrics ports
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/os: linux
       serviceAccount: gcp-filestore-csi-controller-sa
+      priorityClassName: csi-gcp-fs-controller
       containers:
         - name: csi-external-provisioner
           image: gcr.io/gke-release/csi-provisioner
