@@ -1,0 +1,26 @@
+StorageClass:
+  FromFile: {{.StorageClassFile}}
+{{if .SnapshotClassFile }}
+SnapshotClass:
+  FromFile: {{ .SnapshotClassFile }}
+{{end}}
+DriverInfo:
+  Name: csi-gcpfs-{{.StorageClass}}
+  SupportedFsType:
+  {{range .SupportedFsType}}  {{ . }}:
+  {{end}}
+  Capabilities:
+  {{range .Capabilities}}  {{ . }}: true
+  {{end}}
+  StressTestOptions:
+    NumPods: 10
+    NumRestarts: 10
+  SupportedMountOption:
+    debug:
+    nouid32:
+  SupportedSizeRange:
+    Min: {{.MinimumVolumeSize}}
+    Max: 64Ti
+  TopologyKeys:
+    - topology.gke.io/zone
+  NumAllowedTopologies: {{.NumAllowedTopologies}}

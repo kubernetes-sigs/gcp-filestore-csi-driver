@@ -14,8 +14,15 @@ spec:
       labels:
         app: gcp-filestore-csi-driver
     spec:
-      serviceAccount: gcp-filestore-csi-node-sa
+      # Host network must be used for interaction with Workload Identity in GKE
+      # since it replaces GCE Metadata Server with GKE Metadata Server. Remove
+      # this requirement when issue is resolved and before any exposure of
+      # metrics ports.
       hostNetwork: true
+      priorityClassName: csi-gcp-fs-node
+      serviceAccount: gcp-filestore-csi-node-sa
+      nodeSelector:
+        kubernetes.io/os: linux
       containers:
         - name: csi-driver-registrar
           image: gcr.io/gke-release/csi-node-driver-registrar:v1.3.0-gke.0

@@ -21,7 +21,6 @@ function ensure_kustomize()
 }
 
 ensure_var GOPATH
-ensure_var PROJECT
 
 readonly PKGDIR="${GOPATH}/src/sigs.k8s.io/gcp-filestore-csi-driver"
 readonly VERBOSITY="${GCE_FS_VERBOSITY:-2}"
@@ -35,4 +34,3 @@ GCFS_SA_FILE="$GCFS_SA_DIR/gcp_filestore_csi_driver_sa.json"
 GCFS_SA_NAME=gcp-filestore-csi-driver-sa
 GCFS_NS=gcp-filestore-csi-driver
 
-GCFS_IAM_NAME="$GCFS_SA_NAME@$PROJECT.iam.gserviceaccount.com"
