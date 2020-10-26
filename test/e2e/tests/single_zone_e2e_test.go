@@ -19,16 +19,25 @@ import (
 	"path/filepath"
 	"strings"
 
+	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 	testutils "sigs.k8s.io/gcp-filestore-csi-driver/test/e2e/utils"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
 )
 
 const (
 	testNamePrefix = "gcfs-csi-e2e-"
+
+	instanceURIFormat = "projects/%s/locations/%s/instances/%s"
+
+	readyState           = "READY"
+	defaultTier          = "STANDARD"
+	defaultNetwork       = "default"
+	minVolumeSize  int64 = 1 * util.Tb
 )
 
 var _ = Describe("Google Cloud Filestore CSI Driver", func() {
@@ -54,9 +63,19 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 			// Delete Disk
 			client.DeleteVolume(vol.GetVolumeId())
 			Expect(err).To(BeNil(), "DeleteVolume failed")
+
+			_, err := getDisk(volName, instance)
+			Expect(err).NotTo(BeNil(), "Could get deleted disk from cloud directly")
 		}()
 
-		// TODO validate the Filestore instance creation at the cloud provider layer
+		// Validate Disk Created
+		inst, err := getDisk(volName, instance)
+		Expect(err).To(BeNil(), "Could not get disk from cloud directly")
+		Expect(inst.State).To(Equal(readyState))
+		Expect(inst.Tier).To(Equal(defaultTier))
+		Expect(inst.Networks[0].Network).To(Equal(defaultNetwork))
+		Expect(inst.FileShares[0].CapacityGb).To(Equal(util.RoundBytesToGb(minVolumeSize)))
+
 		stageDir := filepath.Join("/tmp/", volName, "stage")
 		_, err = instance.SSH(fmt.Sprint("mkdir -p ", stageDir))
 
@@ -118,4 +137,10 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 
 func Logf(format string, args ...interface{}) {
 	fmt.Fprint(GinkgoWriter, args...)
+}
+
+func getDisk(volName string, instance *remote.InstanceInfo) (*filev1beta1.Instance, error) {
+	proj, zone, _ := instance.GetIdentity()
+	instanceURI := fmt.Sprintf(instanceURIFormat, proj, zone, volName)
+	return fileInstancesService.Get(instanceURI).Do()
 }
