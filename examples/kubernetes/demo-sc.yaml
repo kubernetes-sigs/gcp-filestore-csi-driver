@@ -9,5 +9,5 @@ parameters:
   # # standard (default) or premier
   # tier: premier
   # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
-  # network: default
+  # network: default (If no network is provided, the network on which the driver controller runs is auto detected and filestore instance will be deployed in that network)
 allowVolumeExpansion: true

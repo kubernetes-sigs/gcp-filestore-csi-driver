@@ -36,6 +36,7 @@ const (
 	testVolumeID         = "modeInstance/us-central1-c/test-csi/vol1"
 	testReservedIPV4CIDR = "192.168.92.0/26"
 	testBytes            = 1 * util.Tb
+	defaultNetwork       = "default"
 )
 
 func initTestController(t *testing.T) csi.ControllerServer {

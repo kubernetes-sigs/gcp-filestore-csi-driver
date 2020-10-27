@@ -36,8 +36,7 @@ const (
 	modeInstance            = "modeInstance"
 	newInstanceVolume       = "vol1"
 
-	defaultTier    = "standard"
-	defaultNetwork = "default"
+	defaultTier = "standard"
 
 	// Keys for Topology.
 	TopologyKeyZone = "topology.gke.io/zone"
@@ -337,7 +336,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 
 	// Set default parameters
 	tier := defaultTier
-	network := defaultNetwork
+	network := s.config.metaService.GetNetwork()
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {

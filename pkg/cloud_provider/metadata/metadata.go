@@ -18,20 +18,28 @@ package metadata
 
 import (
 	"fmt"
+	"strings"
 
 	"cloud.google.com/go/compute/metadata"
+	"github.com/golang/glog"
 )
 
 type Service interface {
 	GetZone() string
 	GetProject() string
+	GetNetwork() string
 }
 
 type metadataServiceManager struct {
 	// Current zone the driver is running in
 	zone    string
 	project string
+	network string
 }
+
+const (
+	MetadataNetworkSuffix = "instance/network-interfaces/0/network"
+)
 
 var _ Service = &metadataServiceManager{}
 
@@ -45,9 +53,15 @@ func NewMetadataService() (Service, error) {
 		return nil, fmt.Errorf("failed to get project: %v", err)
 	}
 
+	network, err := getNetwork()
+	if err != nil {
+		glog.Warningf("Failed to fetch network name for the instance running driver controller")
+	}
+
 	return &metadataServiceManager{
 		project: projectID,
 		zone:    zone,
+		network: network,
 	}, nil
 }
 
@@ -57,4 +71,20 @@ func (manager *metadataServiceManager) GetZone() string {
 
 func (manager *metadataServiceManager) GetProject() string {
 	return manager.project
+}
+
+func (manager *metadataServiceManager) GetNetwork() string {
+	return manager.network
+}
+
+func getNetwork() (string, error) {
+	s, err := metadata.Get(MetadataNetworkSuffix)
+	// network returned has the complete path e.g. projects/<Project-Id>/networks/<Network-Name>
+	if err == nil {
+		s = strings.TrimSpace(s)
+		s = s[strings.LastIndex(s, "/")+1:]
+		glog.Infof("Found network %v", s)
+		return s, nil
+	}
+	return "", err
 }
