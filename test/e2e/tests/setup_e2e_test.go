@@ -18,6 +18,7 @@ import (
 	"flag"
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,7 +36,7 @@ var (
 	runInProw       = flag.Bool("run-in-prow", false, "If true, use a Boskos loaned project and special CI service accounts and ssh keys")
 	deleteInstances = flag.Bool("delete-instances", false, "Delete the instances after tests run")
 
-	testInstances        = []*remote.InstanceInfo{}
+	testContexts         = []*remote.TestContext{}
 	computeService       *compute.Service
 	fileService          *filev1beta1.Service
 	fileInstancesService *filev1beta1.ProjectsLocationsInstancesService
@@ -49,6 +50,8 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	var err error
+	tcc := make(chan *remote.TestContext)
+	defer close(tcc)
 	zones := []string{"us-central1-c", "us-central1-b"}
 
 	rand.Seed(time.Now().UnixNano())
@@ -61,28 +64,59 @@ var _ = BeforeSuite(func() {
 
 	fileInstancesService = filev1beta1.NewProjectsLocationsInstancesService(fileService)
 
-	for _, zone := range zones {
-		nodeID := fmt.Sprintf("gcfs-csi-e2e-%s", zone)
-
-		if *runInProw {
-			*project, *serviceAccount = testutils.SetupProwConfig()
-		}
-
-		Expect(*project).ToNot(BeEmpty(), "Project should not be empty")
-		Expect(*serviceAccount).ToNot(BeEmpty(), "Service account should not be empty")
-
-		i, err := remote.SetupInstance(*project, zone, nodeID, *serviceAccount, computeService)
-		Expect(err).To(BeNil())
-
-		testInstances = append(testInstances, i)
+	if *runInProw {
+		*project, *serviceAccount = testutils.SetupProwConfig()
 	}
 
+	Expect(*project).ToNot(BeEmpty(), "Project should not be empty")
+	Expect(*serviceAccount).ToNot(BeEmpty(), "Service account should not be empty")
+
+	for _, zone := range zones {
+		go func(curZone string) {
+			defer GinkgoRecover()
+			nodeID := fmt.Sprintf("gcfs-csi-e2e-%s", curZone)
+
+			i, err := remote.SetupInstance(*project, curZone, nodeID, *serviceAccount, computeService)
+			if err != nil {
+				tcc <- nil
+			}
+			Expect(err).To(BeNil(), "Set up Instance failed with error")
+
+			// Create new driver and client
+			testContext, err := testutils.GCFSClientAndDriverSetup(i)
+			tcc <- testContext
+			Expect(err).To(BeNil(), "Set up new Driver and Client failed with error")
+		}(zone)
+	}
+
+	for i := 0; i < len(zones); i++ {
+		tc := <-tcc
+		if tc != nil {
+			testContexts = append(testContexts, tc)
+		}
+	}
+	Expect(len(testContexts)).Should(BeNumerically(">", 0), "Not enough instances available to run tests")
 })
 
 var _ = AfterSuite(func() {
-	for _, i := range testInstances {
-		if *deleteInstances {
-			i.DeleteInstance()
-		}
+	var wg sync.WaitGroup
+	for _, tc := range testContexts {
+		wg.Add(1)
+		go func(curTC *remote.TestContext, wg *sync.WaitGroup) {
+			defer wg.Done()
+			defer GinkgoRecover()
+			err := remote.TeardownDriverAndClient(curTC)
+			Expect(err).To(BeNil(), "Teardown Driver and Client failed with error")
+			if *deleteInstances {
+				curTC.Instance.DeleteInstance()
+			}
+		}(tc, &wg)
 	}
+	wg.Wait()
 })
+
+func getRandomTestContext() *remote.TestContext {
+	Expect(testContexts).ToNot(BeEmpty())
+	rn := rand.Intn(len(testContexts))
+	return testContexts[rn]
+}

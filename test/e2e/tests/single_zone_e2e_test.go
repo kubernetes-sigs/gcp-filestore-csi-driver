@@ -43,13 +43,7 @@ const (
 var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 
 	It("Should create->stage->mount volume and check if it is writable, then unmount->unstage->delete and check if volume is deleted", func() {
-		Expect(testInstances).NotTo(BeEmpty())
-		testContext, err := testutils.GCFSClientAndDriverSetup(testInstances[0])
-		Expect(err).To(BeNil(), "Set up new Driver and Client failed with error")
-		defer func() {
-			err := remote.TeardownDriverAndClient(testContext)
-			Expect(err).To(BeNil(), "Teardown Driver and Client failed with error")
-		}()
+		testContext := getRandomTestContext()
 
 		client := testContext.Client
 		instance := testContext.Instance
