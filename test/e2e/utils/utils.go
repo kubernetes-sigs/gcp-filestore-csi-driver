@@ -150,6 +150,14 @@ func ReadFile(instance *remote.InstanceInfo, filePath string) (string, error) {
 	return output, nil
 }
 
+func MkdirAll(instance *remote.InstanceInfo, dir string) error {
+	output, err := instance.SSH("mkdir", "-p", dir)
+	if err != nil {
+		return fmt.Errorf("failed to mkdir -p %s. Output: %v, errror: %v", dir, output, err)
+	}
+	return nil
+}
+
 func RmAll(instance *remote.InstanceInfo, filePath string) error {
 	output, err := instance.SSH("rm", "-rf", filePath)
 	if err != nil {
