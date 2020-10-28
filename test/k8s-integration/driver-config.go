@@ -77,7 +77,6 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		StorageClassFile:     filepath.Join(testParams.pkgDir, testConfigDir, storageClassFile),
 		StorageClass:         storageClassFile[:strings.LastIndex(storageClassFile, ".")],
 		SnapshotClassFile:    absSnapshotClassFilePath,
-		SupportedFsType:      []string{},
 		Capabilities:         caps,
 		MinimumVolumeSize:    minimumVolumeSize,
 		NumAllowedTopologies: numAllowedTopologies,

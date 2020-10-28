@@ -6,8 +6,9 @@ SnapshotClass:
 {{end}}
 DriverInfo:
   Name: csi-gcpfs-{{.StorageClass}}
+  {{range .SupportedFsType}}
   SupportedFsType:
-  {{range .SupportedFsType}}  {{ . }}:
+    {{ . }}:
   {{end}}
   Capabilities:
   {{range .Capabilities}}  {{ . }}: true
