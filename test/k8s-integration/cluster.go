@@ -87,6 +87,10 @@ func clusterUpGCE(k8sDir, gceZone string, numNodes int, imageType string) error 
 		}
 	}
 
+	if err = os.Setenv("KUBE_GCE_NETWORK", gceInstanceNetwork); err != nil {
+		return err
+	}
+
 	cmd := exec.Command(filepath.Join(k8sDir, "hack", "e2e-internal", "e2e-up.sh"))
 	err = runCommand("Starting E2E Cluster on GCE", cmd)
 	if err != nil {

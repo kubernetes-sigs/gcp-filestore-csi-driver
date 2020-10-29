@@ -56,7 +56,7 @@ var (
 	doDriverBuild     = flag.Bool("do-driver-build", true, "building the driver from source")
 
 	// Test flags
-	testFocus = flag.String("test-focus", "External.Storage.*snapshot", "test focus for Kubernetes e2e")
+	testFocus = flag.String("test-focus", "External.Storage", "test focus for Kubernetes e2e")
 
 	// SA for dev overlay
 	devOverlaySA = flag.String("dev-overlay-sa", "gcp-filestore-csi-driver-sa@saikatroyc-gke-dev.iam.gserviceaccount.com", "default SA that will be plumbed to the GCE instances")
@@ -65,6 +65,8 @@ var (
 const (
 	fsImagePlaceholder      = "gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver"
 	externalDriverNamespace = "gcp-filestore-csi-driver"
+	// If the network name is changed, the same network needs to be provided in storage class template passed in 'storageClassFiles' flag.
+	gceInstanceNetwork = "csi-filestore-test-network"
 )
 
 type testParameters struct {
