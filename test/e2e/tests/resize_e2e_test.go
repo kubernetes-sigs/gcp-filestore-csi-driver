@@ -43,7 +43,7 @@ const (
 
 var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 
-	It("Should create -> write/read -> online resize -> delete", func() {
+	It("Should create -> write/read -> offline resize -> online resize -> delete", func() {
 		testContext := getRandomTestContext()
 
 		diskInfo := createDisk(testContext)
@@ -57,6 +57,8 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 		validateDisk(diskInfo)
 
 		writeAndReadDisk(diskInfo)
+
+		offlineResizeDisk(diskInfo)
 
 		onlineResizeDisk(diskInfo)
 	})
@@ -132,10 +134,10 @@ func onlineResizeDisk(di *DiskInfo) {
 	validateWrite(publishDir, testFileName, testFileContents, instance)
 
 	// Resize without limit to nearest Gb
-	newSizeBytes := minVolumeSize + 1
+	newSizeBytes := minVolumeSize + (10 * util.Gb) + 1
 	err = di.TestCtx.Client.ControllerExpandVolume(di.Volume.GetVolumeId(), newSizeBytes)
 	Expect(err).To(BeNil(), "Controller expand volume failed for resize without limit to nearest Gb")
-	validateResizeDisk(newSizeBytes, di)
+	validateResizeDisk(newSizeBytes, di, "online resize - resize to nearest Gb")
 
 	// Resize with limit too small
 	oldSizeBytes := newSizeBytes
@@ -143,19 +145,19 @@ func onlineResizeDisk(di *DiskInfo) {
 	newSizeLimit := minVolumeSize * 2
 	err = di.TestCtx.Client.ControllerExpandVolumeWithLimit(di.Volume.GetVolumeId(), newSizeBytes, newSizeLimit)
 	Expect(err).ToNot(BeNil(), "Controller expand volume unexpected success for resize with invalid limit")
-	validateResizeDisk(oldSizeBytes, di)
+	validateResizeDisk(oldSizeBytes, di, "online resize - resize with invalid limit")
 
 	// Resize with limit
 	newSizeBytes = minVolumeSize * 2
 	newSizeLimit = minVolumeSize * 3
 	err = di.TestCtx.Client.ControllerExpandVolumeWithLimit(di.Volume.GetVolumeId(), newSizeBytes, newSizeLimit)
 	Expect(err).To(BeNil(), "Controller expand volume failed for resize with valid limit")
-	validateResizeDisk(newSizeBytes, di)
+	validateResizeDisk(newSizeBytes, di, "online resize - resize with valid limit")
 
 	// Invalid resize to smaller amount
 	err = di.TestCtx.Client.ControllerExpandVolume(di.Volume.GetVolumeId(), minVolumeSize)
 	Expect(err).To(BeNil(), "Controller expand volume unexpected failure for resize to invalid amount")
-	validateResizeDisk(newSizeBytes, di)
+	validateResizeDisk(newSizeBytes, di, "online resize - resize with invalid amount")
 
 	// Post Resize Read of Pre Resize Write
 	validateRead(publishDir, testFileName, testFileContents, instance)
@@ -163,6 +165,40 @@ func onlineResizeDisk(di *DiskInfo) {
 	// Post Resize Write/Read
 	testFileName = "testfile-post"
 	testFileContents = "testing-1-2-3"
+	validateWrite(publishDir, testFileName, testFileContents, instance)
+	validateRead(publishDir, testFileName, testFileContents, instance)
+}
+
+func offlineResizeDisk(di *DiskInfo) {
+	var err error
+	instance := di.TestCtx.Instance
+	volName := di.Name
+
+	// Resize controller
+	var newSizeBytes int64 = minVolumeSize + (1 * util.Gb)
+	err = di.TestCtx.Client.ControllerExpandVolume(di.Volume.GetVolumeId(), newSizeBytes)
+	Expect(err).To(BeNil(), "Controller expand volume failed")
+	validateResizeDisk(newSizeBytes, di, "offline resize")
+
+	// Create Directories
+	stageDir := filepath.Join("/tmp/", volName, "stage")
+	publishDir := filepath.Join("/tmp/", volName, "mount")
+	for _, dir := range []string{stageDir, publishDir} {
+		err = testutils.MkdirAll(instance, dir)
+		Expect(err).To(BeNil(), "Mkdir failed with error")
+	}
+	defer func() {
+		// delete remote directory
+		fp := filepath.Join("/tmp/", volName)
+		err = testutils.RmAll(instance, fp)
+		Expect(err).To(BeNil(), "Failed to delete remote directory")
+	}()
+
+	cleanup := stageAndPublish(stageDir, publishDir, di)
+	defer cleanup()
+
+	testFileName := "test-offline-resize"
+	testFileContents := "testing"
 	validateWrite(publishDir, testFileName, testFileContents, instance)
 	validateRead(publishDir, testFileName, testFileContents, instance)
 }
@@ -235,8 +271,8 @@ func validateDisk(di *DiskInfo) {
 	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.RoundBytesToGb(minVolumeSize)))
 }
 
-func validateResizeDisk(newSizeBytes int64, di *DiskInfo) {
+func validateResizeDisk(newSizeBytes int64, di *DiskInfo, testDescription string) {
 	inst, err := getDisk(di)
 	Expect(err).To(BeNil(), "Get cloud disk failed")
-	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.BytesToGb(newSizeBytes)))
+	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.BytesToGb(newSizeBytes)), testDescription)
 }
