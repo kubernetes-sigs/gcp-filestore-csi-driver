@@ -24,6 +24,7 @@ import (
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	compute "google.golang.org/api/compute/v1"
+	filev1beta1 "google.golang.org/api/file/v1beta1"
 	testutils "sigs.k8s.io/gcp-filestore-csi-driver/test/e2e/utils"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
 )
@@ -34,8 +35,10 @@ var (
 	runInProw       = flag.Bool("run-in-prow", false, "If true, use a Boskos loaned project and special CI service accounts and ssh keys")
 	deleteInstances = flag.Bool("delete-instances", false, "Delete the instances after tests run")
 
-	testInstances  = []*remote.InstanceInfo{}
-	computeService *compute.Service
+	testInstances        = []*remote.InstanceInfo{}
+	computeService       *compute.Service
+	fileService          *filev1beta1.Service
+	fileInstancesService *filev1beta1.ProjectsLocationsInstancesService
 )
 
 func TestE2E(t *testing.T) {
@@ -52,6 +55,11 @@ var _ = BeforeSuite(func() {
 
 	computeService, err = remote.GetComputeClient()
 	Expect(err).To(BeNil())
+
+	fileService, err = remote.GetFileClient()
+	Expect(err).To(BeNil())
+
+	fileInstancesService = filev1beta1.NewProjectsLocationsInstancesService(fileService)
 
 	for _, zone := range zones {
 		nodeID := fmt.Sprintf("gcfs-csi-e2e-%s", zone)

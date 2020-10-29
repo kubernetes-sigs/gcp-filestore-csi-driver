@@ -1,0 +1,80 @@
+#TODO: Force DaemonSet to not run on master.
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: gcp-filestore-csi-node
+spec:
+  selector:
+    matchLabels:
+      app: gcp-filestore-csi-driver
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: gcp-filestore-csi-driver
+    spec:
+      # Host network must be used for interaction with Workload Identity in GKE
+      # since it replaces GCE Metadata Server with GKE Metadata Server. Remove
+      # this requirement when issue is resolved and before any exposure of
+      # metrics ports.
+      hostNetwork: true
+      priorityClassName: csi-gcp-fs-node
+      serviceAccount: gcp-filestore-csi-node-sa
+      nodeSelector:
+        kubernetes.io/os: linux
+      containers:
+        - name: csi-driver-registrar
+          image: gcr.io/gke-release/csi-node-driver-registrar:v1.3.0-gke.0
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: plugin-dir
+              mountPath: /csi
+            - name: registration-dir
+              mountPath: /registration
+        - name: gcp-filestore-driver
+          securityContext:
+            privileged: true
+          # Modify this image for local development with master branch.
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
+          args:
+            - "--v=5"
+            - "--endpoint=unix:/csi/csi.sock"
+            - "--nodeid=$(KUBE_NODE_NAME)"
+            - "--node=true"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: kubelet-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: "Bidirectional"
+            - name: plugin-dir
+              mountPath: /csi
+        - name: nfs-services
+          # Modify this image for local development with master branch.
+          image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
+          command: ["/nfs_services_start.sh"]
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: kubelet-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: Directory
+        - name: plugin-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/filestore.csi.storage.gke.io/
+            type: DirectoryOrCreate

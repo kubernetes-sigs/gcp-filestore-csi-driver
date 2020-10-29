@@ -1,0 +1,11 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: gcp-filestore-csi-controller
+spec:
+  template:
+    spec:
+      containers:
+        - name: gcp-filestore-driver
+          imagePullPolicy: Always
+

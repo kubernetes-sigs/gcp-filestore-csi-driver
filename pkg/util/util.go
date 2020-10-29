@@ -20,11 +20,33 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
+
+	"github.com/golang/protobuf/ptypes"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 const (
 	Gb = 1024 * 1024 * 1024
 	Tb = 1024 * Gb
+
+	// VolumeSnapshot parameters
+	VolumeSnapshotTypeKey      = "type"
+	VolumeSnapshotLocationKey  = "location"
+	VolumeSnapshotTypeSnapshot = "snapshot"
+	VolumeSnapshotTypeBackup   = "backup"
+
+	SnapshotHandleBackupKey = "backups"
+
+	// number of elements in a snapshot Id.
+	// For backups: projects/{project name}/locations/{region}/backups/{name}
+	// For snapshot: projects/{project name}/locations/{zone}/snapshots/{name}
+	snapshotTotalElements = 6
+
+	// number of elements in backup Volume sources e.g. projects/{project name}/locations/{zone}/instances/{name}
+	volumeTotalElements = 6
 )
 
 // Round up to the nearest Gb
@@ -114,4 +136,67 @@ func ConvertLabelsStringToMap(labels string) (map[string]string, error) {
 	}
 
 	return labelsMap, nil
+}
+
+func GetRegionFromZone(location string) (string, error) {
+	tokens := strings.Split(location, "-")
+	if len(tokens) != 3 {
+		return "", fmt.Errorf("Failed to parse location %v", location)
+	}
+
+	tokens = tokens[:2]
+	return strings.Join(tokens, "-"), nil
+}
+
+func ParseTimestamp(timestamp string) (*timestamppb.Timestamp, error) {
+	t, err := time.Parse(time.RFC3339, timestamp)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to parse timestamp %v: %v", timestamp, err))
+	}
+
+	tp, err := ptypes.TimestampProto(t)
+	if err != nil {
+		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to covert timestamp %v: %v", timestamp, err))
+	}
+	return tp, err
+}
+
+func IsBackupHandle(handle string) (bool, error) {
+	splitId := strings.Split(handle, "/")
+	if len(splitId) != snapshotTotalElements {
+		return false, fmt.Errorf("failed to get id components. Expected 'projects/{project}/location/{zone|region}/[snapshots|backups]/{name}'. Got: %s", handle)
+	}
+	return splitId[4] == SnapshotHandleBackupKey, nil
+}
+
+func IsSnapshotTypeSupported(params map[string]string) (bool, error) {
+	if params == nil {
+		return false, fmt.Errorf("Empty parameters in VolumeSnapshot")
+	}
+	snapType, ok := params[VolumeSnapshotTypeKey]
+	if !ok {
+		return false, fmt.Errorf("Volume snapshot type is missing")
+	}
+	if snapType != VolumeSnapshotTypeBackup {
+		return false, fmt.Errorf("Volume snapshot type %q not supported", snapType)
+	}
+	return true, nil
+}
+
+func GetBackupLocation(params map[string]string) string {
+	location := ""
+	if params == nil {
+		return location
+	}
+
+	location, _ = params[VolumeSnapshotLocationKey]
+	return location
+}
+
+func BackupVolumeSourceToCSIVolumeHandle(backupVolumeSource string) (string, error) {
+	splitId := strings.Split(backupVolumeSource, "/")
+	if len(splitId) != volumeTotalElements {
+		return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", backupVolumeSource)
+	}
+	return fmt.Sprintf("modeInstance/%s/%s/vol1", splitId[3], splitId[5]), nil
 }

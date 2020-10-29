@@ -94,3 +94,35 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gcp-filestore-csi-snapshotter-role
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["create", "get", "list", "watch", "update", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents/status"]
+    verbs: ["update"]
+---
+
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-snapshotter-binding
+subjects:
+  - kind: ServiceAccount
+    name: gcp-filestore-csi-controller-sa
+    namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: ClusterRole
+  name: gcp-filestore-csi-snapshotter-role
+  apiGroup: rbac.authorization.k8s.io
+---

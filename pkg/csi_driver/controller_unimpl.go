@@ -43,14 +43,6 @@ func (s *controllerServer) GetCapacity(ctx context.Context, req *csi.GetCapacity
 	return nil, status.Error(codes.Unimplemented, "")
 }
 
-func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "CreateSnapshot unsupported")
-}
-
-func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "DeleteSnapshot unsupported")
-}
-
 func (s *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "ListSnapshots unsupported")
 }

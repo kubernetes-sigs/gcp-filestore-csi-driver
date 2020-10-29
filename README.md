@@ -102,17 +102,29 @@ kubectl apply -f ./examples/kubernetes/demo-pod.yaml
 ## Kubernetes Development
 Setup GCP service account first and setup Kubernetes cluster
 ```
-$ ./deploy/project_setup.sh
-$ ./deploy/kubernetes/cluster_setup.sh
+# The first step would be create a service account with appropriate role bindings. The following command creates gcp-filestore-csi-driver-sa@<your-gcp-project>.iam.gserviceaccount.com and grants roles/file.editor role to the service account.
+For dev overlay use,
+$ PROJECT=saikatroyc-gke-dev DEPLOY_VERSION=dev ./deploy/project_setup.sh
+# Else, for any other overlay,
+$ PROJECT=<your-gcp-project> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/project_setup.sh
+
+# Build the Filestore CSI driver image and push to a container registry.
+$ PROJECT=<your-gcp-project> make build-image-and-push
+
+# The base manifests like core driver manifests, rbac role bindings are listed under deploy/kubernetes/base.
+# The overlays (e.g prow-gke-release-staging-head, prow-gke-release-staging-rc, stable, noauth) are listed under deploy/kubernetes/overlays
+# apply transformations on top of the base manifests.
+# For setup of the cluster with one of the overlays (other than 'dev' overlay) use:
+$ PROJECT=<your-gcp-project> GCFS_SA_DIR=<path-to-credentials-file> DEPLOY_VERSION=<overlay-name> ./deploy/kubernetes/cluster_setup.sh
+'path-to-credentials-file' is the path where the key file was saved (e.g. $GCFS_SA_DIR/gcp_filestore_csi_driver_sa.json), in the step of running project_setup.sh above.
+
+# 'dev' overlay uses default service account for communicating with GCP services. https://www.googleapis.com/auth/cloud-platform scope allows full access to all Google Cloud APIs and given node scope will allow any pod to reach GCP services as the provided service account, and so should only be used for testing and development, not production clusters. Bring up GCE cluster with following:
+$ NODE_SCOPES=https://www.googleapis.com/auth/cloud-platform KUBE_GCE_NODE_SERVICE_ACCOUNT=<SERVICE_ACCOUNT_NAME>@$PROJECT.iam.gserviceaccount.com kubetest --up
+$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/kubernetes/cluster_setup.sh
 ```
 
-### Manual
-```
-# Build the Filestore CSI driver image and push to a container registry.
-$ PROJECT=your-gcp-project make build-image-and-push
-# Modify manifests under deploy/kubernetes/manifests to use development image
-$ ./deploy/kubernetes/driver_start.sh
-```
+## Gcloud Application Default Credentials and scopes
+See [here](https://cloud.google.com/docs/authentication/production), [here](https://cloud.google.com/compute/docs/access/create-enable-service-accounts-for-instances) and [here](https://cloud.google.com/storage/docs/authentication#oauth-scopes)
 
 ### Automatic using [Skaffold](http://github.com/GoogleContainerTools/skaffold) and [Kustomize](https://github.com/kubernetes-sigs/kustomize)
 1. Modify [Skaffold configuration](deploy/skaffold/skaffold.yaml) and [Kustomize overlays](deploy/kubernetes/manifests/dev/)

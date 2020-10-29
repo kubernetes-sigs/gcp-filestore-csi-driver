@@ -1,0 +1,80 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: gcp-filestore-csi-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gcp-filestore-csi-driver
+  template:
+    metadata:
+      labels:
+        app: gcp-filestore-csi-driver
+    spec:
+      # Host network must be used for interaction with Workload Identity in GKE
+      # since it replaces GCE Metadata Server with GKE Metadata Server. Remove
+      # this requirement when issue is resolved and before any exposure of
+      # metrics ports
+      hostNetwork: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      serviceAccount: gcp-filestore-csi-controller-sa
+      priorityClassName: csi-gcp-fs-controller
+      containers:
+        - name: csi-external-provisioner
+          image: gcr.io/gke-release/csi-provisioner
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--timeout=250s"
+            - "--feature-gates=Topology=true"
+            - "--extra-create-metadata"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-external-resizer
+          image: gcr.io/gke-release/csi-resizer
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--csiTimeout=120s"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-external-snapshotter
+          image: gcr.io/gke-release/csi-snapshotter
+          args:
+            - "--v=5"
+            - "--csi-address=/csi/csi.sock"
+            - "--timeout=300s"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: gcp-filestore-driver
+          # Modify this image for local development with master branch.
+          image: gcr.io/gke-release/gcp-filestore-csi-driver
+          args:
+            - "--v=4"
+            - "--endpoint=unix:/csi/csi.sock"
+            - "--nodeid=$(KUBE_NODE_NAME)"
+            - "--controller=true"
+          env:
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              value: "/etc/cloud_sa/gcp_filestore_csi_driver_sa.json"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+            - name: cloud-sa-volume
+              readOnly: true
+              mountPath: "/etc/cloud_sa"
+      volumes:
+        - name: socket-dir
+          emptyDir: {}
+        - name: cloud-sa-volume
+          secret:
+            secretName: gcp-filestore-csi-driver-sa

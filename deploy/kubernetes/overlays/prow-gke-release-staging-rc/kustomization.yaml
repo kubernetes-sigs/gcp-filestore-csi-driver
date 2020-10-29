@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../stable
+transformers:
+- ../../images/prow-gke-release-staging-rc
+patchesJson6902:
+- target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: gcp-filestore-csi-controller
+  path: resizer_timeout_flag_update.yaml
