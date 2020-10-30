@@ -13,3 +13,15 @@ spec:
    - name: mypvc
      persistentVolumeClaim:
        claimName: preprov-pvc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: preprov-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: csi-filestore
+  resources:
+    requests:
+      storage: 1Ti
