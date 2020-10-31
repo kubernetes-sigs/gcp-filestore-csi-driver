@@ -26,8 +26,13 @@ import (
 	. "github.com/onsi/gomega"
 	compute "google.golang.org/api/compute/v1"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
+	"k8s.io/klog"
 	testutils "sigs.k8s.io/gcp-filestore-csi-driver/test/e2e/utils"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
+)
+
+const (
+	boskosResourceType = "gce-project"
 )
 
 var (
@@ -43,6 +48,10 @@ var (
 	fileInstancesService *filev1beta1.ProjectsLocationsInstancesService
 	fileBackupsService   *filev1beta1.ProjectsLocationsBackupsService
 )
+
+func init() {
+	klog.InitFlags(flag.CommandLine)
+}
 
 func TestE2E(t *testing.T) {
 	flag.Parse()
@@ -68,7 +77,7 @@ var _ = BeforeSuite(func() {
 	fileBackupsService = filev1beta1.NewProjectsLocationsBackupsService(fileService)
 
 	if *runInProw {
-		*project, *serviceAccount = testutils.SetupProwConfig()
+		*project, *serviceAccount = testutils.SetupProwConfig(boskosResourceType)
 	}
 
 	Expect(*project).ToNot(BeEmpty(), "Project should not be empty")

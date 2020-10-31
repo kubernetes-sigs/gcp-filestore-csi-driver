@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
+	"k8s.io/klog"
 )
 
 const (
@@ -82,7 +82,7 @@ func SetupNewDriverAndClient(instance *InstanceInfo, config *ClientConfig) (*Tes
 	defer func() {
 		err = os.Remove(archivePath)
 		if err != nil {
-			glog.Warningf("Failed to remove archive file %s: %v", archivePath, err)
+			klog.Warningf("Failed to remove archive file %s: %v", archivePath, err)
 		}
 	}()
 

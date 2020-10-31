@@ -27,6 +27,7 @@ import (
 	apimachineryversion "k8s.io/apimachinery/pkg/util/version"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/klog"
+	testutils "sigs.k8s.io/gcp-filestore-csi-driver/test/e2e/utils"
 )
 
 var (
@@ -45,9 +46,10 @@ var (
 	imageType        = flag.String("image-type", "cos", "the image type to use for the cluster")
 
 	// Test infrastructure flags
-	storageClassFiles = flag.String("storageclass-files", "fs-sc-basic-hdd.yaml", "name of storageclass yaml file to use for test relative to test/k8s-integration/config. This may be a comma-separated list to test multiple storage classes")
-	snapshotClassFile = flag.String("snapshotclass-file", "fs-backup-volumesnapshotclass.yaml", "name of snapshotclass yaml file to use for test relative to test/k8s-integration/config")
-	inProw            = flag.Bool("run-in-prow", false, "is the test running in PROW")
+	boskosResourceType = flag.String("boskos-resource-type", "gce-project", "name of the boskos resource type to reserve")
+	storageClassFiles  = flag.String("storageclass-files", "fs-sc-basic-hdd.yaml", "name of storageclass yaml file to use for test relative to test/k8s-integration/config. This may be a comma-separated list to test multiple storage classes")
+	snapshotClassFile  = flag.String("snapshotclass-file", "fs-backup-volumesnapshotclass.yaml", "name of snapshotclass yaml file to use for test relative to test/k8s-integration/config")
+	inProw             = flag.Bool("run-in-prow", false, "is the test running in PROW")
 
 	// Driver flags
 	stagingImage      = flag.String("staging-image", "", "name of image to stage to")
@@ -92,9 +94,6 @@ func main() {
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
-	if *inProw {
-		klog.Fatalf("In prow deployment is not supported")
-	}
 	if !*inProw && *doDriverBuild {
 		ensureVariable(stagingImage, true, "staging-image is a required flag, please specify the name of image to stage to")
 	}
@@ -150,6 +149,38 @@ func handle() error {
 	}
 	testParams.goPath = goPath
 	testParams.pkgDir = filepath.Join(goPath, "src", "sigs.k8s.io", "gcp-filestore-csi-driver")
+	// If running in Prow, then acquire and set up a project through Boskos
+	if *inProw {
+		oldProject, err := exec.Command("gcloud", "config", "get-value", "project").CombinedOutput()
+		oldProjectStr := strings.TrimSpace(string(oldProject))
+		if err != nil {
+			return fmt.Errorf("failed to get gcloud project: %s, err: %v", oldProject, err)
+		}
+
+		newproject, _ := testutils.SetupProwConfig(*boskosResourceType)
+		err = setEnvProject(newproject)
+		if err != nil {
+			return fmt.Errorf("failed to set project environment to %s: %v", newproject, err)
+		}
+
+		defer func() {
+			err = setEnvProject(oldProjectStr)
+			if err != nil {
+				klog.Errorf("failed to set project environment to %s: %v", oldProject, err)
+			}
+		}()
+
+		if *doDriverBuild {
+			*stagingImage = fmt.Sprintf("gcr.io/%s/gcp-filestore-csi-driver", newproject)
+		}
+		if _, ok := os.LookupEnv("USER"); !ok {
+			err = os.Setenv("USER", "prow")
+			if err != nil {
+				return fmt.Errorf("failed to set user in prow to prow: %v", err)
+			}
+		}
+	}
+
 	if *doDriverBuild {
 		err := pushImage(testParams.pkgDir, *stagingImage, testParams.stagingVersion)
 		if err != nil {
@@ -374,5 +405,18 @@ func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix 
 		return fmt.Errorf("failed to run tests on e2e cluster: %v", err)
 	}
 
+	return nil
+}
+
+func setEnvProject(project string) error {
+	out, err := exec.Command("gcloud", "config", "set", "project", project).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to set gcloud project to %s: %s, err: %v", project, out, err)
+	}
+
+	err = os.Setenv("PROJECT", project)
+	if err != nil {
+		return err
+	}
 	return nil
 }

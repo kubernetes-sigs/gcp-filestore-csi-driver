@@ -22,10 +22,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/golang/glog"
 	"golang.org/x/oauth2/google"
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
-
 	"k8s.io/klog"
 	boskosclient "sigs.k8s.io/boskos/client"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
@@ -66,19 +64,18 @@ func GCFSClientAndDriverSetup(instance *remote.InstanceInfo) (*remote.TestContex
 	return remote.SetupNewDriverAndClient(instance, config)
 }
 
-func SetupProwConfig() (project, serviceAccount string) {
+func SetupProwConfig(resourceType string) (project, serviceAccount string) {
 	// Try to get a Boskos project
-	glog.V(4).Infof("Running in PROW")
-	glog.V(4).Infof("Fetching a Boskos loaned project")
+	klog.V(4).Infof("Running in PROW")
+	klog.V(4).Infof("Fetching a Boskos loaned project")
 
-	p, err := boskos.Acquire("gce-project", "free", "busy")
-
+	p, err := boskos.Acquire(resourceType, "free", "busy")
 	if err != nil {
-		glog.Fatalf("boskos failed to acquire project: %v", err)
+		klog.Fatalf("boskos failed to acquire project: %v", err)
 	}
 
 	if p == nil {
-		glog.Fatalf("boskos does not have a free gce-project at the moment")
+		klog.Fatalf("boskos does not have a free gce-project at the moment")
 	}
 
 	project = p.Name
@@ -86,27 +83,27 @@ func SetupProwConfig() (project, serviceAccount string) {
 	go func(c *boskosclient.Client, proj string) {
 		for range time.Tick(time.Minute * 5) {
 			if err := c.UpdateOne(p.Name, "busy", nil); err != nil {
-				glog.Warningf("[Boskos] Update %v failed with %v", p, err)
+				klog.Warningf("[Boskos] Update %v failed with %v", p, err)
 			}
 		}
 	}(boskos, p.Name)
 
 	// If we're on CI overwrite the service account
-	glog.V(4).Infof("Fetching the default compute service account")
+	klog.V(4).Infof("Fetching the default compute service account")
 
 	c, err := google.DefaultClient(context.TODO(), cloudresourcemanager.CloudPlatformScope)
 	if err != nil {
-		glog.Fatalf("Failed to get Google Default Client: %v", err)
+		klog.Fatalf("Failed to get Google Default Client: %v", err)
 	}
 
 	cloudresourcemanagerService, err := cloudresourcemanager.New(c)
 	if err != nil {
-		glog.Fatalf("Failed to create new cloudresourcemanager: %v", err)
+		klog.Fatalf("Failed to create new cloudresourcemanager: %v", err)
 	}
 
 	resp, err := cloudresourcemanagerService.Projects.Get(project).Do()
 	if err != nil {
-		glog.Fatalf("Failed to get project %v from Cloud Resource Manager: %v", project, err)
+		klog.Fatalf("Failed to get project %v from Cloud Resource Manager: %v", project, err)
 	}
 
 	// Default Compute Engine service account
