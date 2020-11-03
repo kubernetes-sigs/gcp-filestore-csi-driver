@@ -133,9 +133,3 @@ See [here](https://cloud.google.com/docs/authentication/production), [here](http
 ```
 $ make skaffold-dev
 ```
-
-### Dependency Management
-Use [dep](https://github.com/golang/dep)
-```
-$ dep ensure
-```
