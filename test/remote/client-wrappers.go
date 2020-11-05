@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog"
 )
 
 var (
@@ -92,6 +93,7 @@ func (c *CsiClient) CreateVolume(volName string) (*csipb.Volume, error) {
 		Name:               volName,
 		VolumeCapabilities: stdVolCaps,
 	}
+	defer logDuration(time.Now(), "CreateVolume")
 	cresp, err := c.ctrlClient.CreateVolume(context.Background(), cvr)
 	if err != nil {
 		return nil, err
@@ -103,6 +105,7 @@ func (c *CsiClient) DeleteVolume(volId string) error {
 	dvr := &csipb.DeleteVolumeRequest{
 		VolumeId: volId,
 	}
+	defer logDuration(time.Now(), "DeleteVolume")
 	_, err := c.ctrlClient.DeleteVolume(context.Background(), dvr)
 	return err
 }
@@ -112,6 +115,7 @@ func (c *CsiClient) NodeUnpublishVolume(volumeId, publishDir string) error {
 		VolumeId:   volumeId,
 		TargetPath: publishDir,
 	}
+	defer logDuration(time.Now(), "NodeUnplublishVolume")
 	_, err := c.nodeClient.NodeUnpublishVolume(context.Background(), nodeUnpublishReq)
 	return err
 }
@@ -125,6 +129,7 @@ func (c *CsiClient) NodePublishVolume(volumeId, stageDir, publishDir string, vol
 		VolumeContext:     volumeAttrs,
 		Readonly:          false,
 	}
+	defer logDuration(time.Now(), "NodePublishVolume")
 	_, err := c.nodeClient.NodePublishVolume(context.Background(), nodePublishReq)
 	return err
 }
@@ -141,6 +146,7 @@ func (c *CsiClient) NodeStageVolume(volumeId, stageDir string, volumeAttrs map[s
 		VolumeCapability:  stdVolCap,
 		VolumeContext:     volumeAttrs,
 	}
+	defer logDuration(time.Now(), "NodeStageVolume")
 	_, err := c.nodeClient.NodeStageVolume(context.Background(), nodeStageReq)
 	return err
 }
@@ -150,6 +156,37 @@ func (c *CsiClient) NodeUnstageVolume(volumeId, stageDir string) error {
 		VolumeId:          volumeId,
 		StagingTargetPath: stageDir,
 	}
+	defer logDuration(time.Now(), "NodeUnstageVolume")
 	_, err := c.nodeClient.NodeUnstageVolume(context.Background(), nodeUnpublishReq)
 	return err
+}
+
+func (c *CsiClient) ControllerExpandVolume(volumeID string, sizeBytes int64) error {
+	controllerExpandReq := &csipb.ControllerExpandVolumeRequest{
+		VolumeId: volumeID,
+		CapacityRange: &csipb.CapacityRange{
+			RequiredBytes: sizeBytes,
+		},
+	}
+	defer logDuration(time.Now(), "ControllerExpandVolume")
+	_, err := c.ctrlClient.ControllerExpandVolume(context.Background(), controllerExpandReq)
+	return err
+}
+
+func (c *CsiClient) ControllerExpandVolumeWithLimit(volumeID string, sizeBytes, limitBytes int64) error {
+	controllerExpandReq := &csipb.ControllerExpandVolumeRequest{
+		VolumeId: volumeID,
+		CapacityRange: &csipb.CapacityRange{
+			RequiredBytes: sizeBytes,
+			LimitBytes:    limitBytes,
+		},
+	}
+	defer logDuration(time.Now(), "ControllerExpandVolumeWithLimit")
+	_, err := c.ctrlClient.ControllerExpandVolume(context.Background(), controllerExpandReq)
+	return err
+}
+
+func logDuration(start time.Time, fnName string) {
+	duration := time.Since(start)
+	klog.V(2).Infof("%q execution took %3.3f seconds", fnName, duration.Seconds())
 }
