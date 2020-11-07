@@ -37,9 +37,11 @@ var (
 	deleteInstances = flag.Bool("delete-instances", false, "Delete the instances after tests run")
 
 	testContexts         = []*remote.TestContext{}
+	zones                []string
 	computeService       *compute.Service
 	fileService          *filev1beta1.Service
 	fileInstancesService *filev1beta1.ProjectsLocationsInstancesService
+	fileBackupsService   *filev1beta1.ProjectsLocationsBackupsService
 )
 
 func TestE2E(t *testing.T) {
@@ -52,7 +54,7 @@ var _ = BeforeSuite(func() {
 	var err error
 	tcc := make(chan *remote.TestContext)
 	defer close(tcc)
-	zones := []string{"us-central1-c", "us-central1-b"}
+	zones = []string{"us-central1-c", "us-central1-b"}
 
 	rand.Seed(time.Now().UnixNano())
 
@@ -63,6 +65,7 @@ var _ = BeforeSuite(func() {
 	Expect(err).To(BeNil())
 
 	fileInstancesService = filev1beta1.NewProjectsLocationsInstancesService(fileService)
+	fileBackupsService = filev1beta1.NewProjectsLocationsBackupsService(fileService)
 
 	if *runInProw {
 		*project, *serviceAccount = testutils.SetupProwConfig()

@@ -46,14 +46,9 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 	It("Should create -> write/read -> offline resize -> online resize -> delete", func() {
 		testContext := getRandomTestContext()
 
-		diskInfo := createDisk(testContext)
-		defer func() {
-			err := testContext.Client.DeleteVolume(diskInfo.Volume.GetVolumeId())
-			Expect(err).To(BeNil(), "DeleteVolume failed")
+		diskInfo, cleanupDisk := createDisk("", "", map[string]string{"test-label": "testing"}, testContext)
+		defer cleanupDisk()
 
-			_, err = getDisk(diskInfo)
-			Expect(err).NotTo(BeNil(), "Could get deleted disk from cloud directly")
-		}()
 		validateDisk(diskInfo)
 
 		writeAndReadDisk(diskInfo)
@@ -203,27 +198,58 @@ func offlineResizeDisk(di *DiskInfo) {
 	validateRead(publishDir, testFileName, testFileContents, instance)
 }
 
+func validateResizeDisk(newSizeBytes int64, di *DiskInfo, testDescription string) {
+	inst, err := getDisk(di)
+	Expect(err).To(BeNil(), "Get cloud disk failed")
+	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.BytesToGb(newSizeBytes)), testDescription)
+}
+
 // DiskInfo contains information related to the filestore instance.
 type DiskInfo struct {
 	TestCtx *remote.TestContext
 	Name    string
+	Zone    string
 	Volume  *csi.Volume
+	Labels  map[string]string
 }
 
-func createDisk(tc *remote.TestContext) *DiskInfo {
+func createDisk(zone, snapshotID string, labels map[string]string, tc *remote.TestContext) (*DiskInfo, func()) {
 	name := testNamePrefix + string(uuid.NewUUID())
-	vol, err := tc.Client.CreateVolume(name)
+	params := make(map[string]string)
+	if len(labels) > 0 {
+		var l []string
+		for k, v := range labels {
+			l = append(l, fmt.Sprintf("%s=%s", k, v))
+		}
+		params["labels"] = strings.Join(l, ",")
+	}
+	vol, err := tc.Client.CreateVolume(name, zone, snapshotID, params)
 	Expect(err).To(BeNil(), "CreateVolume failed with error: %v", err)
-	return &DiskInfo{
+	if zone == "" {
+		// If disk zone is not set upon creation, it defaults to same zone as the instance
+		_, z, _ := tc.Instance.GetIdentity()
+		zone = z
+	}
+	di := &DiskInfo{
 		TestCtx: tc,
 		Name:    name,
+		Zone:    zone,
 		Volume:  vol,
+		Labels:  labels,
 	}
+	cleanup := func() {
+		err := tc.Client.DeleteVolume(di.Volume.GetVolumeId())
+		Expect(err).To(BeNil(), "DeleteVolume failed")
+
+		_, err = getDisk(di)
+		Expect(err).NotTo(BeNil(), "Could get deleted disk from cloud directly")
+	}
+	return di, cleanup
 }
 
 func getDisk(di *DiskInfo) (*filev1beta1.Instance, error) {
-	proj, zone, _ := di.TestCtx.Instance.GetIdentity()
-	instanceURI := fmt.Sprintf(instanceURIFormat, proj, zone, di.Name)
+	proj, _, _ := di.TestCtx.Instance.GetIdentity()
+	instanceURI := fmt.Sprintf(instanceURIFormat, proj, di.Zone, di.Name)
 	return fileInstancesService.Get(instanceURI).Do()
 }
 
@@ -269,10 +295,14 @@ func validateDisk(di *DiskInfo) {
 	Expect(inst.Tier).To(Equal(defaultTier))
 	Expect(inst.Networks[0].Network).To(Equal(defaultNetwork))
 	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.RoundBytesToGb(minVolumeSize)))
-}
-
-func validateResizeDisk(newSizeBytes int64, di *DiskInfo, testDescription string) {
-	inst, err := getDisk(di)
-	Expect(err).To(BeNil(), "Get cloud disk failed")
-	Expect(inst.FileShares[0].CapacityGb).To(Equal(util.BytesToGb(newSizeBytes)), testDescription)
+	// Validate disk has no accessibility restrictions
+	Expect(len(di.Volume.GetAccessibleTopology())).To(Equal(0), "Volume accessible topology has unexpected items.")
+	// Validate added custom labels
+	if len(di.Labels) > 0 {
+		for k, v := range di.Labels {
+			instV, ok := inst.Labels[k]
+			Expect(ok).To(Equal(true), "Expected custom label key does not exist")
+			Expect(instV).To(Equal(v), "Expected custom label value does not match expected value")
+		}
+	}
 }
