@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"google.golang.org/grpc"
@@ -88,11 +89,31 @@ func (c *CsiClient) CloseConn() error {
 	return c.conn.Close()
 }
 
-func (c *CsiClient) CreateVolume(volName string) (*csipb.Volume, error) {
+func (c *CsiClient) CreateVolume(volName, zone, snapshotID string, parameters map[string]string) (*csipb.Volume, error) {
 	cvr := &csipb.CreateVolumeRequest{
 		Name:               volName,
 		VolumeCapabilities: stdVolCaps,
+		Parameters:         parameters,
 	}
+	if zone != "" {
+		cvr.AccessibilityRequirements = &csi.TopologyRequirement{
+			Requisite: []*csi.Topology{
+				{
+					Segments: map[string]string{"topology.gke.io/zone": zone},
+				},
+			},
+		}
+	}
+	if snapshotID != "" {
+		cvr.VolumeContentSource = &csipb.VolumeContentSource{
+			Type: &csipb.VolumeContentSource_Snapshot{
+				Snapshot: &csipb.VolumeContentSource_SnapshotSource{
+					SnapshotId: snapshotID,
+				},
+			},
+		}
+	}
+
 	defer logDuration(time.Now(), "CreateVolume")
 	cresp, err := c.ctrlClient.CreateVolume(context.Background(), cvr)
 	if err != nil {
@@ -183,6 +204,28 @@ func (c *CsiClient) ControllerExpandVolumeWithLimit(volumeID string, sizeBytes, 
 	}
 	defer logDuration(time.Now(), "ControllerExpandVolumeWithLimit")
 	_, err := c.ctrlClient.ControllerExpandVolume(context.Background(), controllerExpandReq)
+	return err
+}
+
+func (c *CsiClient) CreateSnapshot(snapshotName, sourceVolumeId string) (string, error) {
+	csr := &csipb.CreateSnapshotRequest{
+		Name:           snapshotName,
+		SourceVolumeId: sourceVolumeId,
+	}
+	defer logDuration(time.Now(), "CreateSnapshot")
+	cresp, err := c.ctrlClient.CreateSnapshot(context.Background(), csr)
+	if err != nil {
+		return "", err
+	}
+	return cresp.GetSnapshot().GetSnapshotId(), nil
+}
+
+func (c *CsiClient) DeleteSnapshot(snapshotID string) error {
+	dsr := &csipb.DeleteSnapshotRequest{
+		SnapshotId: snapshotID,
+	}
+	defer logDuration(time.Now(), "DeleteSnapshot")
+	_, err := c.ctrlClient.DeleteSnapshot(context.Background(), dsr)
 	return err
 }
 
