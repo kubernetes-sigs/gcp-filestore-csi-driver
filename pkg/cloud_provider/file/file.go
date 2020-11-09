@@ -94,18 +94,15 @@ const (
 var _ Service = &gcfsServiceManager{}
 
 func NewGCFSService(version string) (Service, error) {
-	client, err := newOauthClient()
-	if err != nil {
-		return nil, err
-	}
 
-	fileService, err := filev1.New(client)
+	ctx := context.Background()
+	fileService, err := filev1.NewService(ctx)
 	if err != nil {
 		return nil, err
 	}
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
-	fileV1beta1Service, err := filev1beta1.New(client)
+	fileV1beta1Service, err := filev1beta1.NewService(ctx)
 	if err != nil {
 		return nil, err
 	}
