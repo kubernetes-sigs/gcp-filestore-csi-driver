@@ -21,9 +21,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/golang/glog"
 	"golang.org/x/oauth2/google"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
+	"k8s.io/klog"
 )
 
 const (
@@ -32,7 +32,7 @@ const (
 )
 
 func GetFileClient() (*filev1beta1.Service, error) {
-	glog.V(4).Infof("Getting file client...")
+	klog.V(4).Infof("Getting file client...")
 
 	// Setup the file client for retrieving resources
 	// Getting credentials on gce jenkins is flaky, so try a couple times

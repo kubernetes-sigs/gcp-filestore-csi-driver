@@ -70,7 +70,7 @@ windows-local:
 	mkdir -p bin
 	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/gcfs-csi-driver.exe ./cmd/
 
-build-image-and-push: image
+build-image-and-push: image init-build
 	{                                       \
 	set -e ;                                \
 	for i in $(STAGINGVERSION) ;            \
@@ -90,4 +90,8 @@ csi-client-windows:
 	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/csi-client.exe ./hack/csi_client/cmd/
 
 test-k8s-integration:
-	go build -o bin/k8s-integration-test ./test/k8s-integration
+	go build -mod=vendor -o bin/k8s-integration-test ./test/k8s-integration
+
+init-build:
+	# Register gcloud as a Docker credential helper.
+	gcloud auth configure-docker --quiet
