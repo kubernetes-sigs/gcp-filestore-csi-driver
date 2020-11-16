@@ -61,7 +61,7 @@ var (
 	testFocus = flag.String("test-focus", "External.Storage", "test focus for Kubernetes e2e")
 
 	// SA for dev overlay
-	devOverlaySA = flag.String("dev-overlay-sa", "gcp-filestore-csi-driver-sa@saikatroyc-gke-dev.iam.gserviceaccount.com", "default SA that will be plumbed to the GCE instances")
+	devOverlaySA = flag.String("dev-overlay-sa", "", "default SA that will be plumbed to the GCE instances")
 )
 
 const (
