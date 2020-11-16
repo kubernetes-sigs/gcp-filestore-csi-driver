@@ -38,11 +38,12 @@ This example dynamically provisions a filestore instance and uses storage class 
 2. Wait for PVC to reach 'Bound' status.
    ```console
    $ kubectl get pvc test-pvc-fs-immediate-binding-allowedtopo
-  NAME                                        STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS                                  AGE
-  test-pvc-fs-immediate-binding-allowedtopo   Bound    pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e   1Ti        RWX            csi-filestore-immediate-binding-allowedtopo   5m7s
+   NAME                                        STATUS   VOLUME                                     CAPACITY   ACCESS MODES   STORAGECLASS                                  AGE
+   test-pvc-fs-immediate-binding-allowedtopo   Bound    pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e   1Ti        RWX            csi-filestore-immediate-binding-allowedtopo   5m7s
    ```
+
 3. Verify that the `volumeHandle` captured in the PersistentVolume object specifies the intended zone.
-   ```yaml
+    ```yaml
     kubectl get pv pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e -o yaml
     apiVersion: v1
     kind: PersistentVolume
@@ -85,32 +86,32 @@ This example dynamically provisions a filestore instance and uses storage class 
     $ gcloud beta filestore instances describe pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e --zone us-central1-a
     ```
     ```yaml
-      createTime: '2020-11-13T03:46:18.870400740Z'
-      fileShares:
-      - capacityGb: '1024'
-      name: vol1
-      nfsExportOptions:
-      - accessMode: READ_WRITE
-      ipRanges:
-      - 10.0.0.0/8
-      - 172.16.0.0/12
-      - 192.168.0.0/16
-      squashMode: NO_ROOT_SQUASH
-      labels:
-        kubernetes_io_created-for_pv_name: pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e
-        kubernetes_io_created-for_pvc_name: test-pvc-fs-immediate-binding-allowedtopo
-        kubernetes_io_created-for_pvc_namespace: default
-        storage_gke_io_created-by: filestore_csi_storage_gke_io
-        name: projects/<your-gcp-project>/locations/us-central1-a/instances/pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e
-      networks:
-      - ipAddresses:
-        - <Filestore instance IP>
-      modes:
-      - MODE_IPV4
-      network: default
-      reservedIpRange: <IP CIDR>
-      state: READY
-      tier: STANDARD
+    createTime: '2020-11-13T03:46:18.870400740Z'
+    fileShares:
+    - capacityGb: '1024'
+    name: vol1
+    nfsExportOptions:
+    - accessMode: READ_WRITE
+    ipRanges:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    squashMode: NO_ROOT_SQUASH
+    labels:
+      kubernetes_io_created-for_pv_name: pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e
+      kubernetes_io_created-for_pvc_name: test-pvc-fs-immediate-binding-allowedtopo
+      kubernetes_io_created-for_pvc_namespace: default
+      storage_gke_io_created-by: filestore_csi_storage_gke_io
+      name: projects/<your-gcp-project>/locations/us-central1-a/instances/pvc-64e6ce36-523d-4172-b3b3-3c1080ab0b9e
+    networks:
+    - ipAddresses:
+      - <Filestore instance IP>
+    modes:
+    - MODE_IPV4
+    network: default
+    reservedIpRange: <IP CIDR>
+    state: READY
+    tier: STANDARD
     ```
 
 5. Ensure that the deployment is up and running.
