@@ -21,7 +21,7 @@ spec:
         - mountPath: /usr/share/nginx/html
           name: mypvc
       nodeSelector:
-        topology.gke.io/zone: us-central1-a
+        topology.gke.io/zone: us-central1-b # For a zonal cluster change the zone where the cluster is deployed.
       volumes:
       - name: mypvc
         persistentVolumeClaim:

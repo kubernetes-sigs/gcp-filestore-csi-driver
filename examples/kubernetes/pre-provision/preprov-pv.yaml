@@ -14,9 +14,8 @@ spec:
   volumeMode: "Filesystem"
   csi:
     driver: "filestore.csi.storage.gke.io"
+    # Modify this to use the one, filestore instance and share name
     volumeHandle: "modeInstance/us-central1-c/test-preprov-fs/vol1"
-    fsType: "nfs"
     volumeAttributes:
-      ip: 10.175.240.186 # MODIFY THIS TO Pre-provisioned FS INSTANCE IP
-      volume: vol1
-
+      ip: <Filestore Instance IP> # Modify this to Pre-provisioned Filestore instance IP
+      volume: vol1 # Modify this to Pre-provisioned Filestore instance share name
