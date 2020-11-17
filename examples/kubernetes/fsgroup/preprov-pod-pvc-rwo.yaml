@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: busybox-pod
+  labels:
+    app: busybox
+spec:
+  containers:
+  - image: busybox
+    command:
+      - sleep
+      - "3600"
+    imagePullPolicy: IfNotPresent
+    name: busybox
+    volumeMounts:
+       - mountPath: /tmp/
+         name: mypvc
+  volumes:
+    - name: mypvc
+      persistentVolumeClaim:
+        claimName: preprov-pvc
+  restartPolicy: Always
+  securityContext:
+    runAsGroup: 4000 # Replace with desired GID
+    runAsUser: 100 # Replace with desired UID
+    fsGroup: 4000 # Replace with desired GID. This value of this field will be applied to the volume.
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: preprov-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: csi-filestore
+  resources:
+    requests:
+      storage: 1Ti

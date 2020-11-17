@@ -9,12 +9,13 @@ spec:
   capacity:
     storage: 1Ti
   accessModes:
-    - ReadWriteMany
-  persistentVolumeReclaimPolicy: "Delete"
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: "Retain"
   volumeMode: "Filesystem"
   csi:
     driver: "filestore.csi.storage.gke.io"
-    # Modify this to use the zone, filestore instance and share name.
+    fsType: "nfs" # This field is needed, because, if the PV fstype is not specified, then FsGroup apply for RWO volumes is skipped by the kubelet
+    # Modify this to use the one, filestore instance and share name
     volumeHandle: "modeInstance/<zone>/<filestore-instance-name>/<filestore-share-name>"
     volumeAttributes:
       ip: <Filestore Instance IP> # Modify this to Pre-provisioned Filestore instance IP

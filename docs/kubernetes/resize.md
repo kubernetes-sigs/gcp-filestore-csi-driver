@@ -8,7 +8,7 @@
 This example dynamically provisions a filestore instance and performs online resize of the instance (i.e while the volume is mounted on a Pod). For more details about CSI VolumeExpansion capability see [here](https://kubernetes-csi.github.io/docs/volume-expansion.html)
 
 1. Ensure resize field `allowVolumeExpansion`is set to True, in the  example Zonal Storage Class
-    ```
+    ```yaml
     apiVersion: storage.k8s.io/v1
     kind: StorageClass
     metadata:
