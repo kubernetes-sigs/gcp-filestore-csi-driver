@@ -23,6 +23,10 @@ if [ $(git rev-list -n1 HEAD) == $(git rev-list -n1 origin/master 2>/dev/null) ]
   IMAGE_TAGS+="canary "
 fi
 
+# A "X.Y.Z-canary" image gets built if the current commit is the head of a "origin/release-X.Y.Z" branch.
+# The actual suffix does not matter, only the "release-" prefix is checked.
+IMAGE_TAGS+=$(git branch -r --points-at=HEAD | grep 'origin/release-' | grep -v -e ' -> ' | sed -e 's;.*/release-\(.*\);\1-canary;')
+
 # A release image "vX.Y.Z" gets built if there is a tag of that format for the current commit.
 # --abbrev=0 suppresses long format, only showing the closest tag.
 LATEST_GIT_TAG=$(git describe --tags --match='v*' --abbrev=0)
@@ -38,8 +42,6 @@ if [ $LATEST_TAG_REV ] && [ $LATEST_TAG_REV == $HEAD_REV ]; then
   IMAGE_TAGS+=$LATEST_GIT_TAG
   IMAGE_TAGS+=" "
 fi
-
-# TODO: Create "X.Y.Z-canary" TAG when release-X.Y.Z branch created
 
 # If we did not detect any IMAGE_TAGS, then use the latest git head
 # commit as the image tag.
