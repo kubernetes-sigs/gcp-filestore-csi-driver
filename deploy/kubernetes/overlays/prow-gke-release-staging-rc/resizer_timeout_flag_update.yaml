@@ -1,8 +1,0 @@
-# Remove csiTimeout for csi-external-resizer sidecar
-- op: remove
-  path: /spec/template/spec/containers/1/args/2
-
-# Add timeout flag for csi-external-resizer sidecar introduced in 1.0.1
-- op: add
-  path: /spec/template/spec/containers/1/args/-
-  value: "--timeout=120s"
