@@ -3,19 +3,8 @@ kind: ImageTagTransformer
 metadata:
   name: imagetag-csi-provisioner-prow-rc
 imageTag:
-  name: gcr.io/gke-release/csi-provisioner
-  newName: gcr.io/gke-release-staging/csi-provisioner
-  newTag: "v1.6.0-gke.0"
----
-
-apiVersion: builtin
-kind: ImageTagTransformer
-metadata:
-  name: imagetag-csi-attacher-prow-rc
-imageTag:
-  name: gcr.io/gke-release/csi-attacher
-  newName: gcr.io/gke-release-staging/csi-attacher
-  newTag: "v2.2.0-gke.0"
+  name: k8s.gcr.io/sig-storage/csi-provisioner
+  newTag: "v1.6.0"
 ---
 
 apiVersion: builtin
@@ -23,30 +12,17 @@ kind: ImageTagTransformer
 metadata:
   name: imagetag-csi-resize-prow-rc
 imageTag:
-  name: gcr.io/gke-release/csi-resizer
-  newName: gcr.io/gke-release-staging/csi-resizer
-  newTag: "v1.0.1-gke.0"
+  name: k8s.gcr.io/sig-storage/csi-resizer
+  newTag: "v1.0.1"
 ---
 
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-snapshotter-prow-head
+  name: imagetag-csi-snapshotter-prow-rc
 imageTag:
-  name: gcr.io/gke-release/csi-snapshotter
-  newName: gcr.io/gke-release-staging/csi-snapshotter
-  newTag: "v2.1.1-gke.0"
----
-
-apiVersion: builtin
-kind: ImageTagTransformer
-metadata:
-  name: imagetag-csi-gce-driver-prow-rc
-imageTag:
-  name: gcr.io/gke-release/gcp-filestore-csi-driver
-  # TODO: Change the image to k8s-cloud-provider-gcp when an image is available
-  newName: "gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver"
-  newTag: "canary"
+  name: k8s.gcr.io/sig-storage/csi-snapshotter
+  newTag: "v3.0.2"
 ---
 
 apiVersion: builtin
@@ -54,7 +30,15 @@ kind: ImageTagTransformer
 metadata:
   name: imagetag-csi-node-registrar-prow-rc
 imageTag:
-  name: gcr.io/gke-release/csi-node-driver-registrar
-  newName: gcr.io/gke-release-staging/csi-node-driver-registrar
-  newTag: "v1.3.0-gke.0"
+  name: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+  newTag: "v1.3.0"
+---
+
+apiVersion: builtin
+kind: ImageTagTransformer
+metadata:
+  name: imagetag-gce-fs-driver-rc
+imageTag:
+  name: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+  newTag: "v0.3.0-rc1"
 ---
