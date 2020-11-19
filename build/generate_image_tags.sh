@@ -35,7 +35,7 @@ if [ $LATEST_GIT_TAG ]; then
 fi
 
 if [ $LATEST_TAG_REV ] && [ $LATEST_TAG_REV == $HEAD_REV ]; then
-  IMAGE_TAGS+=$LATEST_TAG_REV
+  IMAGE_TAGS+=$LATEST_GIT_TAG
   IMAGE_TAGS+=" "
 fi
 
