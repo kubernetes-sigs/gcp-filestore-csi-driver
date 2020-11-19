@@ -23,7 +23,7 @@ spec:
       priorityClassName: csi-gcp-fs-controller
       containers:
         - name: csi-external-provisioner
-          image: gcr.io/gke-release/csi-provisioner
+          image: k8s.gcr.io/sig-storage/csi-provisioner
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -34,16 +34,16 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-external-resizer
-          image: gcr.io/gke-release/csi-resizer
+          image: k8s.gcr.io/sig-storage/csi-resizer
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
-            - "--csiTimeout=120s"
+            - "--timeout=120s"
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
         - name: csi-external-snapshotter
-          image: gcr.io/gke-release/csi-snapshotter
+          image: k8s.gcr.io/sig-storage/csi-snapshotter
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -52,8 +52,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: gcp-filestore-driver
-          # Modify this image for local development with master branch.
-          image: gcr.io/gke-release/gcp-filestore-csi-driver
+          image: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
           args:
             - "--v=4"
             - "--endpoint=unix:/csi/csi.sock"
