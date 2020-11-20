@@ -11,7 +11,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: Beta
 
-Latest image: `gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver:v0.3.0`
+Latest image: `gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver:v0.3.1`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -23,7 +23,7 @@ This plugin is compatible with CSI version 1.3.0.
 | Filestore CSI Driver\Kubernetes Version | 1.14 | 1.15 | 1.16 | 1.17+ |
 | --------------------------------------- | ---- | ---- | ---- | ----- |
 | v0.2.0 (alpha)                          | yes  |  no  |  no  |  no   |
-| v0.3.0 (beta)                           | no   |  no  |  no  |  yes  |
+| v0.3.1 (beta)                           | no   |  no  |  no  |  yes  |
 | master                                  | no   |  no  |  no  |  yes  |
 
 ## Plugin Features
