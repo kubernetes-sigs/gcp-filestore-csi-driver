@@ -11,7 +11,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: Beta
 
-Latest image: `gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver:v0.3.1`
+Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.3.1`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
