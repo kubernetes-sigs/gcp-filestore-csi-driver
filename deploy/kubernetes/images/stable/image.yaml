@@ -1,7 +1,7 @@
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-provisioner-prow-rc
+  name: imagetag-csi-provisioner-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-provisioner
   newTag: "v1.6.0"
@@ -10,7 +10,7 @@ imageTag:
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-resize-prow-rc
+  name: imagetag-csi-resize-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-resizer
   newTag: "v1.0.1"
@@ -19,7 +19,7 @@ imageTag:
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-snapshotter-prow-rc
+  name: imagetag-csi-snapshotter-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-snapshotter
   newTag: "v3.0.2"
@@ -28,7 +28,7 @@ imageTag:
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-node-registrar-prow-rc
+  name: imagetag-csi-node-registrar-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-node-driver-registrar
   newTag: "v1.3.0"
@@ -37,8 +37,8 @@ imageTag:
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-gce-fs-driver-rc
+  name: imagetag-gce-fs-driver
 imageTag:
-  name: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+  name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
   newTag: "v0.3.1"
 ---

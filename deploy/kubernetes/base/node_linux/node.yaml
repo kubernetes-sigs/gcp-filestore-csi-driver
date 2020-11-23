@@ -43,7 +43,7 @@ spec:
         - name: gcp-filestore-driver
           securityContext:
             privileged: true
-          image: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
@@ -61,7 +61,7 @@ spec:
             - name: plugin-dir
               mountPath: /csi
         - name: nfs-services
-          image: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
           command: ["/nfs_services_start.sh"]
       volumes:
         - name: registration-dir

@@ -43,6 +43,7 @@ kind: ImageTagTransformer
 metadata:
   name: imagetag-csi-gce-driver-prow-head
 imageTag:
-  name: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+  name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
+  newName: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
   newTag: "canary"
 ---

@@ -52,7 +52,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: gcp-filestore-driver
-          image: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
           args:
             - "--v=4"
             - "--endpoint=unix:/csi/csi.sock"
