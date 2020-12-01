@@ -4,12 +4,18 @@ StorageClass:
 SnapshotClass:
   FromFile: {{ .SnapshotClassFile }}
 {{end}}
+{{if .Timeouts}}
+Timeouts:
+  {{ range $key, $value := .Timeouts }}{{ $key }}: {{ $value }}
+  {{ end }}
+{{end}}
 DriverInfo:
   Name: csi-gcpfs-{{.StorageClass}}
-  {{range .SupportedFsType}}
+{{if .SupportedFsType}}
   SupportedFsType:
-    {{ . }}:
+  {{range .SupportedFsType}}  {{ . }}:
   {{end}}
+{{end}}
   Capabilities:
   {{range .Capabilities}}  {{ . }}: true
   {{end}}
