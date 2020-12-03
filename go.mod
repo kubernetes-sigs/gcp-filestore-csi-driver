@@ -18,10 +18,12 @@ require (
 	github.com/sirupsen/logrus v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.6.1 // indirect
-	golang.org/x/net v0.0.0-20201010224723-4f7140c49acb
+	golang.org/x/mod v0.4.0 // indirect
+	golang.org/x/net v0.0.0-20201021035429-f5854403a974
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	golang.org/x/sys v0.0.0-20201008064518-c1f3e3309c71 // indirect
-	google.golang.org/api v0.33.0
+	golang.org/x/tools v0.0.0-20201202200335-bef1c476418a // indirect
+	google.golang.org/api v0.35.0
 	google.golang.org/grpc v1.32.0
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
