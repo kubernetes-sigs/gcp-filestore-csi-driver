@@ -15,6 +15,9 @@
 # Core Filestore CSI driver binary
 DRIVERBINARY=gcp-filestore-csi-driver
 
+$(info PULL_BASE_REF is $(PULL_BASE_REF))
+$(info GIT_TAG is $(GIT_TAG))
+
 # A space-separated list of image tags under which the current build is to be pushed.
 # Determined dynamically.
 STAGINGVERSION=
