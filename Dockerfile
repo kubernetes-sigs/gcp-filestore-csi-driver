@@ -84,6 +84,7 @@ RUN apt-get autoremove -y && \
 FROM deps
 ARG DRIVERBINARY
 COPY --from=builder /go/src/sigs.k8s.io/gcp-filestore-csi-driver/bin/${DRIVERBINARY} /${DRIVERBINARY}
+RUN true
 COPY deploy/kubernetes/nfs_services_start.sh /nfs_services_start.sh
 
 
