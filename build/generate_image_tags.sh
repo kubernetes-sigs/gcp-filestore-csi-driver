@@ -14,39 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# A space-separated list of image tags under which the current build is to be pushed.
-# Determined dynamically.
-IMAGE_TAGS=
+# Tag for the driver image under which the current build is to be pushed.
+IMAGE_TAG=
 
-# A "canary" image gets built if the current commit is the head of the remote "master" branch.
-if [ $(git rev-list -n1 HEAD) == $(git rev-list -n1 origin/master 2>/dev/null) ]; then
-  IMAGE_TAGS+="canary "
+RELEASE_REGEX="^release-*"
+# For an automatic build trigger by cloudbuild, PULL_BASE_REF will contain the ref that
+# was pushed to trigger this build - a branch like 'master' or 'release-0.x', or a tag like 'v0.x'.
+# See instructions here: https://github.com/kubernetes/test-infra/blob/master/config/jobs/image-pushing/README.md
+# Three type of tags can be generated based on PULL_BASE_REF: canary, X.Y.Z-canary, vX.Y.Z.
+if [[ -n $PULL_BASE_REF ]]; then
+  if [[ $PULL_BASE_REF = "master" ]]; then
+    IMAGE_TAG="canary"
+  elif [[ $PULL_BASE_REF =~ $RELEASE_REGEX ]]; then
+    IMAGE_TAG=$(echo $PULL_BASE_REF | cut -f2 -d '-')-canary
+  else
+    IMAGE_TAG=$PULL_BASE_REF
+  fi
 fi
 
-# A "X.Y.Z-canary" image gets built if the current commit is the head of a "origin/release-X.Y.Z" branch.
-# The actual suffix does not matter, only the "release-" prefix is checked.
-IMAGE_TAGS+=$(git branch -r --points-at=HEAD | grep 'origin/release-' | grep -v -e ' -> ' | sed -e 's;.*/release-\(.*\);\1-canary;')
-
-# A release image "vX.Y.Z" gets built if there is a tag of that format for the current commit.
-# --abbrev=0 suppresses long format, only showing the closest tag.
-LATEST_GIT_TAG=$(git describe --tags --match='v*' --abbrev=0)
-HEAD_REV=$(git rev-list -n1 HEAD)
-
-# This variable stores the revision corresponding to the latest tag detected.
-LATEST_TAG_REV=
-if [ $LATEST_GIT_TAG ]; then
-  LATEST_TAG_REV=$(git rev-list -n1 $LATEST_GIT_TAG)
-fi
-
-if [ $LATEST_TAG_REV ] && [ $LATEST_TAG_REV == $HEAD_REV ]; then
-  IMAGE_TAGS+=$LATEST_GIT_TAG
-  IMAGE_TAGS+=" "
-fi
-
-# If we did not detect any IMAGE_TAGS, then use the latest git head
+# If we did not detect any IMAGE_TAG, then use the latest git head
 # commit as the image tag.
-if [[ -z $IMAGE_TAGS ]]; then
-  IMAGE_TAGS+=$HEAD_REV
+if [[ -z $IMAGE_TAG ]]; then
+  IMAGE_TAG=$(git rev-list -n1 HEAD)
 fi
 
-echo $IMAGE_TAGS
+echo $IMAGE_TAG
