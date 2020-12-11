@@ -393,7 +393,7 @@ func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix 
 
 	kubeTestArgs := []string{
 		"--test",
-		"--ginkgo-parallel",
+		"--ginkgo-parallel=3",
 		"--check-version-skew=false",
 		fmt.Sprintf("--test_args=%s", testArgs),
 	}

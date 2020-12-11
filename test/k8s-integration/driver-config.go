@@ -17,12 +17,21 @@ type driverConfig struct {
 	SupportedFsType      []string
 	MinimumVolumeSize    string
 	NumAllowedTopologies int
+	Timeouts             map[string]string
 }
 
 const (
 	testConfigDir      = "test/k8s-integration/config"
 	configTemplateFile = "test-config-template.in"
 	configFile         = "test-config.yaml"
+
+	// configurable timeouts for the k8s e2e testsuites.
+	podStartTimeout       = "600s"
+	claimProvisionTimeout = "600s"
+
+	// These are keys for the configurable timeout map.
+	podStartTimeoutKey       = "PodStart"
+	claimProvisionTimeoutKey = "ClaimProvision"
 )
 
 // generateDriverConfigFile loads a testdriver config template and creates a file
@@ -73,6 +82,12 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 
 	minimumVolumeSize := "1Ti"
 	numAllowedTopologies := 1
+	// Filestore instance takes in the order of minutes to be provisioned, and with dynamic provisioning (WaitForFirstCustomer policy),
+	// some e2e tests need a longer pod start timeout.
+	timeouts := map[string]string{
+		claimProvisionTimeoutKey: claimProvisionTimeout,
+		podStartTimeoutKey:       podStartTimeout,
+	}
 	params := driverConfig{
 		StorageClassFile:     filepath.Join(testParams.pkgDir, testConfigDir, storageClassFile),
 		StorageClass:         storageClassFile[:strings.LastIndex(storageClassFile, ".")],
@@ -80,6 +95,7 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		Capabilities:         caps,
 		MinimumVolumeSize:    minimumVolumeSize,
 		NumAllowedTopologies: numAllowedTopologies,
+		Timeouts:             timeouts,
 	}
 
 	// Write config file
