@@ -1,0 +1,11 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore
+provisioner: filestore.csi.storage.gke.io
+reclaimPolicy: Retain
+parameters:
+  # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup
+  # network: default
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
