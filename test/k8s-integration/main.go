@@ -41,7 +41,6 @@ var (
 	kubeFeatureGates = flag.String("kube-feature-gates", "", "feature gates to set on new kubernetes cluster")
 	localK8sDir      = flag.String("local-k8s-dir", "", "local prebuilt kubernetes/kubernetes directory to use for cluster and test binaries")
 	deploymentStrat  = flag.String("deployment-strategy", "gce", "choose between deploying on gce or gke")
-	gkeClusterVer    = flag.String("gke-cluster-version", "", "version of Kubernetes master and node for gke")
 	numNodes         = flag.Int("num-nodes", -1, "the number of nodes in the test cluster")
 	imageType        = flag.String("image-type", "cos", "the image type to use for the cluster")
 
@@ -62,6 +61,13 @@ var (
 
 	// SA for dev overlay
 	devOverlaySA = flag.String("dev-overlay-sa", "", "default SA that will be plumbed to the GCE instances")
+
+	// GKE specific flags
+	gkeClusterVer      = flag.String("gke-cluster-version", "", "version of Kubernetes master and node for gke")
+	gkeReleaseChannel  = flag.String("gke-release-channel", "", "GKE release channel to be used for cluster deploy. One of 'rapid', 'stable' or 'regular'")
+	gkeTestClusterName = flag.String("gke-cluster-name", "gcp-fs-csi-cluster", "GKE cluster name")
+	gkeNodeVersion     = flag.String("gke-node-version", "", "GKE cluster worker node version")
+	gceRegion          = flag.String("gce-region", "", "region that gke regional cluster should be created in")
 )
 
 const (
@@ -83,6 +89,9 @@ type testParameters struct {
 	deploymentStrategy string
 	outputDir          string
 	clusterVersion     string
+	cloudProviderArgs  []string
+	imageType          string
+	nodeVersion        string
 }
 
 func init() {
@@ -115,6 +124,14 @@ func main() {
 
 	if *deploymentStrat == "gce" {
 		ensureVariable(gceZone, true, "gce-zone required for 'gce' deployment")
+	} else if *deploymentStrat == "gke" {
+		ensureVariable(kubeVersion, false, "Cannot set kube-version when using deployment strategy 'gke'. Use gke-cluster-version.")
+		ensureExactlyOneVariableSet([]*string{gkeClusterVer, gkeReleaseChannel},
+			"For GKE cluster deployment, exactly one of 'gke-cluster-version' or 'gke-release-channel' must be set")
+		ensureVariable(kubeFeatureGates, false, "Cannot set feature gates when using deployment strategy 'gke'.")
+		if len(*localK8sDir) == 0 {
+			ensureVariable(testVersion, true, "Must set either test-version or local k8s dir when using deployment strategy 'gke'.")
+		}
 	}
 
 	if len(*localK8sDir) != 0 {
@@ -141,6 +158,7 @@ func handle() error {
 		snapshotClassFile:  *snapshotClassFile,
 		stagingVersion:     string(uuid.NewUUID()),
 		deploymentStrategy: *deploymentStrat,
+		imageType:          *imageType,
 	}
 
 	goPath, ok := os.LookupEnv("GOPATH")
@@ -247,7 +265,9 @@ func handle() error {
 		var err error = nil
 		switch *deploymentStrat {
 		case "gce":
-			err = clusterUpGCE(k8sDir, *gceZone, *numNodes, *imageType)
+			err = clusterUpGCE(k8sDir, *gceZone, *numNodes, testParams.imageType)
+		case "gke":
+			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType)
 		default:
 			err = fmt.Errorf("deployment-strategy must be set to 'gce' or 'gke', but is: %s", *deploymentStrat)
 		}
@@ -261,6 +281,11 @@ func handle() error {
 			switch *deploymentStrat {
 			case "gce":
 				err := clusterDownGCE(k8sDir)
+				if err != nil {
+					klog.Errorf("failed to cluster down: %v", err)
+				}
+			case "gke":
+				err := clusterDownGKE(*gceZone, *gceRegion)
 				if err != nil {
 					klog.Errorf("failed to cluster down: %v", err)
 				}
@@ -292,11 +317,22 @@ func handle() error {
 		}
 	}()
 
+	switch testParams.deploymentStrategy {
+	case "gke":
+		testParams.cloudProviderArgs, err = getGKEKubeTestArgs(*gceZone, *gceRegion, testParams.imageType)
+		if err != nil {
+			return fmt.Errorf("failed to build GKE kubetest args: %v", err)
+		}
+	}
 	// For clusters deployed on GCE, use the apimachinery version utils (which supports non-gke based semantic versioning).
 	testParams.clusterVersion = mustGetKubeClusterVersion()
+	klog.Infof("kubernetes cluster server version: %s", testParams.clusterVersion)
 	switch *deploymentStrat {
 	case "gce":
 		testParams.testSkip = generateGCETestSkip(testParams)
+	case "gke":
+		testParams.nodeVersion = *gkeNodeVersion
+		testParams.testSkip = generateGKETestSkip(testParams)
 	default:
 		return fmt.Errorf("Unknown deployment strategy %s", *deploymentStrat)
 	}
@@ -355,6 +391,32 @@ func generateGCETestSkip(testParams *testParameters) string {
 	return skipString
 }
 
+func generateGKETestSkip(testParams *testParameters) string {
+	skipString := "\\[Disruptive\\]|\\[Serial\\]"
+	curVer := mustParseVersion(testParams.clusterVersion)
+	// "volumeMode should not mount / map unused volumes in a pod" tests a
+	// (https://github.com/kubernetes/kubernetes/pull/81163)
+	// bug-fix introduced in 1.16
+	if curVer.lessThan(mustParseVersion("1.16.0")) {
+		skipString = skipString + "|volumeMode\\sshould\\snot\\smount\\s/\\smap\\sunused\\svolumes\\sin\\sa\\spod"
+	}
+
+	// For GKE deployed PD CSI driver, resizer sidecar is enabled in 1.16.8-gke.3
+	if curVer.lessThan(mustParseVersion("1.16.0")) {
+		skipString = skipString + "|allowExpansion"
+	}
+
+	// Skip fsgroup change policy tests until the filestore csi driver supports it.
+	skipString = skipString + "|fsgroupchangepolicy"
+
+	// Running snapshot tests on GKE needs k8s 1.19x storage e2e testsuite (until GKE supports v1 snapshot APIs).
+	// And to run 1.19x test suite for filestore, https://github.com/kubernetes/kubernetes/pull/96042 needs to be cherry-picked
+	// to 1.19 branch, so that configurable timeouts can be setup for filestore instance provisioning.
+	skipString = skipString + "|VolumeSnapshotDataSource"
+
+	return skipString
+}
+
 func runCSITests(testParams *testParameters, storageClassFile, reportPrefix string) error {
 	testDriverConfigFile, err := generateDriverConfigFile(testParams, storageClassFile)
 	if err != nil {
@@ -400,6 +462,8 @@ func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix 
 	if kubetestDumpDir != "" {
 		kubeTestArgs = append(kubeTestArgs, fmt.Sprintf("--dump=%s", kubetestDumpDir))
 	}
+	kubeTestArgs = append(kubeTestArgs, testParams.cloudProviderArgs...)
+
 	err = runCommand("Running Tests", exec.Command("kubetest", kubeTestArgs...))
 	if err != nil {
 		return fmt.Errorf("failed to run tests on e2e cluster: %v", err)

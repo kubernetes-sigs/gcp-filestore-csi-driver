@@ -30,6 +30,10 @@ func gkeLocationArgs(gceZone, gceRegion string) (locationArg, locationVal string
 	return
 }
 
+func isRegionalGKECluster(gceZone, gceRegion string) bool {
+	return len(gceRegion) > 0
+}
+
 func buildKubernetes(k8sDir, command string) error {
 	cmd := exec.Command("make", "-C", k8sDir, command)
 	err := runCommand("Building Kubernetes", cmd)
@@ -87,8 +91,10 @@ func clusterUpGCE(k8sDir, gceZone string, numNodes int, imageType string) error 
 		}
 	}
 
-	if err = os.Setenv("KUBE_GCE_NETWORK", gceInstanceNetwork); err != nil {
-		return err
+	if *deploymentStrat != "gke" {
+		if err = os.Setenv("KUBE_GCE_NETWORK", gceInstanceNetwork); err != nil {
+			return err
+		}
 	}
 
 	cmd := exec.Command(filepath.Join(k8sDir, "hack", "e2e-internal", "e2e-up.sh"))
@@ -226,4 +232,111 @@ func getKubeClient() (kubernetes.Interface, error) {
 		return nil, fmt.Errorf("failed to create client: %v", err)
 	}
 	return kubeClient, nil
+}
+
+func clusterDownGKE(gceZone, gceRegion string) error {
+	locationArg, locationVal, err := gkeLocationArgs(gceZone, gceRegion)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command("gcloud", "container", "clusters", "delete", *gkeTestClusterName,
+		locationArg, locationVal, "--quiet")
+	err = runCommand("Bringing Down E2E Cluster on GKE", cmd)
+	if err != nil {
+		return fmt.Errorf("failed to bring down kubernetes e2e cluster on gke: %v", err)
+	}
+	return nil
+}
+
+func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string) error {
+	locationArg, locationVal, err := gkeLocationArgs(gceZone, gceRegion)
+	if err != nil {
+		return err
+	}
+
+	out, err := exec.Command("gcloud", "container", "clusters", "list", locationArg, locationVal,
+		"--filter", fmt.Sprintf("name=%s", *gkeTestClusterName)).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to check for previous test cluster: %v %s", err, out)
+	}
+	if len(out) > 0 {
+		klog.Infof("Detected previous cluster %s. Deleting so a new one can be created...", *gkeTestClusterName)
+		err = clusterDownGKE(gceZone, gceRegion)
+		if err != nil {
+			return err
+		}
+	}
+
+	var cmd *exec.Cmd
+	cmdParams := []string{"container", "clusters", "create", *gkeTestClusterName,
+		locationArg, locationVal, "--num-nodes", strconv.Itoa(numNodes),
+		"--quiet", "--machine-type", "n1-standard-2", "--image-type", imageType}
+	if isVariableSet(gkeClusterVer) {
+		cmdParams = append(cmdParams, "--cluster-version", *gkeClusterVer)
+	} else {
+		cmdParams = append(cmdParams, "--release-channel", *gkeReleaseChannel)
+		// release channel based GKE clusters require autorepair to be enabled.
+		cmdParams = append(cmdParams, "--enable-autorepair")
+	}
+
+	if isVariableSet(gkeNodeVersion) {
+		cmdParams = append(cmdParams, "--node-version", *gkeNodeVersion)
+	}
+
+	cmd = exec.Command("gcloud", cmdParams...)
+	err = runCommand("Starting E2E Cluster on GKE", cmd)
+	if err != nil {
+		return fmt.Errorf("failed to bring up kubernetes e2e cluster on gke: %v", err)
+	}
+
+	return nil
+}
+
+func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) {
+	var locationArg, locationVal string
+	switch {
+	case len(gceZone) > 0:
+		locationArg = "--gcp-zone"
+		locationVal = gceZone
+	case len(gceRegion) > 0:
+		locationArg = "--gcp-region"
+		locationVal = gceRegion
+	}
+
+	var gkeEnv string
+	switch gkeURL := os.Getenv("CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER"); gkeURL {
+	case "https://staging-container.sandbox.googleapis.com/":
+		gkeEnv = "staging"
+	case "https://test-container.sandbox.googleapis.com/":
+		gkeEnv = "test"
+	case "":
+		gkeEnv = "prod"
+	default:
+		// if the URL does not match to an option, assume it is a custom GKE backend
+		// URL and pass that to kubetest
+		gkeEnv = gkeURL
+	}
+
+	cmd := exec.Command("gcloud", "config", "get-value", "project")
+	project, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get current project: %v", err)
+	}
+
+	args := []string{
+		"--up=false",
+		"--down=false",
+		"--provider=gke",
+		"--gcp-network=default",
+		"--check-version-skew=false",
+		"--deployment=gke",
+		fmt.Sprintf("--gcp-node-image=%s", imageType),
+		fmt.Sprintf("--cluster=%s", *gkeTestClusterName),
+		fmt.Sprintf("--gke-environment=%s", gkeEnv),
+		fmt.Sprintf("%s=%s", locationArg, locationVal),
+		fmt.Sprintf("--gcp-project=%s", project[:len(project)-1]),
+	}
+
+	return args, nil
 }
