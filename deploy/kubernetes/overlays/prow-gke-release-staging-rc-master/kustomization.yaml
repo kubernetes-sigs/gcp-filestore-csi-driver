@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
 - ../stable-master
 transformers:
-- ../../images/prow-gke-release-staging-head
+- ../../images/prow-gke-release-staging-rc-master

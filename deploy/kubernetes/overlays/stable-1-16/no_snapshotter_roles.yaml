@@ -1,0 +1,34 @@
+# TODO: Check if we can remove the snapshot, snapshotcontent get list roles for provisioner
+$patch: delete
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: gcp-filestore-csi-snapshotter-role
+rules:
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list", "watch", "create", "update", "patch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents"]
+    verbs: ["create", "get", "list", "watch", "update", "delete"]
+  - apiGroups: ["snapshot.storage.k8s.io"]
+    resources: ["volumesnapshotcontents/status"]
+    verbs: ["update"]
+---
+$patch: delete
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-snapshotter-binding
+subjects:
+  - kind: ServiceAccount
+    name: gcp-filestore-csi-controller-sa
+    namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: ClusterRole
+  name: gcp-filestore-csi-snapshotter-role
+  apiGroup: rbac.authorization.k8s.io
+---
