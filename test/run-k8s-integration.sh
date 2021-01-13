@@ -21,13 +21,43 @@ readonly test_version=${TEST_VERSION:-master}
 readonly gce_zone=${GCE_CLUSTER_ZONE:-us-central1-b}
 readonly image_type=${IMAGE_TYPE:-cos}
 readonly teardown_driver=${GCE_FS_TEARDOWN_DRIVER:-true}
+readonly gke_cluster_version=${GKE_CLUSTER_VERSION:-latest}
+readonly gke_release_channel=${GKE_RELEASE_CHANNEL:-""}
+readonly gke_node_version=${GKE_NODE_VERSION:-}
+readonly gce_region=${GCE_CLUSTER_REGION:-}
+readonly storageclass_files=${STORAGECLASS_FILES:-}
 
 make -C "${PKGDIR}" test-k8s-integration
 echo "make successful"
 base_cmd="${PKGDIR}/bin/k8s-integration-test \
             --run-in-prow=true --service-account-file=${E2E_GOOGLE_APPLICATION_CREDENTIALS} \
             --do-driver-build=${do_driver_build} --teardown-driver=${teardown_driver} --boskos-resource-type=${boskos_resource_type} \
-            --test-version=${test_version} --kube-version=${kube_version} --num-nodes=3 --image-type=${image_type} \
-            --deploy-overlay-name=${overlay_name} --gce-zone=${gce_zone}"
+            --test-version=${test_version} --num-nodes=3 --image-type=${image_type} --deployment-strategy=${deployment_strategy} \
+            --deploy-overlay-name=${overlay_name}"
+
+
+if [ "$deployment_strategy" = "gke" ]; then
+  if [ -n "$gke_release_channel" ]; then
+    base_cmd="${base_cmd} --gke-release-channel=${gke_release_channel}"
+  else
+    base_cmd="${base_cmd} --gke-cluster-version=${gke_cluster_version}"
+  fi
+
+  if [ -n "$gke_node_version" ]; then
+    base_cmd="${base_cmd} --gke-node-version=${gke_node_version}"
+  fi
+else
+  base_cmd="${base_cmd} --kube-version=${kube_version}"
+fi
+
+if [ -z "$gce_region" ]; then
+  base_cmd="${base_cmd} --gce-zone=${gce_zone}"
+else
+  base_cmd="${base_cmd} --gce-region=${gce_region}"
+fi
+
+if [ -n "$storageclass_files" ]; then
+  base_cmd="${base_cmd} --storageclass-files=${storageclass_files}"
+fi
 
 eval "$base_cmd"
