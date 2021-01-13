@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -63,13 +62,7 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		"RWX",
 		"multipods",
 		"topology",
-	}
-
-	switch testParams.deploymentStrategy {
-	case "gce":
-		caps = append(caps, "controllerExpansion")
-	default:
-		return "", fmt.Errorf("got unknown deployment strat %s, expected gce or gke", testParams.deploymentStrategy)
+		"controllerExpansion",
 	}
 
 	var absSnapshotClassFilePath string
