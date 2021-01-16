@@ -19,12 +19,21 @@ Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 This plugin is compatible with CSI version 1.3.0.
 
 ### Kubernetes Compatibility
+The following table captures the compatibility matrix of the core filestore driver binary
+`k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver`
 
 | Filestore CSI Driver\Kubernetes Version | 1.14 | 1.15 | 1.16 | 1.17+ |
 | --------------------------------------- | ---- | ---- | ---- | ----- |
 | v0.2.0 (alpha)                          | yes  |  no  |  no  |  no   |
-| v0.3.1 (beta)                           | no   |  no  |  no  |  yes  |
-| master                                  | no   |  no  |  no  |  yes  |
+| v0.3.1 (beta)                           | no   |  yes |  yes |  yes  |
+| master                                  | no   |  yes |  yes |  yes  |
+
+The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar;
+csi driver object, rbacs, pod security policies etc) can be picked up from the master branch [overlays](deploy/kubernetes/overlays) directory. We structure the overlays directory, per minor version of kubernetes because not all driver components can be used with all kubernetes versions. For example volume snapshots are supported 1.17+ kubernetes versions thus [stable-1-16](deploy/kubernetes/overlays/stable-1-16) driver manifests does not contain the snapshotter sidecar.
+
+Example:
+`stable-1-19` overlays bundle can be used to deploy all the components of the driver on kubernetes 1.19.
+`stable-master` overlays bundle can be used to deploy all the components of the driver on kubernetes master.
 
 ## Plugin Features
 

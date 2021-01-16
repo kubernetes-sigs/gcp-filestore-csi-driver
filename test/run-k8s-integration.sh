@@ -12,7 +12,7 @@ if [ "$K8S_E2E_SCRIPT_PARENT_DIR" != "$PKGDIR" ]; then
   exit 1
 fi
 
-readonly overlay_name="${GCE_FS_OVERLAY_NAME:-stable}"
+readonly overlay_name="${GCE_FS_OVERLAY_NAME:-stable-master}"
 readonly boskos_resource_type="${GCE_FS_BOSKOS_RESOURCE_TYPE:-gce-project}"
 readonly do_driver_build="${GCE_FS_DO_DRIVER_BUILD:-true}"
 readonly deployment_strategy=${DEPLOYMENT_STRATEGY:-gce}
