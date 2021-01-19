@@ -98,7 +98,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 ```$ PROJECT=<your-gcp-project> make build-image-and-push```
 
 * The base manifests like core driver manifests, rbac role bindings are listed under [here](deploy/kubernetes/base).
-  The overlays (e.g prow-gke-release-staging-head, prow-gke-release-staging-rc, stable, dev) are listed under deploy/kubernetes/overlays
+  The overlays (e.g prow-gke-release-staging-head, prow-gke-release-staging-rc-{k8s version}, stable-{k8s version}, dev) are listed under deploy/kubernetes/overlays
   apply transformations on top of the base manifests.
 
 * 'dev' overlay uses default service account for communicating with GCP services. `https://www.googleapis.com/auth/cloud-platform` scope allows full access to all Google Cloud APIs and given node scope will allow any pod to reach GCP services as the provided service account, and so should only be used for testing and development, not production clusters. cluster_setup.sh installs kustomize and creates the driver manifests package and deploys to the cluster. Bring up GCE cluster with following:
