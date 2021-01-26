@@ -2,10 +2,13 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	apimachineryversion "k8s.io/apimachinery/pkg/util/version"
 )
 
 type driverConfig struct {
@@ -71,6 +74,32 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		caps = append(caps, "snapshotDataSource")
 		// Update the absolute file path pointing to the snapshot class file, if it is provided as an argument.
 		absSnapshotClassFilePath = filepath.Join(testParams.pkgDir, testConfigDir, testParams.snapshotClassFile)
+	}
+
+	switch testParams.deploymentStrategy {
+	case "gke":
+		var gkeVer *version
+		// The node version is what matters for fsgroup support, as the code resides in kubelet. If the node version
+		// is not given, we assume it's the same as the cluster master version.
+		if testParams.nodeVersion != "" {
+			gkeVer = mustParseVersion(testParams.nodeVersion)
+		} else {
+			gkeVer = mustParseVersion(testParams.clusterVersion)
+		}
+		if gkeVer.lessThan(mustParseVersion("1.20.0")) {
+			// "CSIVolumeFSGroupPolicy" is beta 1.20+
+		} else {
+			caps = append(caps, "fsGroup")
+		}
+	case "gce":
+		v := apimachineryversion.MustParseSemantic(testParams.clusterVersion)
+		if v.LessThan(apimachineryversion.MustParseSemantic("1.20.0")) {
+			// "CSIVolumeFSGroupPolicy" is beta 1.20+
+		} else {
+			caps = append(caps, "fsGroup")
+		}
+	default:
+		return "", fmt.Errorf("got unknown deployment strat %s, expected gce or gke", testParams.deploymentStrategy)
 	}
 
 	minimumVolumeSize := "1Ti"

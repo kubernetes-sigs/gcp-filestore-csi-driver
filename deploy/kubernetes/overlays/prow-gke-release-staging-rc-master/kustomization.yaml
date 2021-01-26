@@ -2,5 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
 - ../stable-master
+patchesStrategicMerge:
+- fsgrouppolicy.yaml
 transformers:
 - ../../images/prow-gke-release-staging-rc-master
