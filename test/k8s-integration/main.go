@@ -388,6 +388,10 @@ func generateGCETestSkip(testParams *testParameters) string {
 	if v.LessThan(apimachineryversion.MustParseSemantic("1.17.0")) {
 		skipString = skipString + "|VolumeSnapshotDataSource"
 	}
+
+	if v.LessThan(apimachineryversion.MustParseSemantic("1.20.0")) {
+		skipString = skipString + "|fsgroupchangepolicy"
+	}
 	return skipString
 }
 
@@ -406,8 +410,10 @@ func generateGKETestSkip(testParams *testParameters) string {
 		skipString = skipString + "|allowExpansion"
 	}
 
-	// Skip fsgroup change policy tests until the filestore csi driver supports it.
-	skipString = skipString + "|fsgroupchangepolicy"
+	// Skip fsgroup change policy based on GKE cluster version.
+	if curVer.lessThan(mustParseVersion("1.20.0")) {
+		skipString = skipString + "|fsgroupchangepolicy"
+	}
 
 	// Running snapshot tests on GKE needs k8s 1.19x storage e2e testsuite (until GKE supports v1 snapshot APIs).
 	// And to run 1.19x test suite for filestore, https://github.com/kubernetes/kubernetes/pull/96042 needs to be cherry-picked
