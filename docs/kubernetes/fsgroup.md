@@ -37,7 +37,6 @@ Kubernetes uses fsGroup to change permissions and ownership of the volume to mat
 
     ```console
     $ kubectl get csidriver filestore.csi.storage.gke.io -o json
-    saikatroyc@saikatroyc:~/go/src/sigs.k8s.io/gcp-filestore-csi-driver$ k get csidriver filestore.csi.storage.gke.io -o json
     {
         "apiVersion": "storage.k8s.io/v1",
         "kind": "CSIDriver",
