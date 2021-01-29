@@ -5,5 +5,7 @@ namespace:
 resources:
 - ../../base/controller
 - ../../base/node_linux
+patchesStrategicMerge:
+- fsgrouppolicy.yaml
 transformers:
 - ../../images/stable-master

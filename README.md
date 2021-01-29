@@ -72,6 +72,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 * Volume Snapshot: The CSI driver currently supports CSI VolumeSnapshots on a GCP Filestore instance using the GCP Filestore Backup feature. CSI VolumeSnapshot is a Beta feature in k8s enabled by default in 1.17+. The GCP Filestore Snapshot [alpha](https://cloud.google.com/sdk/gcloud/reference/alpha/filestore/snapshots/create) is not currently supported, but will be in the future via the type parameter in the VolumeSnapshotClass. For more details see the user-guide [here](docs/kubernetes/backup.md).
 * Volume Restore: The CSI driver supports out-of-place restore of new GCP Filestore instance from a given GCP Filestore Backup. See user-guide restore steps [here](docs/kubernetes/backup.md) and GCP Filestore Backup restore documentation [here](https://cloud.google.com/filestore/docs/backup-restore). This feature needs kubernetes 1.17+.
 * Pre-provisioned Filestore instance: Pre-provisioned filestore instances can be leveraged and consumed by workloads by mapping a given filestore instance to a PersistentVolume and PersistentVolumeClaim. See user-guide [here](docs/kubernetes/pre-provisioned-pv.md) and filestore documentation [here](https://cloud.google.com/filestore/docs/accessing-fileshares)
+* FsGroup: [CSIVolumeFSGroupPolicy](https://kubernetes-csi.github.io/docs/support-fsgroup.html) is a Kubernetes feature in Beta is 1.20, which allows CSI drivers to opt into FSGroup policies. The stable-master [overlay](deploy/kubernetes/overlays/stable-master) of Filestore CSI driver now supports this. See the user-guide [here](docs/kubernetes/fsgroup.md) on how to apply fsgroup to volumes backed by filestore instances. For a workaround to apply fsgroup on clusters 1.19 (with CSIVolumeFSGroupPolicy feature gate disabled), and clusters <= 1.18 see user-guide [here](docs/kubernetes/fsgroup-workaround.md)
 
 ## Future Features
 * Non-root access: By default, GCFS instances are only writable by the root user
@@ -83,7 +84,6 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
   [nfs-client](https://github.com/kubernetes-incubator/external-storage/tree/master/nfs-client)
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
-* FsGroup feature: [CSIVolumeFSGroupPolicy](https://kubernetes-csi.github.io/docs/csi-driver-object.html) is a Kubernetes feature in Beta is 1.20, which allows CSI drivers to opt into FSGroup policies. Filestore CSI driver plans to support it in near future. As a workaround, until the feature is available, see user-guide [here](docs/kubernetes/fsgroup.md) on how to apply fsgroup to volumes backed by filestore instances.
 
 ## Kubernetes Development
 
