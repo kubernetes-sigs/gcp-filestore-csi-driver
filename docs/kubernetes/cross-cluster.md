@@ -236,7 +236,6 @@ The following example demonstrates the usage of a dynamically created filestore 
 
     ```console
     $ gcloud filestore instances delete pvc-88959393-01c7-415f-aac4-a974c45f7ec7 --zone us-central1-c
-    You are about to delete Cloud Filestore instance projects/mattcary-saikatroyc-test/locations/us-central1-c/instances/pvc-88959393-01c7-415f-aac4-a974c45f7ec7.
     ```
 
 The above example can also be performed for a RecalimPolicy `Delete`. In that case, deletion of a PVC in just one of the clusters will trigger deletion of the PV and then the underlying filestore instance. The other cluster's PV will point to a nonexistent filestore instance, pods will start failing I/O, and if a pod delete is triggerd, pods will be stuck in a `Terminating` state due to failure of CSI NodeUnpublish calls. So, care must be taken when using a `Delete` policy.
