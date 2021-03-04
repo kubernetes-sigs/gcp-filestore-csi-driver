@@ -20,7 +20,6 @@ import (
 	"fmt"
 
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 )
 
 func NewFakeCloud() (*Cloud, error) {
@@ -28,13 +27,10 @@ func NewFakeCloud() (*Cloud, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Filestore service: %v", err)
 	}
-	meta, err := metadata.NewFakeService()
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Metadata service: %v", err)
-	}
 
 	return &Cloud{
-		File: file,
-		Meta: meta,
+		File:    file,
+		Project: "test-project",
+		Zone:    "us-central1-c",
 	}, nil
 }

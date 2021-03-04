@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"regexp"
 	"runtime"
 	"strings"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/golang/glog"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
@@ -93,20 +95,19 @@ const (
 
 var _ Service = &gcfsServiceManager{}
 
-func NewGCFSService(version string) (Service, error) {
-
+func NewGCFSService(version string, client *http.Client) (Service, error) {
 	ctx := context.Background()
-	fileService, err := filev1.NewService(ctx)
+	fileService, err := filev1.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
-	fileV1beta1Service, err := filev1beta1.NewService(ctx)
+	fileV1beta1Service, err := filev1beta1.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
-
+	fileV1beta1Service.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 	return &gcfsServiceManager{
 		fileService:              fileService,
 		instancesService:         filev1.NewProjectsLocationsInstancesService(fileService),

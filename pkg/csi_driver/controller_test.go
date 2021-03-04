@@ -23,8 +23,8 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"k8s.io/apimachinery/pkg/util/sets"
+	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -39,19 +39,19 @@ const (
 )
 
 func initTestController(t *testing.T) csi.ControllerServer {
-	metaService, err := metadata.NewFakeService()
-	if err != nil {
-		t.Fatalf("failed to initialize metadata service: %v", err)
-	}
 	fileService, err := file.NewFakeService()
 	if err != nil {
 		t.Fatalf("failed to initialize GCFS service: %v", err)
 	}
 
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
 	return newControllerServer(&controllerServerConfig{
 		driver:      initTestDriver(t),
-		metaService: metaService,
 		fileService: fileService,
+		cloud:       cloudProvider,
 	})
 }
 
