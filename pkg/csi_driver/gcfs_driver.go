@@ -60,9 +60,6 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 	if config.Version == "" {
 		return nil, fmt.Errorf("driver version missing")
 	}
-	if config.NodeID == "" {
-		return nil, fmt.Errorf("node id missing")
-	}
 	if config.RunController == false && config.RunNode == false {
 		return nil, fmt.Errorf("must run at least one controller or node service")
 	}

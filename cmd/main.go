@@ -55,6 +55,10 @@ func main() {
 	if *runController {
 		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath)
 	} else {
+		if *nodeID == "" {
+			klog.Fatalf("nodeid cannot be empty for node service")
+		}
+
 		meta, err = metadataservice.NewMetadataService()
 		if err != nil {
 			klog.Fatalf("Failed to set up metadata service: %v", err)
