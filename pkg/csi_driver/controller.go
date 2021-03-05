@@ -25,8 +25,8 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -79,7 +79,7 @@ type controllerServer struct {
 type controllerServerConfig struct {
 	driver      *GCFSDriver
 	fileService file.Service
-	metaService metadata.Service
+	cloud       *cloud.Cloud
 	ipAllocator *util.IPAllocator
 }
 
@@ -236,7 +236,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
-	filer.Project = s.config.metaService.GetProject()
+	filer.Project = s.config.cloud.Project
 	err = s.config.fileService.DeleteInstance(ctx, filer)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -263,7 +263,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 		return nil, status.Error(codes.NotFound, err.Error())
 	}
 
-	filer.Project = s.config.metaService.GetProject()
+	filer.Project = s.config.cloud.Project
 	newFiler, err := s.config.fileService.GetInstance(ctx, filer)
 	if err != nil && !file.IsNotFoundErr(err) {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -358,7 +358,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		}
 	}
 	return &file.ServiceInstance{
-		Project:  s.config.metaService.GetProject(),
+		Project:  s.config.cloud.Project,
 		Name:     name,
 		Location: location,
 		Tier:     tier,
@@ -414,7 +414,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, err
 	}
 
-	filer.Project = s.config.metaService.GetProject()
+	filer.Project = s.config.cloud.Project
 	filer.Volume.SizeBytes = reqBytes
 	newfiler, err := s.config.fileService.ResizeInstance(ctx, filer)
 	if err != nil {
@@ -430,7 +430,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 
 func (s *controllerServer) pickZone(top *csi.TopologyRequirement) (string, error) {
 	if top == nil {
-		return s.config.metaService.GetZone(), nil
+		return s.config.cloud.Zone, nil
 	}
 
 	return pickZoneFromTopology(top)
@@ -546,7 +546,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		glog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
-	filer.Project = s.config.metaService.GetProject()
+	filer.Project = s.config.cloud.Project
 	// If parameters are empty we assume 'backup' type by default.
 	if req.GetParameters() != nil {
 		if _, err := util.IsSnapshotTypeSupported(req.GetParameters()); err != nil {

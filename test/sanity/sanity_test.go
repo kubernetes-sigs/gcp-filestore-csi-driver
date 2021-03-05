@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc"
 	"k8s.io/utils/mount"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
 )
 
@@ -57,14 +58,19 @@ func TestSanity(t *testing.T) {
 	}
 	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
 
+	meta, err := metadata.NewFakeService()
+	if err != nil {
+		t.Fatalf("Failed to get metadata service: %v", err)
+	}
 	driverConfig := &driver.GCFSDriverConfig{
-		Name:          driverName,
-		Version:       driverVersion,
-		NodeID:        nodeID,
-		RunController: true,
-		RunNode:       true,
-		Mounter:       mounter,
-		Cloud:         cloudProvider,
+		Name:            driverName,
+		Version:         driverVersion,
+		NodeID:          nodeID,
+		RunController:   true,
+		RunNode:         true,
+		Mounter:         mounter,
+		Cloud:           cloudProvider,
+		MetadataService: meta,
 	}
 	gcfsDriver, err := driver.NewGCFSDriver(driverConfig)
 	if err != nil {

@@ -71,7 +71,7 @@ var (
 )
 
 const (
-	fsImagePlaceholder      = "gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver"
+	fsImagePlaceholder      = "k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver"
 	externalDriverNamespace = "gcp-filestore-csi-driver"
 	// If the network name is changed, the same network needs to be provided in storage class template passed in 'storageClassFiles' flag.
 	gceInstanceNetwork = "csi-filestore-test-network"

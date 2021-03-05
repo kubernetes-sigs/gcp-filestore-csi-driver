@@ -17,22 +17,26 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"flag"
 	"os"
 
 	"github.com/golang/glog"
 
+	"k8s.io/klog"
 	"k8s.io/utils/mount"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
 )
 
 var (
-	endpoint      = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
-	nodeID        = flag.String("nodeid", "", "node id")
-	runController = flag.Bool("controller", false, "run controller service")
-	runNode       = flag.Bool("node", false, "run node service")
-
+	endpoint            = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
+	nodeID              = flag.String("nodeid", "", "node id")
+	runController       = flag.Bool("controller", false, "run controller service")
+	runNode             = flag.Bool("node", false, "run node service")
+	cloudConfigFilePath = flag.String("cloud-config", "", "Path to GCE cloud provider config")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -45,11 +49,20 @@ func main() {
 
 	var provider *cloud.Cloud
 	var err error
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var meta metadata.Service
 	if *runController {
-		provider, err = cloud.NewCloud(version)
+		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath)
 	} else {
-		// For driver running in worker nodes, initialize cloud provider with only medata service.
-		provider, err = cloud.NewCloudWithMetadataService()
+		if *nodeID == "" {
+			klog.Fatalf("nodeid cannot be empty for node service")
+		}
+
+		meta, err = metadataservice.NewMetadataService()
+		if err != nil {
+			klog.Fatalf("Failed to set up metadata service: %v", err)
+		}
 	}
 
 	if err != nil {
@@ -58,13 +71,14 @@ func main() {
 
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
-		Name:          driverName,
-		Version:       version,
-		NodeID:        *nodeID,
-		RunController: *runController,
-		RunNode:       *runNode,
-		Mounter:       mounter,
-		Cloud:         provider,
+		Name:            driverName,
+		Version:         version,
+		NodeID:          *nodeID,
+		RunController:   *runController,
+		RunNode:         *runNode,
+		Mounter:         mounter,
+		Cloud:           provider,
+		MetadataService: meta,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

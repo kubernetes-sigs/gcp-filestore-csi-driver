@@ -25,16 +25,18 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/utils/mount"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
+	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 )
 
 type GCFSDriverConfig struct {
-	Name          string          // Driver name
-	Version       string          // Driver version
-	NodeID        string          // Node name
-	RunController bool            // Run CSI controller service
-	RunNode       bool            // Run CSI node service
-	Mounter       mount.Interface // Mount library
-	Cloud         *cloud.Cloud    // Cloud provider
+	Name            string          // Driver name
+	Version         string          // Driver version
+	NodeID          string          // Node name
+	RunController   bool            // Run CSI controller service
+	RunNode         bool            // Run CSI node service
+	Mounter         mount.Interface // Mount library
+	Cloud           *cloud.Cloud    // Cloud provider
+	MetadataService metadataservice.Service
 }
 
 type GCFSDriver struct {
@@ -57,9 +59,6 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 	}
 	if config.Version == "" {
 		return nil, fmt.Errorf("driver version missing")
-	}
-	if config.NodeID == "" {
-		return nil, fmt.Errorf("node id missing")
 	}
 	if config.RunController == false && config.RunNode == false {
 		return nil, fmt.Errorf("must run at least one controller or node service")
@@ -85,7 +84,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 		nscap := []csi.NodeServiceCapability_RPC_Type{
 			csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 		}
-		driver.ns = newNodeServer(driver, config.Mounter, config.Cloud.Meta)
+		driver.ns = newNodeServer(driver, config.Mounter, config.MetadataService)
 		driver.addNodeServiceCapabilities(nscap)
 	}
 	if config.RunController {
@@ -100,7 +99,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 		driver.cs = newControllerServer(&controllerServerConfig{
 			driver:      driver,
 			fileService: config.Cloud.File,
-			metaService: config.Cloud.Meta,
+			cloud:       config.Cloud,
 		})
 	}
 
