@@ -240,10 +240,11 @@ func clusterDownGKE(gceZone, gceRegion string) error {
 		return err
 	}
 
-	cmd := exec.Command("gcloud", "container", "clusters", "delete", *gkeTestClusterName,
-		locationArg, locationVal, "--quiet")
-	err = runCommand("Bringing Down E2E Cluster on GKE", cmd)
-	if err != nil {
+	fmt.Printf("Bringing down GKE cluster %v, location arg %v, location val %v", *gkeTestClusterName, locationArg, locationVal)
+	out, err := exec.Command("gcloud", "container", "clusters", "delete", *gkeTestClusterName,
+		locationArg, locationVal, "--quiet").CombinedOutput()
+	fmt.Printf("cluster delete output:\n%v", string(out))
+	if err != nil && !isNotFoundError(string(out)) {
 		return fmt.Errorf("failed to bring down kubernetes e2e cluster on gke: %v", err)
 	}
 	return nil
@@ -256,10 +257,11 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string) err
 	}
 
 	out, err := exec.Command("gcloud", "container", "clusters", "list", locationArg, locationVal,
-		"--filter", fmt.Sprintf("name=%s", *gkeTestClusterName)).CombinedOutput()
+		fmt.Sprintf("--filter=name=%s", *gkeTestClusterName)).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to check for previous test cluster: %v %s", err, out)
 	}
+	fmt.Printf("cluster list output:\n%v", string(out))
 	if len(out) > 0 {
 		klog.Infof("Detected previous cluster %s. Deleting so a new one can be created...", *gkeTestClusterName)
 		err = clusterDownGKE(gceZone, gceRegion)
@@ -339,4 +341,8 @@ func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) 
 	}
 
 	return args, nil
+}
+
+func isNotFoundError(errstr string) bool {
+	return strings.Contains(strings.ToLower(errstr), "code=404")
 }
