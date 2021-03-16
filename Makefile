@@ -49,7 +49,7 @@ image:
 		{                                                                   \
 		set -e ;                                                            \
 		for i in $(STAGINGVERSION) ;                                        \
-			do docker build --build-arg DRIVERBINARY=$${DRIVERBINARY} -t $(STAGINGIMAGE):$${i} .; \
+			do docker build --build-arg DRIVERBINARY=$(DRIVERBINARY) -t $(STAGINGIMAGE):$${i} .; \
 		done ;                                                              \
 		}
 
