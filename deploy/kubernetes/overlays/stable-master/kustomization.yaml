@@ -5,7 +5,10 @@ namespace:
 resources:
 - ../../base/controller
 - ../../base/node_linux
-patchesStrategicMerge:
-- fsgrouppolicy.yaml
+patchesJson6902:
+ - target:
+     kind: CSIDriver
+     name: filestore.csi.storage.gke.io
+   path: fsgrouppolicy.yaml
 transformers:
 - ../../images/stable-master
