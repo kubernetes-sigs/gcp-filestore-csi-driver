@@ -17,9 +17,11 @@ DRIVERBINARY=gcp-filestore-csi-driver
 
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
 $(info GIT_TAG is $(GIT_TAG))
+$(info PWD is $(PWD))
 
 # A space-separated list of image tags under which the current build is to be pushed.
-# Determined dynamically.
+# Note: For Cloud build jobs, build-image-and-push make rule is the entry point with PULL_BASE_REF initialized.
+# PULL_BASE_REF is plumbed in to the docker build as a TAG, and this is used to setup GCP_FS_CSI_STAGING_VERSION.
 STAGINGVERSION=
 ifdef GCP_FS_CSI_STAGING_VERSION
 	STAGINGVERSION=${GCP_FS_CSI_STAGING_VERSION}
@@ -36,6 +38,8 @@ else
 endif
 $(info STAGINGIMAGE is $(STAGINGIMAGE))
 
+BINDIR?=bin
+
 # This flag is used only for csi-client and windows.
 # TODO: Unify VERSION with STAGINGIMAGE
 ifeq ($(VERSION),)
@@ -49,7 +53,7 @@ image:
 		{                                                                   \
 		set -e ;                                                            \
 		for i in $(STAGINGVERSION) ;                                        \
-			do docker build --build-arg DRIVERBINARY=$${DRIVERBINARY} -t $(STAGINGIMAGE):$${i} .; \
+			do docker build --build-arg DRIVERBINARY=$(DRIVERBINARY) --build-arg TAG=$(STAGINGVERSION) -t $(STAGINGIMAGE):$${i} .; \
 		done ;                                                              \
 		}
 
@@ -57,11 +61,11 @@ image:
 # STAGINGVERSION may contain multiple tags (e.g. canary, vX.Y.Z etc). Use one of the tags
 # for setting the driver version variable. For convenience we are using the first value.
 driver:
-	mkdir -p bin
+	mkdir -p ${BINDIR}
 	{                                                                                                                                 \
 	set -e ;                                                                                                                          \
 	for i in $(STAGINGVERSION) ; do                                                                                                   \
-		CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$${i}"' -extldflags "-static"' -o bin/${DRIVERBINARY} ./cmd/; \
+		CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$${i}"' -extldflags "-static"' -o ${BINDIR}/${DRIVERBINARY} ./cmd/; \
 		break;                                                                                                                          \
 	done ;                                                                                                                            \
 	}

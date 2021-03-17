@@ -8,10 +8,18 @@
 - Add support for fsGroupPolicy in CSI driver object for stable-master overlay ([#103](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/103), [@saikat-royc](https://github.com/saikat-royc))
 - Enable flag to configure Cloud provider config ([#107](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/107), [@saikat-royc](https://github.com/saikat-royc))
 
+## Bug or Regression
+
+- Driver binary reference fix in filestore image build ([#111](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/111), [@saikat-royc](https://github.com/saikat-royc))
+- fsgroup policy overlay patch fix ([#111](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/111), [@saikat-royc](https://github.com/saikat-royc))
+- Fix driver image binary path in dockerfile COPY ([#112](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/112), [@saikat-royc](https://github.com/saikat-royc))
+- Setup STAGINGVERSION when calling make driver from dockerfile ([#113](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/113), [@saikat-royc](https://github.com/saikat-royc))
+
 ### Tests
 - Add configurable timeouts for k8s e2e tests ([#92](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/92), [@saikat-royc](https://github.com/saikat-royc))
 - Support GKE deployment in integration tests ([#98](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/98), [@saikat-royc](https://github.com/saikat-royc))
 - Handle non-existent cluster delete in integration test runner ([#109](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/109), [@saikat-royc](https://github.com/saikat-royc))
+- Clone master instead of pulling from archive ([#110](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/110), [@mattcary](https://github.com/mattcary))
 
 ### Documentation
 
