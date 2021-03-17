@@ -20,7 +20,8 @@ $(info GIT_TAG is $(GIT_TAG))
 $(info PWD is $(PWD))
 
 # A space-separated list of image tags under which the current build is to be pushed.
-# Determined dynamically.
+# Note: For Cloud build jobs, build-image-and-push make rule is the entry point with PULL_BASE_REF initialized.
+# PULL_BASE_REF is plumbed in to the docker build as a TAG, and this is used to setup GCP_FS_CSI_STAGING_VERSION.
 STAGINGVERSION=
 ifdef GCP_FS_CSI_STAGING_VERSION
 	STAGINGVERSION=${GCP_FS_CSI_STAGING_VERSION}
@@ -52,7 +53,7 @@ image:
 		{                                                                   \
 		set -e ;                                                            \
 		for i in $(STAGINGVERSION) ;                                        \
-			do docker build --build-arg DRIVERBINARY=$(DRIVERBINARY) -t $(STAGINGIMAGE):$${i} .; \
+			do docker build --build-arg DRIVERBINARY=$(DRIVERBINARY) --build-arg TAG=$(STAGINGVERSION) -t $(STAGINGIMAGE):$${i} .; \
 		done ;                                                              \
 		}
 
