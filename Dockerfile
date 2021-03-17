@@ -16,7 +16,8 @@
 FROM golang:1.14.4 as builder
 WORKDIR /go/src/sigs.k8s.io/gcp-filestore-csi-driver
 ADD . .
-RUN make driver BINDIR=/bin
+ARG TAG=latest
+RUN make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${TAG}
 
 # Install nfs packages
 FROM launcher.gcr.io/google/debian9 as deps
