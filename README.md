@@ -11,7 +11,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: Beta
 
-Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.3.1`
+Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.4.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -26,6 +26,7 @@ The following table captures the compatibility matrix of the core filestore driv
 | --------------------------------------- | ---- | ---- | ---- | ----- |
 | v0.2.0 (alpha)                          | yes  |  no  |  no  |  no   |
 | v0.3.1 (beta)                           | no   |  yes |  yes |  yes  |
+| v0.4.0 (beta)                           | no   |  yes |  yes |  yes  |
 | master                                  | no   |  yes |  yes |  yes  |
 
 The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar;
