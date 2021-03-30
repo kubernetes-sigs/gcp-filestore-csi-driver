@@ -29,6 +29,7 @@ import (
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 )
 
 var (
@@ -37,6 +38,8 @@ var (
 	runController       = flag.Bool("controller", false, "run controller service")
 	runNode             = flag.Bool("node", false, "run node service")
 	cloudConfigFilePath = flag.String("cloud-config", "", "Path to GCE cloud provider config")
+	httpEndpoint        = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsPath         = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -53,6 +56,12 @@ func main() {
 	defer cancel()
 	var meta metadata.Service
 	if *runController {
+		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
+			mm := metrics.NewMetricsManager()
+			mm.InitializeHttpHandler(*httpEndpoint, *metricsPath)
+			mm.EmitGKEComponentVersion()
+		}
+
 		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath)
 	} else {
 		if *nodeID == "" {

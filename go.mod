@@ -18,11 +18,9 @@ require (
 	github.com/sirupsen/logrus v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.6.1 // indirect
-	golang.org/x/mod v0.4.0 // indirect
 	golang.org/x/net v0.0.0-20201021035429-f5854403a974
 	golang.org/x/oauth2 v0.0.0-20200902213428-5d25da1a8d43
 	golang.org/x/sys v0.0.0-20201008064518-c1f3e3309c71 // indirect
-	golang.org/x/tools v0.0.0-20201202200335-bef1c476418a // indirect
 	google.golang.org/api v0.35.0
 	google.golang.org/grpc v1.32.0
 	google.golang.org/protobuf v1.25.0
@@ -31,6 +29,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20200615113413-eeeca48fe776 // indirect
 	k8s.io/apimachinery v0.19.2
 	k8s.io/client-go v11.0.1-0.20190805182717-6502b5e7b1b5+incompatible
+	k8s.io/component-base v0.19.0
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.3.0 // indirect
 	k8s.io/kubernetes v1.18.0
