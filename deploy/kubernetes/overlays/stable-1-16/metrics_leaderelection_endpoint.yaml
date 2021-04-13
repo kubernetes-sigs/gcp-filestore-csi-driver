@@ -1,0 +1,16 @@
+# for csi-external-provisioner
+- op: replace
+  path: /spec/template/spec/containers/0/args/5
+  value: "--metrics-address=:22021"
+- op: replace
+  path: /spec/template/spec/containers/0/args/6
+  value: "--enable-leader-election"
+- op: replace
+  path: /spec/template/spec/containers/0/args/7
+  value: "--leader-election-type=leases"
+- op: remove
+  path: /spec/template/spec/containers/0/env/0
+- op: remove
+  path: /spec/template/spec/containers/0/ports
+- op: remove
+  path: /spec/template/spec/containers/0/livenessProbe
