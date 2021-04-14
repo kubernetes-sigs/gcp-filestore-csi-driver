@@ -30,6 +30,26 @@ spec:
             - "--timeout=250s"
             - "--feature-gates=Topology=true"
             - "--extra-create-metadata"
+            - "--http-endpoint=:22021"
+            - "--leader-election-namespace=$(FILESTORECSI_NAMESPACE)"
+            - "--leader-election"
+          env:
+            - name: FILESTORECSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - containerPort: 22021
+              name: http-endpoint
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /healthz/leader-election
+              port: http-endpoint
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -39,6 +59,26 @@ spec:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
             - "--timeout=120s"
+            - "--http-endpoint=:22022"
+            - "--leader-election"
+            - "--leader-election-namespace=$(FILESTORECSI_NAMESPACE)"
+          env:
+            - name: FILESTORECSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - containerPort: 22022
+              name: http-endpoint
+              protocol: TCP
+          livenessProbe:
+            failureThreshold: 1
+            httpGet:
+              path: /healthz/leader-election
+              port: http-endpoint
+            initialDelaySeconds: 10
+            timeoutSeconds: 10
+            periodSeconds: 20
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -48,6 +88,17 @@ spec:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
             - "--timeout=300s"
+            - "--metrics-address=:22023"
+            - "--leader-election"
+            - "--leader-election-namespace=$(FILESTORECSI_NAMESPACE)"
+          env:
+            - name: FILESTORECSI_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - containerPort: 22023
+              name: metrics
           volumeMounts:
             - name: socket-dir
               mountPath: /csi

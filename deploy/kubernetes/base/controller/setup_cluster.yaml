@@ -200,3 +200,33 @@ subjects:
     name: gcp-filestore-csi-node-sa
     namespace: gcp-filestore-csi-driver
 ---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-leaderelection-role
+  namespace: gcp-filestore-csi-driver
+  labels:
+    k8s-app: gcp-filestore-csi-driver
+rules:
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "watch", "list", "delete", "update", "create"]
+
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-leaderelection-binding
+  namespace: gcp-filestore-csi-driver
+  labels:
+    k8s-app: gcp-filestore-csi-driver
+subjects:
+  - kind: ServiceAccount
+    name: gcp-filestore-csi-controller-sa
+    namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: Role
+  name: gcp-filestore-csi-leaderelection-role
+  apiGroup: rbac.authorization.k8s.io
