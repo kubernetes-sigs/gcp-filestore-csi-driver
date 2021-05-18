@@ -85,36 +85,67 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
   [nfs-client](https://github.com/kubernetes-incubator/external-storage/tree/master/nfs-client)
   external provisioner can be used to provide similar functionality for
   Kubernetes clusters.
+* Windows support. The current version of the driver supports volumes mounted to Linux nodes only.
+
+## Deploying the Driver
+
+* Set up a service account with appropriate role binds, and download a service account key. This
+  service account will be used by the driver to provision Filestore instances and otherwise access
+  GCP APIs. This can be done by running `./deploy/project_setup.sh` and pointing to a directory to
+  store the SA key. To prevent your key from leaking do not make this directory publicly
+  accessible!
+  
+```
+$ PROJECT=<your-gcp-project> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/project_setup.sh
+```
+
+* Choose a stable overlay that matches your cluster version, eg `stable-1-19`. If you are running a
+  more recent cluster version than given here, use `stable-master`. The `prow-*` overlays are for
+  testing, and the `dev` overlay is for driver development. `./deploy/kubernetes/cluster-setup.sh`
+  will install the driver pods, as well as necessary RBAC and resources.
+
+```
+$ PROJECT=<your-gcp-project> DEPLOY_VERSION=<your-overlay-choice> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/kubernetes/cluster_setup.sh
+```
+
+  After this, the driver can be used. See `./docs/kubernetes` for further instructions and
+  examples.
+
+* For cleanup of the driver run the following:
+
+```
+$ PROJECT=<your-gcp-project> DEPLOY_VERSION=<your-overlay-choice> ./deploy/kubernetes/cluster_cleanup.sh
+```
 
 ## Kubernetes Development
 
-* The first step would be create a service account with appropriate role bindings. For `dev` [overlay](deploy/kubernetes/overlays/dev) the script [project_setup.sh](deploy/project_setup.sh) creates a service acount gcp-filestore-csi-driver-sa@<your-gcp-project>.iam.gserviceaccount.com and grants roles/file.editor, roles/editor role to the service account.
+* Set up a service account. Most development uses the `dev` [overlay](deploy/kubernetes/overlays/dev),
+  where a service account key is not needed. Otherwise use `GCFS_SA_DIR` as described above.
 
-```$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/project_setup.sh```
-
-* Else, for any other overlay, point $GCFS_SA_DIR to a directory to store service account key. project_setup.sh creates `gcp-filestore-csi-driver-sa@<your-gcp-project>.iam.gserviceaccount.com` and grants roles/file.editor, roles/editor role to the service account and downloads the key to the $GCFS_SA_DIR/gcp_filestore_csi_driver_sa.json.
-```$ PROJECT=<your-gcp-project> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/project_setup.sh```
+```
+$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/project_setup.sh
+```
 
 * To build the Filestore CSI latest driver image and push to a container registry.
-```$ PROJECT=<your-gcp-project> make build-image-and-push```
+```
+$ PROJECT=<your-gcp-project> make build-image-and-push
+```
 
 * The base manifests like core driver manifests, rbac role bindings are listed under [here](deploy/kubernetes/base).
   The overlays (e.g prow-gke-release-staging-head, prow-gke-release-staging-rc-{k8s version}, stable-{k8s version}, dev) are listed under deploy/kubernetes/overlays
   apply transformations on top of the base manifests.
 
 * 'dev' overlay uses default service account for communicating with GCP services. `https://www.googleapis.com/auth/cloud-platform` scope allows full access to all Google Cloud APIs and given node scope will allow any pod to reach GCP services as the provided service account, and so should only be used for testing and development, not production clusters. cluster_setup.sh installs kustomize and creates the driver manifests package and deploys to the cluster. Bring up GCE cluster with following:
-```$ NODE_SCOPES=https://www.googleapis.com/auth/cloud-platform KUBE_GCE_NODE_SERVICE_ACCOUNT=<SERVICE_ACCOUNT_NAME>@$PROJECT.iam.gserviceaccount.com kubetest --up```
 
-* Deploy the driver as follows.
+```
+$ NODE_SCOPES=https://www.googleapis.com/auth/cloud-platform KUBE_GCE_NODE_SERVICE_ACCOUNT=<SERVICE_ACCOUNT_NAME>@$PROJECT.iam.gserviceaccount.com kubetest --up
+```
 
-For a `dev` overlay,
-```$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/kubernetes/cluster_setup.sh```
+* Deploy the driver.
 
-For a non `dev` overlay
-```$ PROJECT=<your-gcp-project> DEPLOY_VERSION=<any-non-dev-overlay> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/kubernetes/cluster_setup.sh ```
-
-* For cleanup of the driver run the following:
-```$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/kubernetes/cluster_cleanup.sh```
+```
+$ PROJECT=<your-gcp-project> DEPLOY_VERSION=dev ./deploy/kubernetes/cluster_setup.sh
+```
 
 ## Gcloud Application Default Credentials and scopes
 See [here](https://cloud.google.com/docs/authentication/production), [here](https://cloud.google.com/compute/docs/access/create-enable-service-accounts-for-instances) and [here](https://cloud.google.com/storage/docs/authentication#oauth-scopes)
