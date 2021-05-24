@@ -18,6 +18,10 @@ If you have not already pre-provisioned a filestore instance on GCP you can do t
 kubectl apply -f ./examples/kubernetes/sc-latebind.yaml
 ```
 
+This storageclass will not bind a PVC to a PV until there is a pod created using
+the PVC. If you wish to bind the PV and PVC immediately on PVC creation, change
+`volumeBindingMode` to `Immediate`.
+
 2. Create example Persistent Volume
 
 **Note:** The `volumeHandle` should be updated
