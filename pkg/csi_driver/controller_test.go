@@ -22,6 +22,8 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
@@ -33,6 +35,7 @@ const (
 	testLocation         = "us-central1-c"
 	testIP               = "1.1.1.1"
 	testCSIVolume        = "test-csi"
+	testCSIVolume2       = "test-csi-2"
 	testVolumeID         = "modeInstance/us-central1-c/test-csi/vol1"
 	testReservedIPV4CIDR = "192.168.92.0/26"
 	testBytes            = 1 * util.Tb
@@ -52,6 +55,25 @@ func initTestController(t *testing.T) csi.ControllerServer {
 		driver:      initTestDriver(t),
 		fileService: fileService,
 		cloud:       cloudProvider,
+		volumeLocks: util.NewVolumeLocks(),
+	})
+}
+
+func initBlockingTestController(t *testing.T, operationUnblocker chan chan struct{}) csi.ControllerServer {
+	fileService, err := file.NewFakeBlockingService(operationUnblocker)
+	if err != nil {
+		t.Fatalf("failed to initialize blocking GCFS service: %v", err)
+	}
+
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
+	return newControllerServer(&controllerServerConfig{
+		driver:      initTestDriver(t),
+		fileService: fileService,
+		cloud:       cloudProvider,
+		volumeLocks: util.NewVolumeLocks(),
 	})
 }
 
@@ -641,5 +663,136 @@ func TestGetZonesFromTopology(t *testing.T) {
 				t.Errorf("Unexpected zone list %v, expected zone list %v", z, tc.expectedZones)
 			}
 		})
+	}
+}
+
+type RequestConfig struct {
+	CreateVolReq  *csi.CreateVolumeRequest
+	DeleteVolReq  *csi.DeleteVolumeRequest
+	CreateSnapReq *csi.CreateSnapshotRequest
+	DeleteSnapReq *csi.DeleteSnapshotRequest
+	ExpandVolReq  *csi.ControllerExpandVolumeRequest
+}
+
+func TestVolumeOperationLocks(t *testing.T) {
+	// A channel of size 1 is sufficient, because the caller of runRequest() in below steps immediately blocks and retrieves the channel of empty struct from 'operationUnblocker' channel. The test steps are such that, atmost one function pushes items on the 'operationUnblocker' channel, to indicate that the function is blocked and waiting for a signal to proceed futher in the execution.
+	operationUnblocker := make(chan chan struct{}, 1)
+	cs := initBlockingTestController(t, operationUnblocker)
+	runRequest := func(req *RequestConfig) <-chan error {
+		resp := make(chan error)
+		go func() {
+			var err error
+			if req.CreateVolReq != nil {
+				_, err = cs.CreateVolume(context.Background(), req.CreateVolReq)
+			} else if req.DeleteVolReq != nil {
+				_, err = cs.DeleteVolume(context.Background(), req.DeleteVolReq)
+			} else if req.CreateSnapReq != nil {
+				_, err = cs.CreateSnapshot(context.Background(), req.CreateSnapReq)
+			} else if req.DeleteSnapReq != nil {
+				_, err = cs.DeleteSnapshot(context.Background(), req.DeleteSnapReq)
+			} else if req.ExpandVolReq != nil {
+				_, err = cs.ControllerExpandVolume(context.Background(), req.ExpandVolReq)
+			}
+			resp <- err
+		}()
+		return resp
+	}
+
+	req := &csi.CreateVolumeRequest{
+		Name: testCSIVolume,
+		VolumeCapabilities: []*csi.VolumeCapability{
+			{
+				AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{},
+				},
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+				},
+			},
+		},
+	}
+	// Block first CreateVolume request after it has acquired the lock.
+	resp := runRequest(&RequestConfig{CreateVolReq: req})
+	createOpUnblocker := <-operationUnblocker
+
+	// Second CreateVolume request on the same volume should fail to acquire lock and return Aborted error.
+	createResp2 := runRequest(&RequestConfig{CreateVolReq: req})
+	ValidateExpectedError(t, createResp2, operationUnblocker, codes.Aborted)
+
+	// Delete Volume request on the same volume should fail to acquire lock and return Aborted error.
+	delResp := runRequest(&RequestConfig{DeleteVolReq: &csi.DeleteVolumeRequest{
+		VolumeId: testVolumeID,
+	}})
+	ValidateExpectedError(t, delResp, operationUnblocker, codes.Aborted)
+
+	// Create a snapshot on the same volume should fail to acquire lock and return Aborted error.
+	createSnapResp := runRequest(&RequestConfig{
+		CreateSnapReq: &csi.CreateSnapshotRequest{
+			Name:           "test-snap",
+			SourceVolumeId: testVolumeID,
+		},
+	})
+	ValidateExpectedError(t, createSnapResp, operationUnblocker, codes.Aborted)
+
+	// ControllerExapnd request on the same volume should fail to acquire lock and return Aborted error.
+	expandVolResp := runRequest(&RequestConfig{
+		ExpandVolReq: &csi.ControllerExpandVolumeRequest{
+			VolumeId: testVolumeID,
+		},
+	})
+	ValidateExpectedError(t, expandVolResp, operationUnblocker, codes.Aborted)
+
+	// Send a create volume request for a different volume. This is expected to succeed.
+	vol2CreateVolResp := runRequest(&RequestConfig{CreateVolReq: &csi.CreateVolumeRequest{
+		Name: testCSIVolume2,
+		VolumeCapabilities: []*csi.VolumeCapability{
+			{
+				AccessType: &csi.VolumeCapability_Mount{
+					Mount: &csi.VolumeCapability_MountVolume{},
+				},
+				AccessMode: &csi.VolumeCapability_AccessMode{
+					Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+				},
+			},
+		},
+	}})
+	execVol2CreateVol := <-operationUnblocker
+	execVol2CreateVol <- struct{}{}
+	if err := <-vol2CreateVolResp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Unblock first CreateVolume request and let it run to completion.
+	createOpUnblocker <- struct{}{}
+	if err := <-resp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	// Delete the first volume, no error expected.
+	delResp = runRequest(&RequestConfig{DeleteVolReq: &csi.DeleteVolumeRequest{
+		VolumeId: testVolumeID,
+	}})
+	execDelVol := <-operationUnblocker
+	execDelVol <- struct{}{}
+	if err := <-delResp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+}
+
+func ValidateExpectedError(t *testing.T, errResp <-chan error, operationUnblocker chan chan struct{}, expectedErrorCode codes.Code) {
+	select {
+	case err := <-errResp:
+		if err != nil {
+			serverError, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("Could not get error status code from err: %v", err)
+			}
+			if serverError.Code() != codes.Aborted {
+				t.Errorf("Expected error code: %v, got: %v. err : %v", codes.Aborted, serverError.Code(), err)
+			}
+		} else {
+			t.Errorf("Expected error: %v, got no error", codes.Aborted)
+		}
+	case <-operationUnblocker:
+		t.Errorf("The operation should have been aborted, but was started")
 	}
 }

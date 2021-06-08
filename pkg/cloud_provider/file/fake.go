@@ -198,3 +198,33 @@ func notFoundError() *googleapi.Error {
 		},
 	}
 }
+
+type fakeBlockingServiceManager struct {
+	*fakeServiceManager
+	// 'OperationUnblocker' channel is used to block the execution of the respective function using it. This is done by sending a channel of empty struct over 'OperationUnblocker' channel, and wait until the tester gives a go-ahead to proceed further in the execution of the function.
+	OperationUnblocker chan chan struct{}
+}
+
+func NewFakeBlockingService(operationUnblocker chan chan struct{}) (Service, error) {
+	return &fakeBlockingServiceManager{
+		fakeServiceManager: &fakeServiceManager{
+			createdInstances: map[string]*ServiceInstance{},
+			backups:          map[string]*BackupInfo{},
+		},
+		OperationUnblocker: operationUnblocker,
+	}, nil
+}
+
+func (m *fakeBlockingServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
+	execute := make(chan struct{})
+	m.OperationUnblocker <- execute
+	<-execute
+	return m.fakeServiceManager.CreateInstance(ctx, obj)
+}
+
+func (m *fakeBlockingServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
+	execute := make(chan struct{})
+	m.OperationUnblocker <- execute
+	<-execute
+	return m.fakeServiceManager.DeleteInstance(ctx, obj)
+}
