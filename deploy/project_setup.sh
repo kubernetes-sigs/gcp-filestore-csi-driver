@@ -17,7 +17,6 @@ gcloud iam service-accounts delete "$GCFS_IAM_NAME" --quiet || true
 
 gcloud iam service-accounts create "$GCFS_SA_NAME"
 gcloud projects add-iam-policy-binding "$PROJECT" --member serviceAccount:"$GCFS_IAM_NAME" --role roles/file.editor
-gcloud projects add-iam-policy-binding "$PROJECT" --member serviceAccount:"$GCFS_IAM_NAME" --role roles/editor
 
 # Enable Cloud Filestore API for this project.
 gcloud services enable file.googleapis.com
