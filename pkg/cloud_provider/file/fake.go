@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	filev1beta1 "google.golang.org/api/file/v1beta1"
+	filev1 "google.golang.org/api/file/v1"
 	"google.golang.org/api/googleapi"
 )
 
@@ -123,7 +123,7 @@ func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
-func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
+func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1.Backup, error) {
 	backupUri, _, err := CreateBackpURI(obj, backupName, backupLocation)
 	if err != nil {
 		return nil, err
@@ -137,7 +137,7 @@ func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		return backupInfo.Backup, nil
 	}
 
-	backupToCreate := &filev1beta1.Backup{
+	backupToCreate := &filev1.Backup{
 		Name:            backupUri,
 		SourceFileShare: obj.Volume.Name,
 		SourceInstance:  backupSource,
