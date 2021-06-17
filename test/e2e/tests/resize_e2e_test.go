@@ -19,7 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	filev1beta1 "google.golang.org/api/file/v1beta1"
+	filev1 "google.golang.org/api/file/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
@@ -247,7 +247,7 @@ func createDisk(zone, snapshotID string, labels map[string]string, tc *remote.Te
 	return di, cleanup
 }
 
-func getDisk(di *DiskInfo) (*filev1beta1.Instance, error) {
+func getDisk(di *DiskInfo) (*filev1.Instance, error) {
 	proj, _, _ := di.TestCtx.Instance.GetIdentity()
 	instanceURI := fmt.Sprintf(instanceURIFormat, proj, di.Zone, di.Name)
 	return fileInstancesService.Get(instanceURI).Do()
