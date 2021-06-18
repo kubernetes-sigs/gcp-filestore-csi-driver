@@ -24,6 +24,7 @@ import (
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
+	"google.golang.org/grpc/codes"
 	"k8s.io/utils/mount"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 )
@@ -492,5 +493,178 @@ func validateMountPoint(t *testing.T, name string, fm *mount.FakeMounter, e *mou
 				t.Errorf("test %q failed: got opt %q, expected %q", name, aOpt, eOpt)
 			}
 		}
+	}
+}
+
+type FakeBlockingMounter struct {
+	*mount.FakeMounter
+	// 'OperationUnblocker' channel is used to block the execution of the respective function using it. This is done by sending a channel of empty struct over 'OperationUnblocker' channel, and wait until the tester gives a go-ahead to proceed further in the execution of the function.
+	OperationUnblocker chan chan struct{}
+}
+
+func NewFakeBlockingMounter(operationUnblocker chan chan struct{}) *FakeBlockingMounter {
+	return &FakeBlockingMounter{
+		FakeMounter:        &mount.FakeMounter{MountPoints: []mount.MountPoint{}},
+		OperationUnblocker: operationUnblocker,
+	}
+}
+
+func (m *FakeBlockingMounter) Mount(source string, target string, fstype string, options []string) error {
+	execute := make(chan struct{})
+	m.OperationUnblocker <- execute
+	<-execute
+	return m.FakeMounter.Mount(source, target, fstype, options)
+}
+
+func initBlockingTestNodeServer(t *testing.T, operationUnblocker chan chan struct{}) *nodeServerTestEnv {
+	mounter := NewFakeBlockingMounter(operationUnblocker)
+	metaserice, err := metadata.NewFakeService()
+	if err != nil {
+		t.Fatalf("Failed to init metadata service")
+	}
+	return &nodeServerTestEnv{
+		ns: newNodeServer(initTestDriver(t), mounter, metaserice),
+		fm: nil,
+	}
+}
+
+type NodeRequestConfig struct {
+	NodePublishReq   *csi.NodePublishVolumeRequest
+	NodeUnpublishReq *csi.NodeUnpublishVolumeRequest
+	NodeStageReq     *csi.NodeStageVolumeRequest
+	NodeUnstageReq   *csi.NodeUnstageVolumeRequest
+}
+
+func TestConcurrentMounts(t *testing.T) {
+	// A channel of size 1 is sufficient, because the caller of runRequest() in below steps immediately blocks and retrieves the channel of empty struct from 'operationUnblocker' channel. The test steps are such that, atmost one function pushes items on the 'operationUnblocker' channel, to indicate that the function is blocked and waiting for a signal to proceed futher in the execution.
+	operationUnblocker := make(chan chan struct{}, 1)
+	ns := initBlockingTestNodeServer(t, operationUnblocker)
+	basePath, err := ioutil.TempDir("", "node-publish-")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	stagingTargetPath := filepath.Join(basePath, "staging")
+	targetPath1 := filepath.Join(basePath, "target1")
+	targetPath2 := filepath.Join(basePath, "target2")
+
+	runRequest := func(req *NodeRequestConfig) <-chan error {
+		resp := make(chan error)
+		go func() {
+			var err error
+			if req.NodePublishReq != nil {
+				_, err = ns.ns.NodePublishVolume(context.Background(), req.NodePublishReq)
+			} else if req.NodeUnpublishReq != nil {
+				_, err = ns.ns.NodeUnpublishVolume(context.Background(), req.NodeUnpublishReq)
+			} else if req.NodeStageReq != nil {
+				_, err = ns.ns.NodeStageVolume(context.Background(), req.NodeStageReq)
+			} else if req.NodeUnstageReq != nil {
+				_, err = ns.ns.NodeUnstageVolume(context.Background(), req.NodeUnstageReq)
+			}
+			resp <- err
+		}()
+		return resp
+	}
+
+	// Node stage blocked after lock acquire.
+	resp := runRequest(&NodeRequestConfig{
+		NodeStageReq: &csi.NodeStageVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+			VolumeCapability:  testVolumeCapability,
+			VolumeContext:     testVolumeAttributes,
+		},
+	})
+	nodestageOpUnblocker := <-operationUnblocker
+
+	// Same volume ID node stage should fail to acquire lock and return Aborted error.
+	stageResp2 := runRequest(&NodeRequestConfig{
+		NodeStageReq: &csi.NodeStageVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+			VolumeCapability:  testVolumeCapability,
+			VolumeContext:     testVolumeAttributes,
+		},
+	})
+	ValidateExpectedError(t, stageResp2, operationUnblocker, codes.Aborted)
+
+	// Same volume ID node unstage should fail to acquire lock and return Aborted error.
+	unstageResp := runRequest(&NodeRequestConfig{
+		NodeUnstageReq: &csi.NodeUnstageVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+		},
+	})
+	ValidateExpectedError(t, unstageResp, operationUnblocker, codes.Aborted)
+
+	// Unblock first node stage. Success expected.
+	nodestageOpUnblocker <- struct{}{}
+	if err := <-resp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Node publish blocked after lock acquire on the 'targetPath1'.
+	targetPath1Publishresp := runRequest(&NodeRequestConfig{
+		NodePublishReq: &csi.NodePublishVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+			TargetPath:        targetPath1,
+			VolumeCapability:  testVolumeCapability,
+			VolumeContext:     testVolumeAttributes,
+		},
+	})
+	nodepublishOpTargetPath1Unblocker := <-operationUnblocker
+
+	// Node publish for the same target path should fail to acquire lock and return Aborted error.
+	targetPath1Publishresp2 := runRequest(&NodeRequestConfig{
+		NodePublishReq: &csi.NodePublishVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+			TargetPath:        targetPath1,
+			VolumeCapability:  testVolumeCapability,
+			VolumeContext:     testVolumeAttributes,
+		},
+	})
+	ValidateExpectedError(t, targetPath1Publishresp2, operationUnblocker, codes.Aborted)
+
+	// Node unpublish for the same target path should fail to acquire lock and return Aborted error.
+	targetPath1Unpublishresp := runRequest(&NodeRequestConfig{
+		NodeUnpublishReq: &csi.NodeUnpublishVolumeRequest{
+			VolumeId:   testVolumeID,
+			TargetPath: targetPath1,
+		},
+	})
+	ValidateExpectedError(t, targetPath1Unpublishresp, operationUnblocker, codes.Aborted)
+
+	// Node publish succeeds for a second target path 'targetPath2'.
+	targetPath2Publishresp2 := runRequest(&NodeRequestConfig{
+		NodePublishReq: &csi.NodePublishVolumeRequest{
+			VolumeId:          testVolumeID,
+			StagingTargetPath: stagingTargetPath,
+			TargetPath:        targetPath2,
+			VolumeCapability:  testVolumeCapability,
+			VolumeContext:     testVolumeAttributes,
+		},
+	})
+	nodepublishOpTargetPath2Unblocker := <-operationUnblocker
+	nodepublishOpTargetPath2Unblocker <- struct{}{}
+	if err := <-targetPath2Publishresp2; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Node unpublish succeeds for second target path.
+	targetPath2Unpublishresp := runRequest(&NodeRequestConfig{
+		NodeUnpublishReq: &csi.NodeUnpublishVolumeRequest{
+			VolumeId:   testVolumeID,
+			TargetPath: targetPath2,
+		},
+	})
+	if err := <-targetPath2Unpublishresp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	// Unblock first node publish, and success expected.
+	nodepublishOpTargetPath1Unblocker <- struct{}{}
+	if err := <-targetPath1Publishresp; err != nil {
+		t.Errorf("Unexpected error: %v", err)
 	}
 }

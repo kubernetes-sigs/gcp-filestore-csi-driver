@@ -26,6 +26,7 @@ import (
 	"k8s.io/utils/mount"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 type GCFSDriverConfig struct {
@@ -100,6 +101,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			driver:      driver,
 			fileService: config.Cloud.File,
 			cloud:       config.Cloud,
+			volumeLocks: util.NewVolumeLocks(),
 		})
 	}
 

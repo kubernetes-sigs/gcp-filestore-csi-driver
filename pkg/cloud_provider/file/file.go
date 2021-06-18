@@ -147,7 +147,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateInstance operation failed: %v", err)
+		return nil, fmt.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
 	}
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
@@ -192,9 +192,9 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 	}
 
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
-	err = manager.waitForV1beta1Op(ctx, op)
+	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateInstance operation failed: %v", err)
+		return nil, fmt.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
@@ -264,35 +264,28 @@ func CompareInstances(a, b *ServiceInstance) error {
 }
 
 func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
-	instance, err := manager.GetInstance(ctx, obj)
-	if err != nil {
-		if IsNotFoundErr(err) {
-			glog.Infof("Instance %v not found", obj.Name)
-			return nil
-		}
-		return err
-	}
-
-	glog.Infof("Starting DeleteInstance cloud operation")
-	op, err := manager.instancesService.Delete(instanceURI(obj.Project, obj.Location, obj.Name)).Context(ctx).Do()
+	uri := instanceURI(obj.Project, obj.Location, obj.Name)
+	glog.V(4).Infof("Starting DeleteInstance cloud operation for instance %s", uri)
+	op, err := manager.instancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
 		return fmt.Errorf("DeleteInstance operation failed: %v", err)
 	}
 
+	glog.V(4).Infof("For instance %s, waiting for delete op %v to complete", uri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return fmt.Errorf("WaitFor DeleteInstance operation failed: %v", err)
+		return fmt.Errorf("WaitFor DeleteInstance op %s failed: %v", op.Name, err)
 	}
 
-	instance, err = manager.GetInstance(ctx, obj)
+	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil && !IsNotFoundErr(err) {
 		return fmt.Errorf("failed to get instance after deletion: %v", err)
 	}
 	if instance != nil {
-		return fmt.Errorf("instance %v still exists after delete operation", obj.Name)
+		return fmt.Errorf("instance %s still exists after delete operation in state %v", uri, instance.State)
 	}
 
-	glog.Infof("Instance %v has been deleted", obj.Name)
+	glog.Infof("Instance %s has been deleted", uri)
 	return nil
 }
 
@@ -347,7 +340,6 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 		},
 	}
 
-	glog.Infof("Starting Patch instance cloud operation for instance %s", instanceuri)
 	glog.V(4).Infof("Patching instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v",
 		obj.Name,
 		obj.Location,
@@ -360,9 +352,10 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 		return nil, fmt.Errorf("Patch operation failed: %v", err)
 	}
 
+	glog.V(4).Infof("For instance %s, waiting for patch op %v to complete", instanceuri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor patch operation failed: %v", err)
+		return nil, fmt.Errorf("WaitFor patch op %s failed: %v", op.Name, err)
 	}
 
 	instance, err = manager.GetInstance(ctx, obj)
@@ -401,10 +394,10 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		return nil, fmt.Errorf("Create Backup operation failed: %v", err)
 	}
 
-	glog.V(4).Infof("Waiting for backup op %v to complete", opbackup.Name)
-	err = manager.waitForV1beta1Op(ctx, opbackup)
+	glog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
+	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateBackup for source instance %v, backup Id: %v, operation failed: %v", backupSource, backupUri, err)
+		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %v", opbackup.Name, backupSource, backupUri, err)
 	}
 
 	backupObj, err := manager.backupService.Get(backupUri).Context(ctx).Do()
@@ -419,25 +412,15 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 }
 
 func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId string) error {
-	_, err := manager.backupService.Get(backupId).Context(ctx).Do()
-	if err != nil {
-		if IsNotFoundErr(err) {
-			glog.Infof("Backup %v not found", backupId)
-			return nil
-		}
-
-		return err
-	}
-
 	opbackup, err := manager.backupService.Delete(backupId).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("Delete backup operation failed: %v", err)
+		return fmt.Errorf("For backup Id %s, delete backup operation %s failed: %v", backupId, opbackup.Name, err)
 	}
 
-	glog.V(4).Infof("Waiting for backup op %v to complete", opbackup.Name)
-	err = manager.waitForV1beta1Op(ctx, opbackup)
+	glog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
+	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return fmt.Errorf("Delete backup: %v, operation failed: %v", backupId, err)
+		return fmt.Errorf("Delete backup: %v, op %s failed: %v", backupId, opbackup.Name, err)
 	}
 
 	glog.Infof("Backup %v successfully deleted", backupId)
@@ -503,26 +486,6 @@ func IsNotFoundErr(err error) bool {
 		}
 	}
 	return false
-}
-
-func (manager *gcfsServiceManager) waitForV1beta1Op(ctx context.Context, op *filev1.Operation) error {
-	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
-		pollOp, err := manager.operationsV1beta1Service.Get(op.Name).Context(ctx).Do()
-		if err != nil {
-			return false, err
-		}
-		return isV1beta1OpDone(pollOp)
-	})
-}
-
-func isV1beta1OpDone(op *filev1.Operation) (bool, error) {
-	if op == nil {
-		return false, nil
-	}
-	if op.Error != nil {
-		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
-	}
-	return op.Done, nil
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.

@@ -29,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/utils/mount"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 const (
@@ -46,6 +47,7 @@ type nodeServer struct {
 	driver      *GCFSDriver
 	mounter     mount.Interface
 	metaService metadata.Service
+	volumeLocks *util.VolumeLocks
 }
 
 func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service) csi.NodeServer {
@@ -53,6 +55,7 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		driver:      driver,
 		mounter:     mounter,
 		metaService: metaService,
+		volumeLocks: util.NewVolumeLocks(),
 	}
 }
 
@@ -72,6 +75,12 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	if err := s.driver.validateVolumeCapabilities([]*csi.VolumeCapability{req.GetVolumeCapability()}); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	// Acquire a lock on the target path instead of volumeID, since we do not want to serialize multiple node publish calls on the same volume.
+	if acquired := s.volumeLocks.TryAcquire(targetPath); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, targetPath)
+	}
+	defer s.volumeLocks.Release(targetPath)
 
 	var err error
 	// FileSystem type
@@ -142,6 +151,12 @@ func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpub
 		return nil, status.Error(codes.InvalidArgument, "NodeUnpublishVolume target path must be provided")
 	}
 
+	// Acquire a lock on the target path instead of volumeID, since we do not want to serialize multiple node unpublish calls on the same volume.
+	if acquired := s.volumeLocks.TryAcquire(targetPath); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, targetPath)
+	}
+	defer s.volumeLocks.Release(targetPath)
+
 	if err := mount.CleanupMountPoint(targetPath, s.mounter, false /* extensiveMountPointCheck */); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -188,6 +203,12 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if err := validateVolumeAttributes(attr); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	if acquired := s.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.volumeLocks.Release(volumeID)
+
 	// Mount source
 	source := fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
 	mounted, err := s.isDirMounted(stagingTargetPath)
@@ -244,6 +265,11 @@ func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 	if len(stagingTargetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "NodeUnstageVolume Staging Target Path must be provided")
 	}
+
+	if acquired := s.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.volumeLocks.Release(volumeID)
 
 	if err := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); err != nil {
 		return nil, status.Error(codes.Internal, err.Error())

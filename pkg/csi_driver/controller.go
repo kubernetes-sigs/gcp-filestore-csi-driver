@@ -81,6 +81,7 @@ type controllerServerConfig struct {
 	fileService file.Service
 	cloud       *cloud.Cloud
 	ipAllocator *util.IPAllocator
+	volumeLocks *util.VolumeLocks
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
@@ -105,6 +106,17 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
+
+	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	volumeID := getVolumeIDFromFileInstance(newFiler, modeInstance)
+	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.config.volumeLocks.Release(volumeID)
 
 	sourceSnapshotId := ""
 	if req.GetVolumeContentSource() != nil {
@@ -131,11 +143,6 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 	}
 
-	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	// Check if the instance already exists
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
 	if err != nil && !file.IsNotFoundErr(err) {
@@ -148,7 +155,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if err = file.CompareInstances(newFiler, filer); err != nil {
 			return nil, status.Error(codes.AlreadyExists, err.Error())
 		}
-
+		// Check if the filestore instance is in the process of getting created.
+		if filer.State == "CREATING" {
+			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
+			glog.V(4).Infof(msg)
+			return nil, status.Error(codes.DeadlineExceeded, msg)
+		}
 		if filer.State != "READY" {
 			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
 			glog.V(4).Infof(msg)
@@ -187,6 +199,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
 		}
 		if createErr != nil {
+			glog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr)
 			return nil, status.Error(codes.Internal, createErr.Error())
 		}
 	}
@@ -229,6 +242,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
+
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		// An invalid ID should be treated as doesn't exist
@@ -236,9 +250,27 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
+	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.config.volumeLocks.Release(volumeID)
+
 	filer.Project = s.config.cloud.Project
+	filer, err = s.config.fileService.GetInstance(ctx, filer)
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	if filer.State == "DELETING" {
+		return nil, status.Errorf(codes.DeadlineExceeded, "Volume %s is in state: %s", volumeID, filer.State)
+	}
+
 	err = s.config.fileService.DeleteInstance(ctx, filer)
 	if err != nil {
+		glog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
@@ -408,6 +440,11 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.config.volumeLocks.Release(volumeID)
+
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		glog.Errorf("failed to get instance for volumeID %v expansion, error: %v", volumeID, err)
@@ -541,6 +578,12 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
 	}
+
+	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.config.volumeLocks.Release(volumeID)
+
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		glog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
@@ -572,7 +615,10 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		if backupSourceCSIHandle != volumeID {
 			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID))
 		}
-		// Check if backup is ready.
+		// Check if backup is in the process of getting created.
+		if backupInfo.Backup.State == "CREATING" || backupInfo.Backup.State == "FINALIZING" {
+			return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+		}
 		if backupInfo.Backup.State != "READY" {
 			return nil, status.Error(codes.Internal, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
 		}
@@ -594,6 +640,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
+		glog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	tp, err := util.ParseTimestamp(backupObj.CreateTime)
@@ -627,11 +674,25 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 	}
 
 	if !isBackup {
-		glog.Errorf("Deletion of snapshot type %q not supported", id)
-		return nil, status.Error(codes.Internal, "Deletion of snapshot type not supported")
+		glog.Errorf("Deletion of volume snapshot type %q not supported", id)
+		return nil, status.Error(codes.Internal, "Deletion of volume snapshot type not supported")
+	}
+
+	backupInfo, err := s.config.fileService.GetBackup(ctx, id)
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			glog.Infof("Volume snapshot with ID %v not found", id)
+			return &csi.DeleteSnapshotResponse{}, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	if backupInfo.Backup.State == "DELETING" {
+		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State))
 	}
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
+		glog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err)
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
