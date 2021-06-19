@@ -1,0 +1,20 @@
+# for csi-external-snapshotter
+- op: replace
+  path: /spec/template/spec/containers/2/args/3
+  value: "--http-endpoint=:22023"
+- op: add
+  path: /spec/template/spec/containers/2/livenessProbe
+  value:
+    failureThreshold: 1
+    httpGet:
+      path: /healthz/leader-election
+      port: http-endpoint
+    initialDelaySeconds: 10
+    timeoutSeconds: 10
+    periodSeconds: 20
+- op: replace
+  path: /spec/template/spec/containers/2/ports/0
+  value:
+    containerPort: 22023
+    name: http-endpoint
+    protocol: TCP
