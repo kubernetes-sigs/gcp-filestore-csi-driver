@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace:
+  gcp-filestore-csi-driver
+resources:
+- ../../base/controller
+- ../../base/node_linux
+patchesJson6902:
+ - target:
+     kind: CSIDriver
+     name: filestore.csi.storage.gke.io
+   path: fsgrouppolicy.yaml
+transformers:
+- ../../images/stable-master
