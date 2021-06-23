@@ -11,7 +11,7 @@ imageTag:
 apiVersion: builtin
 kind: ImageTagTransformer
 metadata:
-  name: imagetag-csi-resize-prow-head
+  name: imagetag-csi-resizer-prow-head
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-resizer
   newName: gcr.io/k8s-staging-sig-storage/csi-resizer
