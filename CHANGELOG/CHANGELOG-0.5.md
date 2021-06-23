@@ -7,6 +7,7 @@
 - Bump csi sidecar versions ([#123](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/123), [@saikat-royc](https://github.com/saikat-royc))
 - Emit component_version metric ([#120](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/120), [@saikat-royc](https://github.com/saikat-royc))
 - Enable leader election and metrics endpoint for sidecars ([#121](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/121), [@saikat-royc](https://github.com/saikat-royc))
+- Skip statd service on node startup if it's already running ([#135](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/135), [@mattcary](https://github.com/mattcary))
 
 ### Other (Cleanup or Flake)
 
