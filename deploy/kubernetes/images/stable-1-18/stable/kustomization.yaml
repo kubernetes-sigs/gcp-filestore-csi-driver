@@ -1,4 +1,0 @@
-namespace:
-  gcp-filestore-csi-driver
-resources:
-- image.yaml
