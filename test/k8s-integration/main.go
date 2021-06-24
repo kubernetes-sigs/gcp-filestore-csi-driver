@@ -119,7 +119,9 @@ func main() {
 
 	if !*useStagingDriver {
 		ensureVariable(deployOverlayName, true, "deploy-overlay-name is a required flag")
-		ensureVariable(saFile, true, "service-account-file is a required flag")
+		if *deployOverlayName != "dev" {
+			ensureVariable(saFile, true, "service-account-file is a required flag")
+		}
 	}
 
 	if *deployOverlayName == "dev" {
