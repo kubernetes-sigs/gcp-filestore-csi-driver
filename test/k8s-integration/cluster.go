@@ -22,6 +22,9 @@ import (
 	"k8s.io/klog"
 )
 
+const Kube_system_namespace = "kube-system"
+const Filestore_node_gke_daemonset = "filestore-node"
+
 func gkeLocationArgs(gceZone, gceRegion string) (locationArg, locationVal string, err error) {
 	switch {
 	case len(gceZone) > 0:
@@ -332,7 +335,7 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 		}
 
 		// wait for driver to be ready
-		err = waitForNodeDaemonset("kube-system", "filestore-node")
+		err = waitForNodeDaemonset(Kube_system_namespace, Filestore_node_gke_daemonset)
 		if err != nil {
 			return fmt.Errorf("issue while waiting for node daemonset: %v", err)
 		}
