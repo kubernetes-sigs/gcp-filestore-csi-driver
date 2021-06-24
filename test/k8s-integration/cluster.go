@@ -22,8 +22,8 @@ import (
 	"k8s.io/klog"
 )
 
-const Kube_system_namespace = "kube-system"
-const Filestore_node_gke_daemonset = "filestore-node"
+const KubeSystemNamespace = "kube-system"
+const FilestoreNodeGkeDaemonset = "filestore-node"
 
 func gkeLocationArgs(gceZone, gceRegion string) (locationArg, locationVal string, err error) {
 	switch {
@@ -335,7 +335,7 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 		}
 
 		// wait for driver to be ready
-		err = waitForNodeDaemonset(Kube_system_namespace, Filestore_node_gke_daemonset)
+		err = waitForNodeDaemonset(KubeSystemNamespace, FilestoreNodeGkeDaemonset)
 		if err != nil {
 			return fmt.Errorf("issue while waiting for node daemonset: %v", err)
 		}
@@ -376,19 +376,19 @@ func getAccessToken() ([]byte, error) {
 	return accessToken[:len(accessToken)-1], nil
 }
 
-func waitForNodeDaemonset(driver_namespace string, node_daemonset string) error {
+func waitForNodeDaemonset(driverNamespace string, nodeDaemonset string) error {
 	retries := 15
 	for ; retries > 0; retries-- {
-		ready, err := exec.Command("kubectl", "-n", driver_namespace, "get", "daemonset", node_daemonset, "-o", "jsonpath=\"{.status.numberReady}\"").CombinedOutput()
+		ready, err := exec.Command("kubectl", "-n", driverNamespace, "get", "daemonset", nodeDaemonset, "-o", "jsonpath=\"{.status.numberReady}\"").CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to query the readyness of daemonset %s", node_daemonset)
+			return fmt.Errorf("failed to query the readyness of daemonset %s", nodeDaemonset)
 		}
-		required, err := exec.Command("kubectl", "-n", driver_namespace, "get", "daemonset", node_daemonset, "-o", "jsonpath=\"{.status.desiredNumberScheduled}\"").CombinedOutput()
+		required, err := exec.Command("kubectl", "-n", driverNamespace, "get", "daemonset", nodeDaemonset, "-o", "jsonpath=\"{.status.desiredNumberScheduled}\"").CombinedOutput()
 		if err != nil {
-			return fmt.Errorf("failed to query the desired state of daemonset %s", node_daemonset)
+			return fmt.Errorf("failed to query the desired state of daemonset %s", nodeDaemonset)
 		}
 		if string(ready) == string(required) {
-			klog.Infof("Daemonset %s is ready with %s pods", node_daemonset, string(ready))
+			klog.Infof("Daemonset %s is ready with %s pods", nodeDaemonset, string(ready))
 			break
 		}
 
@@ -398,7 +398,7 @@ func waitForNodeDaemonset(driver_namespace string, node_daemonset string) error 
 	}
 
 	if retries == 0 {
-		return fmt.Errorf("timeout waiting for daemonset %s to become ready", node_daemonset)
+		return fmt.Errorf("timeout waiting for daemonset %s to become ready", nodeDaemonset)
 	}
 
 	return nil
