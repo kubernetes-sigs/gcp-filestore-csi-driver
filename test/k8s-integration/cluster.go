@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,12 +10,20 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
+	"golang.org/x/oauth2"
+	container "google.golang.org/api/container/v1beta1"
+	"google.golang.org/api/option"
+	"k8s.io/apimachinery/pkg/util/wait"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/klog"
 )
+
+const KubeSystemNamespace = "kube-system"
+const FilestoreNodeGkeDaemonset = "filestore-node"
 
 func gkeLocationArgs(gceZone, gceRegion string) (locationArg, locationVal string, err error) {
 	switch {
@@ -249,13 +258,14 @@ func clusterDownGKE(gceZone, gceRegion string) error {
 	return nil
 }
 
-func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string) error {
+func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, useStagingDriver bool) error {
 	locationArg, locationVal, err := gkeLocationArgs(gceZone, gceRegion)
 	if err != nil {
 		return err
 	}
 
-	out, err := exec.Command("gcloud", "container", "clusters", "list", locationArg, locationVal,
+	out, err := exec.Command("gcloud", "container", "clusters", "list",
+		locationArg, locationVal, "--verbosity", "none",
 		fmt.Sprintf("--filter=name=%s", *gkeTestClusterName)).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to check for previous test cluster: %v %s", err, out)
@@ -269,29 +279,151 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string) err
 		}
 	}
 
-	var cmd *exec.Cmd
-	cmdParams := []string{"container", "clusters", "create", *gkeTestClusterName,
-		locationArg, locationVal, "--num-nodes", strconv.Itoa(numNodes),
-		"--quiet", "--machine-type", "n1-standard-2", "--image-type", imageType}
-	if isVariableSet(gkeClusterVer) {
-		cmdParams = append(cmdParams, "--cluster-version", *gkeClusterVer)
+	if useStagingDriver {
+		accessToken, err := getAccessToken()
+		if err != nil {
+			return err
+		}
+
+		token := &oauth2.Token{AccessToken: string(accessToken)}
+		oauthClient := oauth2.NewClient(context.Background(), oauth2.StaticTokenSource(token))
+		service, err := container.NewService(context.Background(), option.WithHTTPClient(oauthClient))
+		if err != nil {
+			return fmt.Errorf("failed to create a new service: %v", err)
+		}
+
+		// TODO: change to read CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER env var
+		service.BasePath = "https://test-container.sandbox.googleapis.com/" // e.g test, staging env URL
+
+		// TODO: honor the gkeNodeVersion flag
+		request := &container.CreateClusterRequest{
+			Cluster: &container.Cluster{
+				Name:             *gkeTestClusterName,
+				InitialNodeCount: int64(numNodes),
+				AddonsConfig: &container.AddonsConfig{
+					GcpFilestoreCsiDriverConfig: &container.GcpFilestoreCsiDriverConfig{Enabled: true},
+				},
+				ReleaseChannel: &container.ReleaseChannel{Channel: "RAPID"},
+				NodeConfig: &container.NodeConfig{
+					MachineType: "n1-standard-2",
+					ImageType:   imageType,
+				},
+			},
+		}
+
+		klog.Infof("Creating kubernetes e2e cluster on gke")
+		project, err := getCurrProject()
+		if err != nil {
+			return err
+		}
+		parent := fmt.Sprintf("projects/%s/locations/%s", project, locationVal)
+		klog.Infof("Creating cluster under parent path %s", parent)
+		op, err := service.Projects.Locations.Clusters.Create(parent, request).Do()
+		if err != nil {
+			return fmt.Errorf("failed to Create kubernetes e2e cluster on gke: %v", err)
+		}
+		err = waitForOp(service.Projects.Locations.Operations, parent, op)
+		if err != nil {
+			return fmt.Errorf("WaitFor Cluster Create operation failed: %v", err)
+		}
+
+		// fetch context because otherwise kubectl won't be able to talk to cluster
+		cmd := exec.Command("gcloud", "container", "clusters", "get-credentials", *gkeTestClusterName, "--project", project, locationArg, locationVal)
+		err = runCommand(fmt.Sprintf("fetching credentials from cluster %s", *gkeTestClusterName), cmd)
+		if err != nil {
+			return fmt.Errorf("failed to fetch credential from cluster: %v", err)
+		}
+
+		// wait for driver to be ready
+		err = waitForNodeDaemonset(KubeSystemNamespace, FilestoreNodeGkeDaemonset)
+		if err != nil {
+			return fmt.Errorf("issue while waiting for node daemonset: %v", err)
+		}
+
 	} else {
-		cmdParams = append(cmdParams, "--release-channel", *gkeReleaseChannel)
-		// release channel based GKE clusters require autorepair to be enabled.
-		cmdParams = append(cmdParams, "--enable-autorepair")
-	}
 
-	if isVariableSet(gkeNodeVersion) {
-		cmdParams = append(cmdParams, "--node-version", *gkeNodeVersion)
-	}
+		var cmd *exec.Cmd
+		cmdParams := []string{"container", "clusters", "create", *gkeTestClusterName,
+			locationArg, locationVal, "--num-nodes", strconv.Itoa(numNodes),
+			"--quiet", "--machine-type", "n1-standard-2", "--image-type", imageType}
+		if isVariableSet(gkeClusterVer) {
+			cmdParams = append(cmdParams, "--cluster-version", *gkeClusterVer)
+		} else {
+			cmdParams = append(cmdParams, "--release-channel", *gkeReleaseChannel)
+			// release channel based GKE clusters require autorepair to be enabled.
+			cmdParams = append(cmdParams, "--enable-autorepair")
+		}
 
-	cmd = exec.Command("gcloud", cmdParams...)
-	err = runCommand("Starting E2E Cluster on GKE", cmd)
-	if err != nil {
-		return fmt.Errorf("failed to bring up kubernetes e2e cluster on gke: %v", err)
+		if isVariableSet(gkeNodeVersion) {
+			cmdParams = append(cmdParams, "--node-version", *gkeNodeVersion)
+		}
+
+		cmd = exec.Command("gcloud", cmdParams...)
+		err = runCommand("Starting E2E Cluster on GKE", cmd)
+		if err != nil {
+			return fmt.Errorf("failed to bring up kubernetes e2e cluster on gke: %v", err)
+		}
 	}
 
 	return nil
+}
+
+func getAccessToken() ([]byte, error) {
+	accessToken, err := exec.Command("gcloud", "auth", "print-access-token").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get authentication token: %v", err)
+	}
+	return accessToken[:len(accessToken)-1], nil
+}
+
+func waitForNodeDaemonset(driverNamespace string, nodeDaemonset string) error {
+	retries := 15
+	for ; retries > 0; retries-- {
+		ready, err := exec.Command("kubectl", "-n", driverNamespace, "get", "daemonset", nodeDaemonset, "-o", "jsonpath=\"{.status.numberReady}\"").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to query the readyness of daemonset %s", nodeDaemonset)
+		}
+		required, err := exec.Command("kubectl", "-n", driverNamespace, "get", "daemonset", nodeDaemonset, "-o", "jsonpath=\"{.status.desiredNumberScheduled}\"").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to query the desired state of daemonset %s", nodeDaemonset)
+		}
+		if string(ready) == string(required) {
+			klog.Infof("Daemonset %s is ready with %s pods", nodeDaemonset, string(ready))
+			break
+		}
+
+		klog.Infof("required: %s, ready: %s", string(required), string(ready))
+
+		time.Sleep(10 * time.Second)
+	}
+
+	if retries == 0 {
+		return fmt.Errorf("timeout waiting for daemonset %s to become ready", nodeDaemonset)
+	}
+
+	return nil
+}
+
+func waitForOp(operationsService *container.ProjectsLocationsOperationsService, parent string, op *container.Operation) error {
+	klog.Infof("Waiting for the %s call to finish", op.Name)
+	opName := fmt.Sprintf("%s/operations/%s", parent, op.Name)
+	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+		pollOp, err := operationsService.Get(opName).Do()
+		if err != nil {
+			return false, err
+		}
+		return isOpDone(pollOp)
+	})
+}
+
+func isOpDone(op *container.Operation) (bool, error) {
+	if op == nil {
+		return false, nil
+	}
+	if op.Error != nil {
+		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
+	}
+	return op.Status == "DONE", nil
 }
 
 func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) {
@@ -319,10 +451,9 @@ func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) 
 		gkeEnv = gkeURL
 	}
 
-	cmd := exec.Command("gcloud", "config", "get-value", "project")
-	project, err := cmd.Output()
+	project, err := getCurrProject()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current project: %v", err)
+		return nil, err
 	}
 
 	args := []string{
@@ -336,7 +467,7 @@ func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) 
 		fmt.Sprintf("--cluster=%s", *gkeTestClusterName),
 		fmt.Sprintf("--gke-environment=%s", gkeEnv),
 		fmt.Sprintf("%s=%s", locationArg, locationVal),
-		fmt.Sprintf("--gcp-project=%s", project[:len(project)-1]),
+		fmt.Sprintf("--gcp-project=%s", project),
 	}
 
 	return args, nil
@@ -344,4 +475,13 @@ func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) 
 
 func isNotFoundError(errstr string) bool {
 	return strings.Contains(strings.ToLower(errstr), "code=404")
+}
+
+func getCurrProject() (string, error) {
+	cmd := exec.Command("gcloud", "config", "get-value", "project")
+	project, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current project: %v", err)
+	}
+	return string(project[:len(project)-1]), nil
 }

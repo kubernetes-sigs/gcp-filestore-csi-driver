@@ -53,8 +53,9 @@ var (
 	// Driver flags
 	stagingImage      = flag.String("staging-image", "", "name of image to stage to")
 	saFile            = flag.String("service-account-file", "", "path of service account file")
-	deployOverlayName = flag.String("deploy-overlay-name", "dev", "which kustomize overlay to deploy the driver with")
+	deployOverlayName = flag.String("deploy-overlay-name", "", "which kustomize overlay to deploy the driver with")
 	doDriverBuild     = flag.Bool("do-driver-build", true, "building the driver from source")
+	useStagingDriver  = flag.Bool("use-staging-driver", false, "use GKE managed Filestore CSI driver for the tests")
 
 	// Test flags
 	testFocus = flag.String("test-focus", "External.Storage", "test focus for Kubernetes e2e")
@@ -88,6 +89,7 @@ type testParameters struct {
 	snapshotClassFile  string
 	deploymentStrategy string
 	outputDir          string
+	useStagingDriver   bool
 	clusterVersion     string
 	cloudProviderArgs  []string
 	imageType          string
@@ -106,6 +108,22 @@ func main() {
 	if !*inProw && *doDriverBuild {
 		ensureVariable(stagingImage, true, "staging-image is a required flag, please specify the name of image to stage to")
 	}
+
+	if *useStagingDriver {
+		ensureVariableVal(deploymentStrat, "gke", "'deployment-strategy' must be GKE for using managed driver")
+		ensureFlag(doDriverBuild, false, "'do-driver-build' must be false when using GKE managed driver")
+		ensureFlag(teardownDriver, false, "'teardown-driver' must be false when using GKE managed driver")
+		ensureVariable(stagingImage, false, "'staging-image' must not be set when using GKE managed driver")
+		ensureVariable(deployOverlayName, false, "'deploy-overlay-name' must not be set when using GKE managed driver")
+	}
+
+	if !*useStagingDriver {
+		ensureVariable(deployOverlayName, true, "deploy-overlay-name is a required flag")
+		if *deployOverlayName != "dev" {
+			ensureVariable(saFile, true, "service-account-file is a required flag")
+		}
+	}
+
 	if *deployOverlayName == "dev" {
 		if *deploymentStrat != "gce" {
 			klog.Fatalf("dev overlay only supported for gce deployment")
@@ -158,6 +176,7 @@ func handle() error {
 		snapshotClassFile:  *snapshotClassFile,
 		stagingVersion:     string(uuid.NewUUID()),
 		deploymentStrategy: *deploymentStrat,
+		useStagingDriver:   *useStagingDriver,
 		imageType:          *imageType,
 	}
 
@@ -267,7 +286,7 @@ func handle() error {
 		case "gce":
 			err = clusterUpGCE(k8sDir, *gceZone, *numNodes, testParams.imageType)
 		case "gke":
-			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType)
+			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType, testParams.useStagingDriver)
 		default:
 			err = fmt.Errorf("deployment-strategy must be set to 'gce' or 'gke', but is: %s", *deploymentStrat)
 		}
@@ -295,16 +314,18 @@ func handle() error {
 		}()
 	}
 
-	err := installDriver(testParams.goPath, testParams.pkgDir, *stagingImage, testParams.stagingVersion, *deployOverlayName, *doDriverBuild)
-	if *teardownDriver {
-		defer func() {
-			if teardownErr := deleteDriver(testParams.goPath, testParams.pkgDir, *deployOverlayName); teardownErr != nil {
-				klog.Errorf("failed to delete driver: %v", teardownErr)
-			}
-		}()
-	}
-	if err != nil {
-		return fmt.Errorf("failed to install CSI Driver: %v", err)
+	if !testParams.useStagingDriver {
+		err := installDriver(testParams.goPath, testParams.pkgDir, *stagingImage, testParams.stagingVersion, *deployOverlayName, *doDriverBuild)
+		if *teardownDriver {
+			defer func() {
+				if teardownErr := deleteDriver(testParams.goPath, testParams.pkgDir, *deployOverlayName); teardownErr != nil {
+					klog.Errorf("failed to delete driver: %v", teardownErr)
+				}
+			}()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to install CSI Driver: %v", err)
+		}
 	}
 
 	cancel, err := dumpDriverLogs()
