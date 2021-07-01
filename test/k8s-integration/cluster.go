@@ -307,6 +307,12 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 				NodeConfig: &container.NodeConfig{
 					MachineType: "n1-standard-2",
 					ImageType:   imageType,
+					OauthScopes: []string{
+						"https://www.googleapis.com/auth/devstorage.read_only",
+						"https://www.googleapis.com/auth/service.management.readonly",
+						"https://www.googleapis.com/auth/servicecontrol",
+						"https://www.googleapis.com/auth/trace.append",
+					},
 				},
 			},
 		}
