@@ -64,11 +64,12 @@ var (
 	devOverlaySA = flag.String("dev-overlay-sa", "", "default SA that will be plumbed to the GCE instances")
 
 	// GKE specific flags
-	gkeClusterVer      = flag.String("gke-cluster-version", "", "version of Kubernetes master and node for gke")
-	gkeReleaseChannel  = flag.String("gke-release-channel", "", "GKE release channel to be used for cluster deploy. One of 'rapid', 'stable' or 'regular'")
-	gkeTestClusterName = flag.String("gke-cluster-name", "gcp-fs-csi-cluster", "GKE cluster name")
-	gkeNodeVersion     = flag.String("gke-node-version", "", "GKE cluster worker node version")
-	gceRegion          = flag.String("gce-region", "", "region that gke regional cluster should be created in")
+	gkeClusterVer        = flag.String("gke-cluster-version", "", "version of Kubernetes master and node for gke")
+	gkeReleaseChannel    = flag.String("gke-release-channel", "", "GKE release channel to be used for cluster deploy. One of 'rapid', 'stable' or 'regular'")
+	gkeTestClusterPrefix = flag.String("gke-cluster-prefix", "fs-csi", "Prefix of GKE cluster names. A random suffix will be appended to form the full name.")
+	gkeTestClusterName   = flag.String("gke-cluster-name", "", "GKE cluster name")
+	gkeNodeVersion       = flag.String("gke-node-version", "", "GKE cluster worker node version")
+	gceRegion            = flag.String("gce-region", "", "region that gke regional cluster should be created in")
 )
 
 const (
@@ -149,6 +150,10 @@ func main() {
 		ensureVariable(kubeFeatureGates, false, "Cannot set feature gates when using deployment strategy 'gke'.")
 		if len(*localK8sDir) == 0 {
 			ensureVariable(testVersion, true, "Must set either test-version or local k8s dir when using deployment strategy 'gke'.")
+		}
+		if len(*gkeTestClusterName) == 0 {
+			randSuffix := string(uuid.NewUUID())[0:4]
+			*gkeTestClusterName = *gkeTestClusterPrefix + "-" + randSuffix
 		}
 	}
 
