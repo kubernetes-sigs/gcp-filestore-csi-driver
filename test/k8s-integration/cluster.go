@@ -308,7 +308,7 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 					MachineType: "n1-standard-2",
 					ImageType:   imageType,
 					OauthScopes: []string{
-						"https://www.googleapis.com/auth/devstorage.read_only",
+						"https://www.googleapis.com/auth/cloud-platform",
 					},
 				},
 			},
