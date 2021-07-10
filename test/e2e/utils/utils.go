@@ -109,7 +109,7 @@ func SetupProwConfig(resourceType string) (project, serviceAccount string) {
 	// Default Compute Engine service account
 	// [PROJECT_NUMBER]-compute@developer.gserviceaccount.com
 	serviceAccount = fmt.Sprintf("%v-compute@developer.gserviceaccount.com", resp.ProjectNumber)
-	klog.V(2).Infof("Prow config utilizing:\n- project %q\n- project number %q\n- service account %q", project, resp.ProjectNumber, serviceAccount)
+	klog.Infof("Prow config utilizing:\n- project %q\n- project number %q\n- service account %q", project, resp.ProjectNumber, serviceAccount)
 	return project, serviceAccount
 }
 

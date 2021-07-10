@@ -90,7 +90,6 @@ type testParameters struct {
 	snapshotClassFile  string
 	deploymentStrategy string
 	outputDir          string
-	useStagingDriver   bool
 	clusterVersion     string
 	cloudProviderArgs  []string
 	imageType          string
@@ -181,7 +180,6 @@ func handle() error {
 		snapshotClassFile:  *snapshotClassFile,
 		stagingVersion:     string(uuid.NewUUID()),
 		deploymentStrategy: *deploymentStrat,
-		useStagingDriver:   *useStagingDriver,
 		imageType:          *imageType,
 	}
 
@@ -291,7 +289,7 @@ func handle() error {
 		case "gce":
 			err = clusterUpGCE(k8sDir, *gceZone, *numNodes, testParams.imageType)
 		case "gke":
-			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType, testParams.useStagingDriver)
+			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType, *useStagingDriver)
 		default:
 			err = fmt.Errorf("deployment-strategy must be set to 'gce' or 'gke', but is: %s", *deploymentStrat)
 		}
@@ -319,7 +317,7 @@ func handle() error {
 		}()
 	}
 
-	if !testParams.useStagingDriver {
+	if !*useStagingDriver {
 		err := installDriver(testParams.goPath, testParams.pkgDir, *stagingImage, testParams.stagingVersion, *deployOverlayName, *doDriverBuild)
 		if *teardownDriver {
 			defer func() {
@@ -424,27 +422,24 @@ func generateGCETestSkip(testParams *testParameters) string {
 func generateGKETestSkip(testParams *testParameters) string {
 	skipString := "\\[Disruptive\\]|\\[Serial\\]"
 	curVer := mustParseVersion(testParams.clusterVersion)
-	// "volumeMode should not mount / map unused volumes in a pod" tests a
-	// (https://github.com/kubernetes/kubernetes/pull/81163)
-	// bug-fix introduced in 1.16
-	if curVer.lessThan(mustParseVersion("1.16.0")) {
-		skipString = skipString + "|volumeMode\\sshould\\snot\\smount\\s/\\smap\\sunused\\svolumes\\sin\\sa\\spod"
-	}
-
-	// For GKE deployed PD CSI driver, resizer sidecar is enabled in 1.16.8-gke.3
-	if curVer.lessThan(mustParseVersion("1.16.0")) {
-		skipString = skipString + "|allowExpansion"
+	var nodeVer *version
+	if testParams.nodeVersion != "" {
+		nodeVer = mustParseVersion(testParams.nodeVersion)
 	}
 
 	// Skip fsgroup change policy based on GKE cluster version.
-	if curVer.lessThan(mustParseVersion("1.20.0")) {
+	if curVer.lessThan(mustParseVersion("1.20.0")) || (nodeVer != nil && nodeVer.lessThan(mustParseVersion("1.20.0"))) {
 		skipString = skipString + "|fsgroupchangepolicy"
 	}
 
-	// Running snapshot tests on GKE needs k8s 1.19x storage e2e testsuite (until GKE supports v1 snapshot APIs).
-	// And to run 1.19x test suite for filestore, https://github.com/kubernetes/kubernetes/pull/96042 needs to be cherry-picked
-	// to 1.19 branch, so that configurable timeouts can be setup for filestore instance provisioning.
-	skipString = skipString + "|VolumeSnapshotDataSource"
+	// Running snapshot tests on GKE clusters which does not support v1 snapshot CRDs needs 1.19x storage
+	// e2e testsuite (until GKE supports v1 snapshot APIs). And to run 1.19x test suite for filestore,
+	// https://github.com/kubernetes/kubernetes/pull/96042 needs to be cherry-picked to 1.19 branch, so that
+	// configurable timeouts can be setup for filestore instance provisioning.
+	if (*useStagingDriver && curVer.lessThan(mustParseVersion("1.20.7-gke.6"))) ||
+		(!*useStagingDriver && (*curVer).lessThan(mustParseVersion("1.20.7"))) {
+		skipString = skipString + "|VolumeSnapshotDataSource"
+	}
 
 	return skipString
 }

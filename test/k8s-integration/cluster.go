@@ -292,26 +292,44 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 			return fmt.Errorf("failed to create a new service: %v", err)
 		}
 
-		// TODO: change to read CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER env var
-		service.BasePath = "https://test-container.sandbox.googleapis.com/" // e.g test, staging env URL
+		service.BasePath = os.Getenv("CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER")
+		if service.BasePath == "" {
+			service.BasePath = "https://container.googleapis.com/"
+		}
 
-		// TODO: honor the gkeNodeVersion flag
+		klog.Infof("targeting api endpoint: %s", service.BasePath)
+
 		request := &container.CreateClusterRequest{
 			Cluster: &container.Cluster{
-				Name:             *gkeTestClusterName,
-				InitialNodeCount: int64(numNodes),
+				Name: *gkeTestClusterName,
 				AddonsConfig: &container.AddonsConfig{
 					GcpFilestoreCsiDriverConfig: &container.GcpFilestoreCsiDriverConfig{Enabled: true},
 				},
-				ReleaseChannel: &container.ReleaseChannel{Channel: "RAPID"},
-				NodeConfig: &container.NodeConfig{
-					MachineType: "n1-standard-2",
-					ImageType:   imageType,
-					OauthScopes: []string{
-						"https://www.googleapis.com/auth/cloud-platform",
-					},
-				},
+				NodePools: []*container.NodePool{
+					{
+						Name:             "default-pool",
+						InitialNodeCount: int64(numNodes),
+						Config: &container.NodeConfig{
+							MachineType: "n1-standard-2",
+							ImageType:   imageType,
+							OauthScopes: []string{
+								"https://www.googleapis.com/auth/cloud-platform",
+							},
+						},
+					}},
 			},
+		}
+
+		if isVariableSet(gkeClusterVer) {
+			request.Cluster.InitialClusterVersion = *gkeClusterVer
+		} else {
+			request.Cluster.ReleaseChannel = &container.ReleaseChannel{Channel: *gkeReleaseChannel}
+			// release channel based GKE clusters require autorepair to be enabled.
+			request.Cluster.NodePools[0].Management = &container.NodeManagement{AutoRepair: true}
+		}
+
+		if isVariableSet(gkeNodeVersion) {
+			request.Cluster.NodePools[0].Version = *gkeNodeVersion
 		}
 
 		klog.Infof("Creating kubernetes e2e cluster on gke")
@@ -329,6 +347,12 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 		if err != nil {
 			return fmt.Errorf("WaitFor Cluster Create operation failed: %v", err)
 		}
+
+		clusterInfo, err := exec.Command("gcloud", "container", "clusters", "list", "--filter", *gkeTestClusterName).Output()
+		if err != nil {
+			return fmt.Errorf("failed to list clusters with name %s: %v", *gkeTestClusterName, err)
+		}
+		klog.Infof(string(clusterInfo))
 
 		// fetch context because otherwise kubectl won't be able to talk to cluster
 		cmd := exec.Command("gcloud", "container", "clusters", "get-credentials", *gkeTestClusterName, "--project", project, locationArg, locationVal)
