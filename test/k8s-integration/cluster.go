@@ -324,8 +324,9 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 			request.Cluster.InitialClusterVersion = *gkeClusterVer
 		} else {
 			request.Cluster.ReleaseChannel = &container.ReleaseChannel{Channel: *gkeReleaseChannel}
-			// release channel based GKE clusters require autorepair to be enabled.
+			// release channel based GKE clusters require autorepair and autoupgrade to be enabled.
 			request.Cluster.NodePools[0].Management = &container.NodeManagement{AutoRepair: true}
+			request.Cluster.NodePools[0].Management.AutoUpgrade = true
 		}
 
 		if isVariableSet(gkeNodeVersion) {
