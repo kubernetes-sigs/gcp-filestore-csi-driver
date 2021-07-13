@@ -5,15 +5,15 @@ metadata:
   annotations:
     pv.kubernetes.io/provisioned-by: filestore.csi.storage.gke.io
 spec:
-  storageClassName: "csi-filestore"
+  storageClassName: csi-filestore
   capacity:
     storage: 1Ti
   accessModes:
     - ReadWriteMany
-  persistentVolumeReclaimPolicy: "Delete"
-  volumeMode: "Filesystem"
+  persistentVolumeReclaimPolicy: Retain
+  volumeMode: Filesystem
   csi:
-    driver: "filestore.csi.storage.gke.io"
+    driver: filestore.csi.storage.gke.io
     # Modify this to use the zone, filestore instance and share name.
     volumeHandle: "modeInstance/<zone>/<filestore-instance-name>/<filestore-share-name>"
     volumeAttributes:
