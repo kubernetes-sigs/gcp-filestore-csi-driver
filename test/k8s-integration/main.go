@@ -132,7 +132,12 @@ func main() {
 	}
 
 	ensureVariable(testFocus, true, "test-focus is a required flag")
-	ensureVariable(gceZone, true, "One of gce-zone or gce-region must be set")
+
+	if len(*gceRegion) != 0 {
+		ensureVariable(gceZone, false, "gce-zone and gce-region cannot both be set")
+	} else {
+		ensureVariable(gceZone, true, "One of gce-zone or gce-region must be set")
+	}
 
 	if !*bringupCluster {
 		ensureVariable(kubeFeatureGates, false, "kube-feature-gates set but not bringing up new cluster")
