@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"golang.org/x/oauth2/google"
-	filev1 "google.golang.org/api/file/v1"
+	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"k8s.io/klog"
 )
 
@@ -31,25 +31,25 @@ const (
 	backoff = time.Second * 6
 )
 
-func GetFileClient() (*filev1.Service, error) {
+func GetFileClient() (*filev1beta1.Service, error) {
 	klog.V(4).Infof("Getting file client...")
 
 	// Setup the file client for retrieving resources
 	// Getting credentials on gce jenkins is flaky, so try a couple times
 	var err error
-	var fs *filev1.Service
+	var fs *filev1beta1.Service
 	for i := 0; i < retries; i++ {
 		if i > 0 {
 			time.Sleep(backoff)
 		}
 
 		var client *http.Client
-		client, err = google.DefaultClient(context.Background(), filev1.CloudPlatformScope)
+		client, err = google.DefaultClient(context.Background(), filev1beta1.CloudPlatformScope)
 		if err != nil {
 			continue
 		}
 
-		fs, err = filev1.New(client)
+		fs, err = filev1beta1.New(client)
 		if err != nil {
 			continue
 		}
