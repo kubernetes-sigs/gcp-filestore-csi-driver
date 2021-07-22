@@ -183,7 +183,8 @@ func downloadKubernetesSource(pkgDir, k8sIoDir, kubeVersion string) error {
 }
 
 func getKubeClusterVersion() (string, error) {
-	out, err := exec.Command("kubectl", "version", "-o=json").CombinedOutput()
+	out, err := exec.Command("kubectl", "version", "-o=json").Output()
+	klog.Infof("output of kubectl version is: \n %s", string(out))
 	if err != nil {
 		return "", fmt.Errorf("failed to obtain cluster version, error: %v", err)
 	}
