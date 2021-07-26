@@ -1,4 +1,4 @@
-// Copyright 2020 Google LLC.
+// Copyright 2021 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -79,7 +79,7 @@ const mtlsBasePath = "https://file.mtls.googleapis.com/"
 
 // OAuth2 scopes used by this API.
 const (
-	// View and manage your data across Google Cloud Platform services
+	// See, edit, configure, and delete your Google Cloud Platform data
 	CloudPlatformScope = "https://www.googleapis.com/auth/cloud-platform"
 )
 
@@ -216,6 +216,9 @@ type Backup struct {
 	// projects/{project_id}/locations/{location_id}/backups/{backup_id}.
 	Name string `json:"name,omitempty"`
 
+	// SatisfiesPzs: Output only. Reserved for future use.
+	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
+
 	// SourceFileShare: Name of the file share in the source Cloud Filestore
 	// instance that the backup is created from.
 	SourceFileShare string `json:"sourceFileShare,omitempty"`
@@ -243,6 +246,8 @@ type Backup struct {
 	// performance backed by SSD.
 	//   "HIGH_SCALE_SSD" - HIGH_SCALE instances offer expanded capacity and
 	// performance scaling capabilities.
+	//   "ENTERPRISE" - ENTERPRISE instances offer the features and
+	// availability needed for mission-critical workloads.
 	SourceInstanceTier string `json:"sourceInstanceTier,omitempty"`
 
 	// State: Output only. The backup state.
@@ -434,7 +439,8 @@ type FileShareConfig struct {
 	// defines 1 GB as 1024^3 bytes.
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
 
-	// Name: The name of the file share (must be 16 characters or less).
+	// Name: The name of the file share (must be 32 characters or less for
+	// High Scale SSD tier, 16 characters or less for all other tiers).
 	Name string `json:"name,omitempty"`
 
 	// NfsExportOptions: Nfs Export Options. There is a limit of 10 export
@@ -502,8 +508,9 @@ type GoogleCloudSaasacceleratorManagementProvidersV1Instance struct {
 	MaintenanceSettings *GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSettings `json:"maintenanceSettings,omitempty"`
 
 	// Name: Unique name of the resource. It uses the form:
-	// `projects/{project_id}/locations/{location_id}/instances/{instance_id}
-	// `
+	// `projects/{project_id|project_number}/locations/{location_id}/instance
+	// s/{instance_id}` Note: Either project_id or project_number can be
+	// used, but keep it consistent with other APIs (e.g. RescheduleUpdate)
 	Name string `json:"name,omitempty"`
 
 	// ProducerMetadata: Output only. Custom string attributes used
@@ -582,9 +589,10 @@ func (s *GoogleCloudSaasacceleratorManagementProvidersV1Instance) MarshalJSON() 
 // Maintenance schedule which is exposed to customer and potentially end
 // user, indicating published upcoming future maintenance schedule
 type GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSchedule struct {
-	// CanReschedule: Can this scheduled update be rescheduled? By default,
-	// it's true and API needs to do explicitly check whether it's set, if
-	// it's set as false explicitly, it's false
+	// CanReschedule: This field is deprecated, and will be always set to
+	// true since reschedule can happen multiple times now. This field
+	// should not be removed until all service producers remove this for
+	// their customers.
 	CanReschedule bool `json:"canReschedule,omitempty"`
 
 	// EndTime: The scheduled end time for the maintenance.
@@ -594,6 +602,13 @@ type GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSchedule struct {
 	// maintenance schedule is associated with. When doing reschedule update
 	// request, the reschedule should be against this given policy.
 	RolloutManagementPolicy string `json:"rolloutManagementPolicy,omitempty"`
+
+	// ScheduleDeadlineTime: schedule_deadline_time is the time deadline any
+	// schedule start time cannot go beyond, including reschedule. It's
+	// normally the initial schedule start time plus maintenance window
+	// length (1 day or 1 week). Maintenance cannot be scheduled to start
+	// beyond this deadline.
+	ScheduleDeadlineTime string `json:"scheduleDeadlineTime,omitempty"`
 
 	// StartTime: The scheduled start time for the maintenance.
 	StartTime string `json:"startTime,omitempty"`
@@ -631,6 +646,10 @@ type GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSettings struct {
 	// service will include the instance in reported rollout progress as not
 	// attempted.
 	Exclude bool `json:"exclude,omitempty"`
+
+	// IsRollback: Optional. If the update call is triggered from rollback,
+	// set the value as true.
+	IsRollback bool `json:"isRollback,omitempty"`
 
 	// MaintenancePolicies: Optional. The MaintenancePolicies that have been
 	// attached to the instance. The key must be of the type name of the
@@ -686,6 +705,10 @@ type GoogleCloudSaasacceleratorManagementProvidersV1NodeSloMetadata struct {
 	// SaasInstanceNode.node_id.
 	NodeId string `json:"nodeId,omitempty"`
 
+	// PerSliEligibility: If present, this will override eligibility for the
+	// node coming from instance or exclusions for specified SLIs.
+	PerSliEligibility *GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility `json:"perSliEligibility,omitempty"`
+
 	// ForceSendFields is a list of field names (e.g. "Exclusions") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
@@ -705,6 +728,47 @@ type GoogleCloudSaasacceleratorManagementProvidersV1NodeSloMetadata struct {
 
 func (s *GoogleCloudSaasacceleratorManagementProvidersV1NodeSloMetadata) MarshalJSON() ([]byte, error) {
 	type NoMethod GoogleCloudSaasacceleratorManagementProvidersV1NodeSloMetadata
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility:
+// PerSliSloEligibility is a mapping from an SLI name to eligibility.
+type GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility struct {
+	// Eligibilities: An entry in the eligibilities map specifies an
+	// eligibility for a particular SLI for the given instance. The SLI key
+	// in the name must be a valid SLI name specified in the Eligibility
+	// Exporter binary flags otherwise an error will be emitted by
+	// Eligibility Exporter and the oncaller will be alerted. If an SLI has
+	// been defined in the binary flags but the eligibilities map does not
+	// contain it, the corresponding SLI time series will not be emitted by
+	// the Eligibility Exporter. This ensures a smooth rollout and
+	// compatibility between the data produced by different versions of the
+	// Eligibility Exporters. If eligibilities map contains a key for an SLI
+	// which has not been declared in the binary flags, there will be an
+	// error message emitted in the Eligibility Exporter log and the metric
+	// for the SLI in question will not be emitted.
+	Eligibilities map[string]GoogleCloudSaasacceleratorManagementProvidersV1SloEligibility `json:"eligibilities,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Eligibilities") to
+	// unconditionally include in API requests. By default, fields with
+	// empty values are omitted from API requests. However, any non-pointer,
+	// non-interface field appearing in ForceSendFields will be sent to the
+	// server regardless of whether the field is empty or not. This may be
+	// used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Eligibilities") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility) MarshalJSON() ([]byte, error) {
+	type NoMethod GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -806,8 +870,7 @@ type GoogleCloudSaasacceleratorManagementProvidersV1SloExclusion struct {
 	Reason string `json:"reason,omitempty"`
 
 	// SliName: Name of an SLI that this exclusion applies to. Can be left
-	// empty, signaling that the instance should be excluded from all SLIs
-	// defined in the service SLO configuration.
+	// empty, signaling that the instance should be excluded from all SLIs.
 	SliName string `json:"sliName,omitempty"`
 
 	// StartTime: Start time of the exclusion. No alignment (e.g. to a full
@@ -841,9 +904,6 @@ func (s *GoogleCloudSaasacceleratorManagementProvidersV1SloExclusion) MarshalJSO
 // SloMetadata contains resources required for proper SLO classification
 // of the instance.
 type GoogleCloudSaasacceleratorManagementProvidersV1SloMetadata struct {
-	// Eligibility: Optional. User-defined instance eligibility.
-	Eligibility *GoogleCloudSaasacceleratorManagementProvidersV1SloEligibility `json:"eligibility,omitempty"`
-
 	// Exclusions: List of SLO exclusion windows. When multiple entries in
 	// the list match (matching the exclusion time-window against current
 	// time point) the exclusion reason used in the first matching entry
@@ -864,12 +924,16 @@ type GoogleCloudSaasacceleratorManagementProvidersV1SloMetadata struct {
 	// Monarch.
 	Nodes []*GoogleCloudSaasacceleratorManagementProvidersV1NodeSloMetadata `json:"nodes,omitempty"`
 
+	// PerSliEligibility: Optional. Multiple per-instance SLI eligibilities
+	// which apply for individual SLIs.
+	PerSliEligibility *GoogleCloudSaasacceleratorManagementProvidersV1PerSliSloEligibility `json:"perSliEligibility,omitempty"`
+
 	// Tier: Name of the SLO tier the Instance belongs to. This name will be
 	// expected to match the tiers specified in the service SLO
 	// configuration. Field is mandatory and must not be empty.
 	Tier string `json:"tier,omitempty"`
 
-	// ForceSendFields is a list of field names (e.g. "Eligibility") to
+	// ForceSendFields is a list of field names (e.g. "Exclusions") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
 	// non-interface field appearing in ForceSendFields will be sent to the
@@ -877,10 +941,10 @@ type GoogleCloudSaasacceleratorManagementProvidersV1SloMetadata struct {
 	// used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "Eligibility") to include
-	// in API requests with the JSON null value. By default, fields with
-	// empty values are omitted from API requests. However, any field with
-	// an empty value appearing in NullFields will be sent to the server as
+	// NullFields is a list of field names (e.g. "Exclusions") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
 	// null. It is an error if a field in this list has a non-empty value.
 	// This may be used to include null fields in Patch requests.
 	NullFields []string `json:"-"`
@@ -920,6 +984,9 @@ type Instance struct {
 	// version, only a single network is supported.
 	Networks []*NetworkConfig `json:"networks,omitempty"`
 
+	// SatisfiesPzs: Output only. Reserved for future use.
+	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
+
 	// State: Output only. The instance state.
 	//
 	// Possible values:
@@ -957,6 +1024,8 @@ type Instance struct {
 	// performance backed by SSD.
 	//   "HIGH_SCALE_SSD" - HIGH_SCALE instances offer expanded capacity and
 	// performance scaling capabilities.
+	//   "ENTERPRISE" - ENTERPRISE instances offer the features and
+	// availability needed for mission-critical workloads.
 	Tier string `json:"tier,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the
@@ -1294,6 +1363,19 @@ func (s *MaintenanceWindow) MarshalJSON() ([]byte, error) {
 
 // NetworkConfig: Network configuration for the instance.
 type NetworkConfig struct {
+	// ConnectMode: The network connect mode of the Filestore instance. If
+	// not provided, the connect mode defaults to DIRECT_PEERING.
+	//
+	// Possible values:
+	//   "CONNECT_MODE_UNSPECIFIED" - ConnectMode not set.
+	//   "DIRECT_PEERING" - Connect via direct peering to the Filestore
+	// service.
+	//   "PRIVATE_SERVICE_ACCESS" - Connect to your Filestore instance using
+	// Private Service Access. Private services access provides an IP
+	// address range for multiple Google Cloud services, including
+	// Filestore.
+	ConnectMode string `json:"connectMode,omitempty"`
+
 	// IpAddresses: Output only. IPv4 addresses in the format {octet
 	// 1}.{octet 2}.{octet 3}.{octet 4} or IPv6 addresses in the format
 	// {block 1}:{block 2}:{block 3}:{block 4}:{block 5}:{block 6}:{block
@@ -1308,21 +1390,21 @@ type NetworkConfig struct {
 	//   "MODE_IPV4" - Use the IPv4 internet protocol.
 	Modes []string `json:"modes,omitempty"`
 
-	// Network: The name of the Google Compute Engine [VPC
-	// network](/compute/docs/networks-and-firewalls#networks) to which the
-	// instance is connected.
+	// Network: The name of the Google Compute Engine VPC network
+	// (/compute/docs/networks-and-firewalls#networks) to which the instance
+	// is connected.
 	Network string `json:"network,omitempty"`
 
 	// ReservedIpRange: A /29 CIDR block for Basic or a /23 CIDR block for
-	// High Scale in one of the [internal IP address
-	// ranges](https://www.arin.net/knowledge/address_filters.html) that
-	// identifies the range of IP addresses reserved for this instance. For
-	// example, 10.0.0.0/29 or 192.168.0.0/23. The range you specify can't
-	// overlap with either existing subnets or assigned IP address ranges
-	// for other Cloud Filestore instances in the selected VPC network.
+	// High Scale in one of the internal IP address ranges
+	// (https://www.arin.net/knowledge/address_filters.html) that identifies
+	// the range of IP addresses reserved for this instance. For example,
+	// 10.0.0.0/29 or 192.168.0.0/23. The range you specify can't overlap
+	// with either existing subnets or assigned IP address ranges for other
+	// Cloud Filestore instances in the selected VPC network.
 	ReservedIpRange string `json:"reservedIpRange,omitempty"`
 
-	// ForceSendFields is a list of field names (e.g. "IpAddresses") to
+	// ForceSendFields is a list of field names (e.g. "ConnectMode") to
 	// unconditionally include in API requests. By default, fields with
 	// empty values are omitted from API requests. However, any non-pointer,
 	// non-interface field appearing in ForceSendFields will be sent to the
@@ -1330,7 +1412,7 @@ type NetworkConfig struct {
 	// used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "IpAddresses") to include
+	// NullFields is a list of field names (e.g. "ConnectMode") to include
 	// in API requests with the JSON null value. By default, fields with
 	// empty values are omitted from API requests. However, any field with
 	// an empty value appearing in NullFields will be sent to the server as
@@ -1478,30 +1560,30 @@ func (s *Operation) MarshalJSON() ([]byte, error) {
 // OperationMetadata: Represents the metadata of the long-running
 // operation.
 type OperationMetadata struct {
-	// ApiVersion: [Output only] API version used to start the operation.
+	// ApiVersion: Output only. API version used to start the operation.
 	ApiVersion string `json:"apiVersion,omitempty"`
 
-	// CancelRequested: [Output only] Identifies whether the user has
+	// CancelRequested: Output only. Identifies whether the user has
 	// requested cancellation of the operation. Operations that have
 	// successfully been cancelled have Operation.error value with a
 	// google.rpc.Status.code of 1, corresponding to `Code.CANCELLED`.
 	CancelRequested bool `json:"cancelRequested,omitempty"`
 
-	// CreateTime: [Output only] The time the operation was created.
+	// CreateTime: Output only. The time the operation was created.
 	CreateTime string `json:"createTime,omitempty"`
 
-	// EndTime: [Output only] The time the operation finished running.
+	// EndTime: Output only. The time the operation finished running.
 	EndTime string `json:"endTime,omitempty"`
 
-	// StatusDetail: [Output only] Human-readable status of the operation,
-	// if any.
+	// StatusDetail: Output only. Human-readable status of the operation, if
+	// any.
 	StatusDetail string `json:"statusDetail,omitempty"`
 
-	// Target: [Output only] Server-defined resource path for the target of
+	// Target: Output only. Server-defined resource path for the target of
 	// the operation.
 	Target string `json:"target,omitempty"`
 
-	// Verb: [Output only] Name of the verb executed by the operation.
+	// Verb: Output only. Name of the verb executed by the operation.
 	Verb string `json:"verb,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "ApiVersion") to
@@ -1612,11 +1694,11 @@ func (s *Schedule) MarshalJSON() ([]byte, error) {
 
 // Status: The `Status` type defines a logical error model that is
 // suitable for different programming environments, including REST APIs
-// and RPC APIs. It is used by [gRPC](https://github.com/grpc). Each
+// and RPC APIs. It is used by gRPC (https://github.com/grpc). Each
 // `Status` message contains three pieces of data: error code, error
 // message, and error details. You can find out more about this error
-// model and how to work with it in the [API Design
-// Guide](https://cloud.google.com/apis/design/errors).
+// model and how to work with it in the API Design Guide
+// (https://cloud.google.com/apis/design/errors).
 type Status struct {
 	// Code: The status code, which should be an enum value of
 	// google.rpc.Code.
@@ -1782,6 +1864,8 @@ type ProjectsLocationsGetCall struct {
 }
 
 // Get: Gets information about a location.
+//
+// - name: Resource name for the location.
 func (r *ProjectsLocationsService) Get(name string) *ProjectsLocationsGetCall {
 	c := &ProjectsLocationsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -1825,7 +1909,7 @@ func (c *ProjectsLocationsGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -1927,14 +2011,19 @@ type ProjectsLocationsListCall struct {
 
 // List: Lists information about the supported locations for this
 // service.
+//
+// - name: The resource that owns the locations collection, if
+//   applicable.
 func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall {
 	c := &ProjectsLocationsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
 	return c
 }
 
-// Filter sets the optional parameter "filter": The standard list
-// filter.
+// Filter sets the optional parameter "filter": A filter to narrow down
+// results to a preferred subset. The filtering language accepts strings
+// like "displayName=tokyo", and is documented in more detail in AIP-160
+// (https://google.aip.dev/160).
 func (c *ProjectsLocationsListCall) Filter(filter string) *ProjectsLocationsListCall {
 	c.urlParams_.Set("filter", filter)
 	return c
@@ -1948,15 +2037,16 @@ func (c *ProjectsLocationsListCall) IncludeUnrevealedLocations(includeUnrevealed
 	return c
 }
 
-// PageSize sets the optional parameter "pageSize": The standard list
-// page size.
+// PageSize sets the optional parameter "pageSize": The maximum number
+// of results to return. If not set, the service selects a default.
 func (c *ProjectsLocationsListCall) PageSize(pageSize int64) *ProjectsLocationsListCall {
 	c.urlParams_.Set("pageSize", fmt.Sprint(pageSize))
 	return c
 }
 
-// PageToken sets the optional parameter "pageToken": The standard list
-// page token.
+// PageToken sets the optional parameter "pageToken": A page token
+// received from the `next_page_token` field in the response. Send that
+// page token to receive the subsequent page.
 func (c *ProjectsLocationsListCall) PageToken(pageToken string) *ProjectsLocationsListCall {
 	c.urlParams_.Set("pageToken", pageToken)
 	return c
@@ -1999,7 +2089,7 @@ func (c *ProjectsLocationsListCall) Header() http.Header {
 
 func (c *ProjectsLocationsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2070,7 +2160,7 @@ func (c *ProjectsLocationsListCall) Do(opts ...googleapi.CallOption) (*ListLocat
 	//   ],
 	//   "parameters": {
 	//     "filter": {
-	//       "description": "The standard list filter.",
+	//       "description": "A filter to narrow down results to a preferred subset. The filtering language accepts strings like \"displayName=tokyo\", and is documented in more detail in [AIP-160](https://google.aip.dev/160).",
 	//       "location": "query",
 	//       "type": "string"
 	//     },
@@ -2087,13 +2177,13 @@ func (c *ProjectsLocationsListCall) Do(opts ...googleapi.CallOption) (*ListLocat
 	//       "type": "string"
 	//     },
 	//     "pageSize": {
-	//       "description": "The standard list page size.",
+	//       "description": "The maximum number of results to return. If not set, the service selects a default.",
 	//       "format": "int32",
 	//       "location": "query",
 	//       "type": "integer"
 	//     },
 	//     "pageToken": {
-	//       "description": "The standard list page token.",
+	//       "description": "A page token received from the `next_page_token` field in the response. Send that page token to receive the subsequent page.",
 	//       "location": "query",
 	//       "type": "string"
 	//     }
@@ -2142,6 +2232,10 @@ type ProjectsLocationsBackupsCreateCall struct {
 }
 
 // Create: Creates a backup.
+//
+// - parent: The backup's project and location, in the format
+//   projects/{project_id}/locations/{location}. In Cloud Filestore,
+//   backup locations map to GCP regions, for example **us-west1**.
 func (r *ProjectsLocationsBackupsService) Create(parent string, backup *Backup) *ProjectsLocationsBackupsCreateCall {
 	c := &ProjectsLocationsBackupsCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -2186,7 +2280,7 @@ func (c *ProjectsLocationsBackupsCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsBackupsCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2296,6 +2390,9 @@ type ProjectsLocationsBackupsDeleteCall struct {
 }
 
 // Delete: Deletes a backup.
+//
+// - name: The backup resource name, in the format
+//   projects/{project_id}/locations/{location}/backups/{backup_id}.
 func (r *ProjectsLocationsBackupsService) Delete(name string) *ProjectsLocationsBackupsDeleteCall {
 	c := &ProjectsLocationsBackupsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2329,7 +2426,7 @@ func (c *ProjectsLocationsBackupsDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsBackupsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2427,6 +2524,9 @@ type ProjectsLocationsBackupsGetCall struct {
 }
 
 // Get: Gets the details of a specific backup.
+//
+// - name: The backup resource name, in the format
+//   projects/{project_id}/locations/{location}/backups/{backup_id}.
 func (r *ProjectsLocationsBackupsService) Get(name string) *ProjectsLocationsBackupsGetCall {
 	c := &ProjectsLocationsBackupsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2470,7 +2570,7 @@ func (c *ProjectsLocationsBackupsGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsBackupsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2572,6 +2672,13 @@ type ProjectsLocationsBackupsListCall struct {
 
 // List: Lists all backups in a project for either a specified location
 // or for all locations.
+//
+// - parent: The project and location for which to retrieve backup
+//   information, in the format
+//   projects/{project_id}/locations/{location}. In Cloud Filestore,
+//   backup locations map to GCP regions, for example **us-west1**. To
+//   retrieve backup information for all locations, use "-" for the
+//   {location} value.
 func (r *ProjectsLocationsBackupsService) List(parent string) *ProjectsLocationsBackupsListCall {
 	c := &ProjectsLocationsBackupsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -2643,7 +2750,7 @@ func (c *ProjectsLocationsBackupsListCall) Header() http.Header {
 
 func (c *ProjectsLocationsBackupsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2786,6 +2893,9 @@ type ProjectsLocationsBackupsPatchCall struct {
 }
 
 // Patch: Updates the settings of a specific backup.
+//
+// - name: Output only. The resource name of the backup, in the format
+//   projects/{project_id}/locations/{location_id}/backups/{backup_id}.
 func (r *ProjectsLocationsBackupsService) Patch(name string, backup *Backup) *ProjectsLocationsBackupsPatchCall {
 	c := &ProjectsLocationsBackupsPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2828,7 +2938,7 @@ func (c *ProjectsLocationsBackupsPatchCall) Header() http.Header {
 
 func (c *ProjectsLocationsBackupsPatchCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -2943,6 +3053,10 @@ type ProjectsLocationsInstancesCreateCall struct {
 // capacity of the new instance needs to be equal to or larger than the
 // capacity of the backup (and also equal to or larger than the minimum
 // capacity of the tier).
+//
+// - parent: The instance's project and location, in the format
+//   projects/{project_id}/locations/{location}. In Cloud Filestore,
+//   locations map to GCP zones, for example **us-west1-b**.
 func (r *ProjectsLocationsInstancesService) Create(parent string, instance *Instance) *ProjectsLocationsInstancesCreateCall {
 	c := &ProjectsLocationsInstancesCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -2987,7 +3101,7 @@ func (c *ProjectsLocationsInstancesCreateCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesCreateCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3097,6 +3211,9 @@ type ProjectsLocationsInstancesDeleteCall struct {
 }
 
 // Delete: Deletes an instance.
+//
+// - name: The instance resource name, in the format
+//   projects/{project_id}/locations/{location}/instances/{instance_id}.
 func (r *ProjectsLocationsInstancesService) Delete(name string) *ProjectsLocationsInstancesDeleteCall {
 	c := &ProjectsLocationsInstancesDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3130,7 +3247,7 @@ func (c *ProjectsLocationsInstancesDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3228,6 +3345,9 @@ type ProjectsLocationsInstancesGetCall struct {
 }
 
 // Get: Gets the details of a specific instance.
+//
+// - name: The instance resource name, in the format
+//   projects/{project_id}/locations/{location}/instances/{instance_id}.
 func (r *ProjectsLocationsInstancesService) Get(name string) *ProjectsLocationsInstancesGetCall {
 	c := &ProjectsLocationsInstancesGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3271,7 +3391,7 @@ func (c *ProjectsLocationsInstancesGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3373,6 +3493,13 @@ type ProjectsLocationsInstancesListCall struct {
 
 // List: Lists all instances in a project for either a specified
 // location or for all locations.
+//
+// - parent: The project and location for which to retrieve instance
+//   information, in the format
+//   projects/{project_id}/locations/{location}. In Cloud Filestore,
+//   locations map to GCP zones, for example **us-west1-b**. To retrieve
+//   instance information for all locations, use "-" for the {location}
+//   value.
 func (r *ProjectsLocationsInstancesService) List(parent string) *ProjectsLocationsInstancesListCall {
 	c := &ProjectsLocationsInstancesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3444,7 +3571,7 @@ func (c *ProjectsLocationsInstancesListCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3587,6 +3714,10 @@ type ProjectsLocationsInstancesPatchCall struct {
 }
 
 // Patch: Updates the settings of a specific instance.
+//
+// - name: Output only. The resource name of the instance, in the format
+//   projects/{project_id}/locations/{location_id}/instances/{instance_id
+//   }.
 func (r *ProjectsLocationsInstancesService) Patch(name string, instance *Instance) *ProjectsLocationsInstancesPatchCall {
 	c := &ProjectsLocationsInstancesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3630,7 +3761,7 @@ func (c *ProjectsLocationsInstancesPatchCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesPatchCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3742,8 +3873,13 @@ type ProjectsLocationsInstancesRestoreCall struct {
 }
 
 // Restore: Restores an existing instance's file share from a backup.
-// The instance's file share capacity will be set to the backup's
-// capacity or the minimum capacity of the tier, whichever is larger.
+// The capacity of the instance needs to be equal to or larger than the
+// capacity of the backup (and also equal to or larger than the minimum
+// capacity of the tier).
+//
+// - name: The resource name of the instance, in the format
+//   projects/{project_id}/locations/{location_id}/instances/{instance_id
+//   }.
 func (r *ProjectsLocationsInstancesService) Restore(name string, restoreinstancerequest *RestoreInstanceRequest) *ProjectsLocationsInstancesRestoreCall {
 	c := &ProjectsLocationsInstancesRestoreCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3778,7 +3914,7 @@ func (c *ProjectsLocationsInstancesRestoreCall) Header() http.Header {
 
 func (c *ProjectsLocationsInstancesRestoreCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -3842,7 +3978,7 @@ func (c *ProjectsLocationsInstancesRestoreCall) Do(opts ...googleapi.CallOption)
 	}
 	return ret, nil
 	// {
-	//   "description": "Restores an existing instance's file share from a backup. The instance's file share capacity will be set to the backup's capacity or the minimum capacity of the tier, whichever is larger.",
+	//   "description": "Restores an existing instance's file share from a backup. The capacity of the instance needs to be equal to or larger than the capacity of the backup (and also equal to or larger than the minimum capacity of the tier).",
 	//   "flatPath": "v1beta1/projects/{projectsId}/locations/{locationsId}/instances/{instancesId}:restore",
 	//   "httpMethod": "POST",
 	//   "id": "file.projects.locations.instances.restore",
@@ -3893,6 +4029,8 @@ type ProjectsLocationsOperationsCancelCall struct {
 // deleted; instead, it becomes an operation with an Operation.error
 // value with a google.rpc.Status.code of 1, corresponding to
 // `Code.CANCELLED`.
+//
+// - name: The name of the operation resource to be cancelled.
 func (r *ProjectsLocationsOperationsService) Cancel(name string, canceloperationrequest *CancelOperationRequest) *ProjectsLocationsOperationsCancelCall {
 	c := &ProjectsLocationsOperationsCancelCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3927,7 +4065,7 @@ func (c *ProjectsLocationsOperationsCancelCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsCancelCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4035,6 +4173,8 @@ type ProjectsLocationsOperationsDeleteCall struct {
 // the client is no longer interested in the operation result. It does
 // not cancel the operation. If the server doesn't support this method,
 // it returns `google.rpc.Code.UNIMPLEMENTED`.
+//
+// - name: The name of the operation resource to be deleted.
 func (r *ProjectsLocationsOperationsService) Delete(name string) *ProjectsLocationsOperationsDeleteCall {
 	c := &ProjectsLocationsOperationsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4068,7 +4208,7 @@ func (c *ProjectsLocationsOperationsDeleteCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsDeleteCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4168,6 +4308,8 @@ type ProjectsLocationsOperationsGetCall struct {
 // Get: Gets the latest state of a long-running operation. Clients can
 // use this method to poll the operation result at intervals as
 // recommended by the API service.
+//
+// - name: The name of the operation resource.
 func (r *ProjectsLocationsOperationsService) Get(name string) *ProjectsLocationsOperationsGetCall {
 	c := &ProjectsLocationsOperationsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4211,7 +4353,7 @@ func (c *ProjectsLocationsOperationsGetCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsGetCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}
@@ -4321,6 +4463,8 @@ type ProjectsLocationsOperationsListCall struct {
 // the operations collection id, however overriding users must ensure
 // the name binding is the parent resource, without the operations
 // collection id.
+//
+// - name: The name of the operation's parent resource.
 func (r *ProjectsLocationsOperationsService) List(name string) *ProjectsLocationsOperationsListCall {
 	c := &ProjectsLocationsOperationsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4385,7 +4529,7 @@ func (c *ProjectsLocationsOperationsListCall) Header() http.Header {
 
 func (c *ProjectsLocationsOperationsListCall) doRequest(alt string) (*http.Response, error) {
 	reqHeaders := make(http.Header)
-	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20201105")
+	reqHeaders.Set("x-goog-api-client", "gl-go/"+gensupport.GoVersion()+" gdcl/20210719")
 	for k, v := range c.header_ {
 		reqHeaders[k] = v
 	}

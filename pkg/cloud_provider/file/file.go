@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
-	filev1 "google.golang.org/api/file/v1"
+	filev1beta1 "google.golang.org/api/file/v1beta1"
 )
 
 type ServiceInstance struct {
@@ -57,7 +57,7 @@ type Network struct {
 }
 
 type BackupInfo struct {
-	Backup             *filev1.Backup
+	Backup             *filev1beta1.Backup
 	SourceVolumeHandle string
 }
 
@@ -68,18 +68,16 @@ type Service interface {
 	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
 	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error)
-	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1.Backup, error)
+	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 }
 
 type gcfsServiceManager struct {
-	fileService              *filev1.Service
-	instancesService         *filev1.ProjectsLocationsInstancesService
-	operationsService        *filev1.ProjectsLocationsOperationsService
-	instancesV1beta1Service  *filev1.ProjectsLocationsInstancesService
-	operationsV1beta1Service *filev1.ProjectsLocationsOperationsService
-	backupService            *filev1.ProjectsLocationsBackupsService
+	fileService       *filev1beta1.Service
+	instancesService  *filev1beta1.ProjectsLocationsInstancesService
+	operationsService *filev1beta1.ProjectsLocationsOperationsService
+	backupService     *filev1beta1.ProjectsLocationsBackupsService
 }
 
 const (
@@ -96,32 +94,30 @@ var _ Service = &gcfsServiceManager{}
 
 func NewGCFSService(version string, client *http.Client) (Service, error) {
 	ctx := context.Background()
-	fileService, err := filev1.NewService(ctx, option.WithHTTPClient(client))
+	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
 	return &gcfsServiceManager{
-		fileService:              fileService,
-		instancesService:         filev1.NewProjectsLocationsInstancesService(fileService),
-		operationsService:        filev1.NewProjectsLocationsOperationsService(fileService),
-		instancesV1beta1Service:  filev1.NewProjectsLocationsInstancesService(fileService),
-		operationsV1beta1Service: filev1.NewProjectsLocationsOperationsService(fileService),
-		backupService:            filev1.NewProjectsLocationsBackupsService(fileService),
+		fileService:       fileService,
+		instancesService:  filev1beta1.NewProjectsLocationsInstancesService(fileService),
+		operationsService: filev1beta1.NewProjectsLocationsOperationsService(fileService),
+		backupService:     filev1beta1.NewProjectsLocationsBackupsService(fileService),
 	}, nil
 }
 
 func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	betaObj := &filev1.Instance{
+	betaObj := &filev1beta1.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1.FileShareConfig{
+		FileShares: []*filev1beta1.FileShareConfig{
 			{
 				Name:       obj.Volume.Name,
 				CapacityGb: util.RoundBytesToGb(obj.Volume.SizeBytes),
 			},
 		},
-		Networks: []*filev1.NetworkConfig{
+		Networks: []*filev1beta1.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -157,16 +153,16 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 }
 
 func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
-	instance := &filev1.Instance{
+	instance := &filev1beta1.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1.FileShareConfig{
+		FileShares: []*filev1beta1.FileShareConfig{
 			{
 				Name:         obj.Volume.Name,
 				CapacityGb:   util.RoundBytesToGb(obj.Volume.SizeBytes),
 				SourceBackup: sourceSnapshotId,
 			},
 		},
-		Networks: []*filev1.NetworkConfig{
+		Networks: []*filev1beta1.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -186,7 +182,7 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		instance.Networks[0].ReservedIpRange,
 		instance.Labels,
 		instance.FileShares[0].SourceBackup)
-	op, err := manager.instancesV1beta1Service.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
+	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
 	}
@@ -218,7 +214,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
 }
 
-func cloudInstanceToServiceInstance(instance *filev1.Instance) (*ServiceInstance, error) {
+func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceInstance, error) {
 	project, location, name, err := getInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
@@ -322,16 +318,16 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	}
 
 	// Create a file instance for the Patch request.
-	betaObj := &filev1.Instance{
+	betaObj := &filev1beta1.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1.FileShareConfig{
+		FileShares: []*filev1beta1.FileShareConfig{
 			{
 				Name: instance.Volume.Name,
 				// This is the updated instance size requested.
 				CapacityGb: util.BytesToGb(obj.Volume.SizeBytes),
 			},
 		},
-		Networks: []*filev1.NetworkConfig{
+		Networks: []*filev1beta1.NetworkConfig{
 			{
 				Network:         instance.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -377,14 +373,14 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 	}, nil
 }
 
-func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1.Backup, error) {
+func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
 	backupUri, region, err := CreateBackpURI(obj, backupName, backupLocation)
 	if err != nil {
 		return nil, err
 	}
 
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
-	backupobj := &filev1.Backup{
+	backupobj := &filev1beta1.Backup{
 		SourceInstance:  backupSource,
 		SourceFileShare: obj.Volume.Name,
 	}
@@ -427,7 +423,7 @@ func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId st
 	return nil
 }
 
-func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1.Operation) error {
+func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta1.Operation) error {
 	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
 		pollOp, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
 		if err != nil {
@@ -437,7 +433,7 @@ func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1.Ope
 	})
 }
 
-func isOpDone(op *filev1.Operation) (bool, error) {
+func isOpDone(op *filev1beta1.Operation) (bool, error) {
 	if op == nil {
 		return false, nil
 	}
