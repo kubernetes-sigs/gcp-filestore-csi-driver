@@ -88,6 +88,8 @@ const (
 
 	// Patch update masks
 	fileShareUpdateMask = "file_shares"
+
+	enterpriseTier = "enterprise"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -153,6 +155,11 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 }
 
 func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
+	// enterprise tier Filestore does not yet support Backup
+	if obj.Tier == enterpriseTier {
+		return nil, fmt.Errorf("invalid argument: enterprise tier Filestore does not support Backup yet")
+	}
+
 	instance := &filev1beta1.Instance{
 		Tier: obj.Tier,
 		FileShares: []*filev1beta1.FileShareConfig{
