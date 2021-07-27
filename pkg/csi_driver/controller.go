@@ -37,6 +37,7 @@ const (
 	newInstanceVolume       = "vol1"
 
 	defaultTier    = "standard"
+	enterpriseTier = "enterprise"
 	defaultNetwork = "default"
 
 	// Keys for Topology.
@@ -120,6 +121,9 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	sourceSnapshotId := ""
 	if req.GetVolumeContentSource() != nil {
+		if newFiler.Tier == enterpriseTier {
+			return nil, status.Error(codes.InvalidArgument, "Enterprise tier Filestore does not support Backup yet")
+		}
 		if req.GetVolumeContentSource().GetVolume() != nil {
 			return nil, status.Error(codes.InvalidArgument, "Unsupported volume content source")
 		}
@@ -377,6 +381,13 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		// Cloud API will validate these
 		case paramTier:
 			tier = v
+			if tier == enterpriseTier {
+				region, err := util.GetRegionFromZone(location)
+				if err != nil {
+					return nil, fmt.Errorf("failed to get region from zone %s: %v", location, err)
+				}
+				location = region
+			}
 		case paramNetwork:
 			network = v
 		// Ignore the cidr flag as it is not passed to the cloud provider

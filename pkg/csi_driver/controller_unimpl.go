@@ -48,5 +48,5 @@ func (s *controllerServer) ListSnapshots(ctx context.Context, req *csi.ListSnaps
 }
 
 func (s *controllerServer) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "ControllerExpandVolume unsupported")
+	return nil, status.Error(codes.Unimplemented, "ControllerGetVolume unsupported")
 }
