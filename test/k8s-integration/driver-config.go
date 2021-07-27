@@ -64,7 +64,6 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		"exec",
 		"RWX",
 		"multipods",
-		"topology",
 		"controllerExpansion",
 	}
 
@@ -103,7 +102,6 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 	}
 
 	minimumVolumeSize := "1Ti"
-	numAllowedTopologies := 1
 	// Filestore instance takes in the order of minutes to be provisioned, and with dynamic provisioning (WaitForFirstCustomer policy),
 	// some e2e tests need a longer pod start timeout.
 	timeouts := map[string]string{
@@ -111,13 +109,12 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 		podStartTimeoutKey:       podStartTimeout,
 	}
 	params := driverConfig{
-		StorageClassFile:     filepath.Join(testParams.pkgDir, testConfigDir, storageClassFile),
-		StorageClass:         storageClassFile[:strings.LastIndex(storageClassFile, ".")],
-		SnapshotClassFile:    absSnapshotClassFilePath,
-		Capabilities:         caps,
-		MinimumVolumeSize:    minimumVolumeSize,
-		NumAllowedTopologies: numAllowedTopologies,
-		Timeouts:             timeouts,
+		StorageClassFile:  filepath.Join(testParams.pkgDir, testConfigDir, storageClassFile),
+		StorageClass:      storageClassFile[:strings.LastIndex(storageClassFile, ".")],
+		SnapshotClassFile: absSnapshotClassFilePath,
+		Capabilities:      caps,
+		MinimumVolumeSize: minimumVolumeSize,
+		Timeouts:          timeouts,
 	}
 
 	// Write config file
