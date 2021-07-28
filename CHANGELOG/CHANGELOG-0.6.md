@@ -16,6 +16,7 @@
 - Fixed issue with clusterUpGKE when release channel is set ([#145](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/145), [@leiyiz](https://github.com/leiyiz))
 - Fix kube version parse ([#148](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/148), [@saikat-royc](https://github.com/saikat-royc))
 - Skip topology tests for filestore csi driver ([#150](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/150), [@saikat-royc](https://github.com/saikat-royc))
+- Simplify logic to determine PVC request size ([#154](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/154), [@leiyiz](https://github.com/leiyiz))
 
 ### Documentation
 
