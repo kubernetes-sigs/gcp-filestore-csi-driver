@@ -28,6 +28,7 @@ The following table captures the compatibility matrix of the core filestore driv
 | v0.3.1 (beta)                           | no   |  yes |  yes |  yes  |
 | v0.4.0 (beta)                           | no   |  yes |  yes |  yes  |
 | v0.5.0 (beta)                           | no   |  yes |  yes |  yes  |
+| v0.6.0 (beta)                           | no   |  yes |  yes |  yes  |
 | master                                  | no   |  yes |  yes |  yes  |
 
 The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar, csi driver object, rbacs, pod security policies etc) can be picked up from the master branch [overlays](deploy/kubernetes/overlays) directory. We structure the overlays directory per minor version of kubernetes because not all driver components can be used with all kubernetes versions. For example volume snapshots are supported 1.17+ kubernetes versions thus [stable-1-16](deploy/kubernetes/overlays/stable-1-16) driver manifests does not contain the snapshotter sidecar. Read more about overlays [here](docs/release/overlays.md).
@@ -44,7 +45,7 @@ volume. Customizable parameters for volume creation include:
 
 | Parameter         | Values                  | Default                                | Description |
 | ---------------   | ----------------------- |-----------                             | ----------- |
-| tier              | "standard"<br>"premium" | "standard"                             | storage performance tier |
+| tier              | "standard"<br>"premium"<br>"enterprise" | "standard"                             | storage performance tier |
 | network           | string                  | "default"                              | VPC name |
 | reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each |
 
