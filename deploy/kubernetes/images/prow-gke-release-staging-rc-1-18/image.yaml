@@ -40,5 +40,6 @@ metadata:
   name: imagetag-gce-fs-driver-rc
 imageTag:
   name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
-  newTag: "v0.5.0"
+  newName: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
+  newTag: "v0.6.0-rc1"
 ---
