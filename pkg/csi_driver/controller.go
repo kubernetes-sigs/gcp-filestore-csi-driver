@@ -350,13 +350,13 @@ func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 		return 0, fmt.Errorf("Limit bytes %v is less than minimum instance size bytes %v", lCap, minVolumeSize)
 	}
 
-	if lCap > 0 {
+	if lSet {
 		if rCap == 0 {
 			// request not set
 			return lCap, nil
 		}
 		// request set, round up to min
-		return util.Min(util.Max(rCap, minVolumeSize), lCap), nil
+		return util.Max(rCap, minVolumeSize), nil
 	}
 
 	// limit not set
