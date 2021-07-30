@@ -11,7 +11,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: Beta
 
-Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.5.0`
+Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.6.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -90,7 +90,7 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 
 ## Deploying the Driver
 
-* Clone the repositry in cloudshell using following commands
+* Clone the repository in cloudshell using following commands
 
 ```
 mkdir -p $GOPATH/src/sigs.k8s.io
