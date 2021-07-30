@@ -90,6 +90,14 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 
 ## Deploying the Driver
 
+* Clone the repositry in cloudshell using following commands
+
+```
+mkdir -p $GOPATH/src/sigs.k8s.io
+cd $GOPATH/src/sigs.k8s.io
+git clone https://github.com/kubernetes-sigs/gcp-filestore-csi-driver.git
+```
+
 * Set up a service account with appropriate role binds, and download a service account key. This
   service account will be used by the driver to provision Filestore instances and otherwise access
   GCP APIs. This can be done by running `./deploy/project_setup.sh` and pointing to a directory to
