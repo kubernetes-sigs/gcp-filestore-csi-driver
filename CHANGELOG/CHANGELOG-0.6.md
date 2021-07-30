@@ -23,6 +23,7 @@
 - Rename master to main ([#142](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/142), [@leiyiz](https://github.com/ikarldasan))
 - Update documentation for preprovisioned PVC ([#124](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/124), [@mattcary](https://github.com/mattcary))
 - Overlays documentation and some readme updates ([#146](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/146), [@saikat-royc](https://github.com/saikat-royc))
+- Adding step to clone repository at specific path ([#158](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/158), [@pshahonica](https://github.com/pshahonica))
 
 ### Dependencies
 
