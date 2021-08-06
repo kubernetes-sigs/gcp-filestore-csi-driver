@@ -11,4 +11,4 @@ patchesJson6902:
      name: filestore.csi.storage.gke.io
    path: fsgrouppolicy.yaml
 transformers:
-- ../../images/stable-master
+- ../../images/stable-1-20
