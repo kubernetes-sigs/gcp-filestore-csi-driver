@@ -189,6 +189,10 @@ func (manager *fakeServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 	return instance, nil
 }
 
+func (m *fakeServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
+	return false, nil
+}
+
 func notFoundError() *googleapi.Error {
 	return &googleapi.Error{
 		Errors: []googleapi.ErrorItem{
@@ -227,4 +231,8 @@ func (m *fakeBlockingServiceManager) DeleteInstance(ctx context.Context, obj *Se
 	m.OperationUnblocker <- execute
 	<-execute
 	return m.fakeServiceManager.DeleteInstance(ctx, obj)
+}
+
+func (m *fakeBlockingServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
+	return false, nil
 }
