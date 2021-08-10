@@ -171,14 +171,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.Internal, msg)
 		}
 	} else {
-		// If we are creating a new instance, we need pick an unused /29 range from reserved-ipv4-cidr
+		// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
 		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 		if reservedIPV4CIDR, ok := req.GetParameters()[paramReservedIPV4CIDR]; ok {
 			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
 
 			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
 			// The ListInstances response will contain the reservedIPRange if the operation was started
-			// In case of abort, the /29 IP is released and available for reservation
+			// In case of abort, the CIDR IP is released and available for reservation
 			defer s.config.ipAllocator.ReleaseIPRange(reservedIPRange)
 			if err != nil {
 				return nil, err
@@ -218,7 +218,11 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 	if err != nil {
 		return "", err
 	}
-	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, cloudInstancesReservedIPRanges)
+	ipRangeSize := util.IpRangeSize
+	if filer.Tier == enterpriseTier {
+		ipRangeSize = util.IpRangeSizeEnterprise
+	}
+	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
 	if err != nil {
 		return "", err
 	}

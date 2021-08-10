@@ -24,22 +24,11 @@ import (
 )
 
 const (
-	// Size of the network address of the IPRange we intend to reserve
-	ipRangeSize = 29
-	// Maximum value of a byte
-	byteMax = 255
 	// Total number of bits in an IPV4 address
 	ipV4Bits = 32
 )
 
-var (
-	// step size for IP range increment
-	incrementStep29IPRange = (byte)(math.Exp2(ipV4Bits - ipRangeSize))
-	// mask for IP range
-	ipRangeMask = net.CIDRMask(ipRangeSize, ipV4Bits)
-)
-
-// IPAllocator struct consists of shared resources that are used to keep track of the /29 IPRanges currently reserved by service instances
+// IPAllocator struct consists of shared resources that are used to keep track of the CIDR IPRanges currently reserved by service instances
 type IPAllocator struct {
 	// pendingIPRanges set maintains the set of  IP ranges that have been reserved by the service instances but pending reservation in the cloud instances
 	// The key is a IP range currently reserved by a service instance e.g(192.168.92.0/29). Value is a bool to implement map as a set
@@ -76,16 +65,17 @@ func (ipAllocator *IPAllocator) ReleaseIPRange(ipRange string) {
 	delete(ipAllocator.pendingIPRanges, ipRange)
 }
 
-// GetUnreservedIPRange returns an unreserved /29 IP block.
-// cidr: Provided cidr address in which we need to look for an unreserved /29 IP range
+// GetUnreservedIPRange returns an unreserved IP block.
+// cidr: Provided cidr address in which we need to look for an unreserved IP range with specified size
+// ipRangeSize: the size of the unreserved IP range we are looking for
 // cloudInstancesReservedIPRanges: All the used IP ranges in the cloud instances
 // All the used IP ranges in the service instances not updated in cloud instances is extracted from the pendingIPRanges list in the IPAllocator
 // Finally a final reservedIPRange list is created by merging these two lists
 // Potential error cases:
-// 1) No /29 IP range in the CIDR is unreserved
+// 1) No IP range in the CIDR is unreserved
 // 2) Parsing the CIDR resulted in an error
-func (ipAllocator *IPAllocator) GetUnreservedIPRange(cidr string, cloudInstancesReservedIPRanges map[string]bool) (string, error) {
-	ip, ipnet, err := ipAllocator.parseCIDR(cidr)
+func (ipAllocator *IPAllocator) GetUnreservedIPRange(cidr string, ipRangeSize int, cloudInstancesReservedIPRanges map[string]bool) (string, error) {
+	ip, ipnet, err := ipAllocator.parseCIDR(cidr, ipRangeSize)
 	if err != nil {
 		return "", err
 	}
@@ -103,7 +93,8 @@ func (ipAllocator *IPAllocator) GetUnreservedIPRange(cidr string, cloudInstances
 		reservedIPRanges[reservedIPRange] = true
 	}
 
-	for cidrIP := cloneIP(ip.Mask(ipnet.Mask)); ipnet.Contains(cidrIP) && err == nil; cidrIP, err = incrementIP(cidrIP, incrementStep29IPRange) {
+	incrementStepIPRange := (uint32)(math.Exp2(float64(ipV4Bits - ipRangeSize)))
+	for cidrIP := cloneIP(ip.Mask(ipnet.Mask)); ipnet.Contains(cidrIP) && err == nil; cidrIP, err = incrementIP(cidrIP, incrementStepIPRange) {
 		overLap := false
 		for reservedIPRange := range reservedIPRanges {
 			_, reservedIPNet, err := net.ParseCIDR(reservedIPRange)
@@ -113,7 +104,7 @@ func (ipAllocator *IPAllocator) GetUnreservedIPRange(cidr string, cloudInstances
 			// Creating IPnet object using IP and mask
 			cidrIPNet := &net.IPNet{
 				IP:   cidrIP,
-				Mask: ipRangeMask,
+				Mask: net.CIDRMask(ipRangeSize, ipV4Bits),
 			}
 
 			// Find if the current IP range in the CIDR overlaps with any of the reserved IP ranges. If not, this can be returned
@@ -135,7 +126,7 @@ func (ipAllocator *IPAllocator) GetUnreservedIPRange(cidr string, cloudInstances
 	}
 
 	// No unreserved IP range available in the entire CIDR range since we did not return
-	return "", fmt.Errorf("all of the /29 IP ranges in the cidr %s are reserved", cidr)
+	return "", fmt.Errorf("all of the /%d IP ranges in the cidr %s are reserved", ipRangeSize, cidr)
 }
 
 // isOverlap checks if two ipnets have any overlapping IPs
@@ -150,48 +141,40 @@ func isOverlap(ipnet1 *net.IPNet, ipnet2 *net.IPNet) (bool, error) {
 // For a CIDR to be valid it must satisfy the following properties
 // 1) Network address bits must be less than 30
 // 2) The IP in the CIDR must be 'aligned' i.e we must have 8 available IPs before byte overflow occurs
-func (ipAllocator *IPAllocator) parseCIDR(cidr string) (net.IP, *net.IPNet, error) {
+func (ipAllocator *IPAllocator) parseCIDR(cidr string, ipRangeSize int) (net.IP, *net.IPNet, error) {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	if err != nil {
 		return nil, nil, err
 	}
-	// The reserved-ipv4-cidr network size must be at least /29
+	// The reserved-ipv4-cidr network size must be at least ipRangeSize
 	cidrSize, _ := ipnet.Mask.Size()
 	if cidrSize > ipRangeSize {
 		return nil, nil, fmt.Errorf("the reserved-ipv4-cidr network size must be at least /%d", ipRangeSize)
 	}
 
-	// The IP specified in the reserved-ipv4-cidr must be aligned on the /29 network boundary
-	if ip.String() != ip.Mask(ipRangeMask).String() {
-		return nil, nil, fmt.Errorf("the IP specified in the reserved-ipv4-cidr must be aligned on the /29 network boundary")
+	// The IP specified in the reserved-ipv4-cidr must be aligned on the ipRangeSize network boundary
+	if ip.String() != ip.Mask(net.CIDRMask(ipRangeSize, ipV4Bits)).String() {
+		return nil, nil, fmt.Errorf("the IP specified in the reserved-ipv4-cidr must be aligned on the /%d network boundary", ipRangeSize)
 	}
 	return ip, ipnet, nil
 }
 
-// Increment the given IP value by the provided step. The step is a byte
-func incrementIP(ip net.IP, step byte) (net.IP, error) {
+// Increment the given IP value by the provided step. The step is a uint32
+func incrementIP(ip net.IP, step uint32) (net.IP, error) {
 	incrementedIP := cloneIP(ip)
 	incrementedIP = incrementedIP.To4()
 
-	// Step can be added directly to the Least Significant Byte and we can return the result
-	if incrementedIP[3] <= byteMax-step {
-		incrementedIP[3] += step
-		return incrementedIP, nil
+	ipValue := uint32(incrementedIP[0])<<24 + uint32(incrementedIP[1])<<16 + uint32(incrementedIP[2])<<8 + uint32(incrementedIP[3])
+	newIpValue := ipValue + step
+	if newIpValue < ipValue {
+		return nil, fmt.Errorf("ip range overflowed while incrementing IP %s by step %d", ip.String(), step)
 	}
 
-	// Step addition in the Least Significant Byte resulted in overflow
-	// Propogating the carry addition to the higher order bytes and calculating value of the current byte
-	incrementedIP[3] = incrementedIP[3] - byteMax + step - 1
-
-	for ipByte := 2; ipByte >= 0; ipByte-- {
-		// Rollover occurs when value changes from maximum byte value to 0 as propagated carry is 1
-		if incrementedIP[ipByte] != byteMax {
-			incrementedIP[ipByte]++
-			return incrementedIP, nil
-		}
-		incrementedIP[ipByte] = 0
-	}
-	return nil, fmt.Errorf("ip range overflowed while incrementing IP %s by step %d", ip.String(), step)
+	v3 := byte(newIpValue & 0xFF)
+	v2 := byte((newIpValue >> 8) & 0xFF)
+	v1 := byte((newIpValue >> 16) & 0xFF)
+	v0 := byte((newIpValue >> 24) & 0xFF)
+	return net.IPv4(v0, v1, v2, v3), nil
 }
 
 // Clone the provided IP and return the copy

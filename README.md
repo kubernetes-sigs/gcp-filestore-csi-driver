@@ -47,7 +47,7 @@ volume. Customizable parameters for volume creation include:
 | ---------------   | ----------------------- |-----------                             | ----------- |
 | tier              | "standard"<br>"premium"<br>"enterprise" | "standard"                             | storage performance tier |
 | network           | string                  | "default"                              | VPC name |
-| reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each |
+| reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each, /24 if enterprise tier is used |
 
 For Kubernetes clusters, these parameters are specified in the StorageClass.
 
