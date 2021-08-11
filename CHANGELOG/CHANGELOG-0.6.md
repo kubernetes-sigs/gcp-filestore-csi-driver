@@ -1,3 +1,17 @@
+# v0.6.1 - Changelog since v0.6.0
+
+## Changes by Kind
+
+### Bugs or Regressions
+
+- remove the hard-coded 29 for IP range reservation ([#164](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/164), [@leiyiz](https://github.com/leiyiz))
+
+### Other (Cleanup or Flake)
+
+- Fix stable 1.20 overlay image transformer ([#163](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/163), [@saikat-royc](https://github.com/saikat-royc))
+- Check pending update operation for volume expand ([#162](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/162), [@saikat-royc](https://github.com/saikat-royc))
+
+
 # v0.6.0 - Changelog since v0.5.0
 
 ## Changes by Kind
