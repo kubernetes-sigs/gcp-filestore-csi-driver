@@ -18,6 +18,7 @@ package file
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -71,6 +72,7 @@ type Service interface {
 	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
+	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
 }
 
 type gcfsServiceManager struct {
@@ -208,7 +210,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	}
 
 	if instance != nil {
-		glog.V(5).Infof("GetInstance call fetched instance %+v", instance)
+		glog.V(4).Infof("GetInstance call fetched instance %+v", instance)
 		return cloudInstanceToServiceInstance(instance)
 	}
 	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
@@ -306,32 +308,21 @@ func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *Servi
 
 func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instanceuri := instanceURI(obj.Project, obj.Location, obj.Name)
-	instance, err := manager.GetInstance(ctx, obj)
-	if err != nil {
-		glog.Errorf("Failed to get instance %s for resize operation, error %v", instanceuri, err)
-		return nil, err
-	}
-
-	// High Scale tier supports shrink of capacity. However CSI spec does not support it.
-	if util.BytesToGb(obj.Volume.SizeBytes) <= util.BytesToGb(instance.Volume.SizeBytes) {
-		return instance, nil
-	}
-
 	// Create a file instance for the Patch request.
 	betaObj := &filev1beta1.Instance{
 		Tier: obj.Tier,
 		FileShares: []*filev1beta1.FileShareConfig{
 			{
-				Name: instance.Volume.Name,
+				Name: obj.Volume.Name,
 				// This is the updated instance size requested.
 				CapacityGb: util.BytesToGb(obj.Volume.SizeBytes),
 			},
 		},
 		Networks: []*filev1beta1.NetworkConfig{
 			{
-				Network:         instance.Network.Name,
+				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
-				ReservedIpRange: instance.Network.ReservedIpRange,
+				ReservedIpRange: obj.Network.ReservedIpRange,
 			},
 		},
 	}
@@ -354,7 +345,7 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 		return nil, fmt.Errorf("WaitFor patch op %s failed: %v", op.Name, err)
 	}
 
-	instance, err = manager.GetInstance(ctx, obj)
+	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
 	}
@@ -496,4 +487,47 @@ func CreateBackpURI(obj *ServiceInstance, backupName, backupLocation string) (st
 	}
 
 	return backupURI(obj.Project, region, backupName), region, nil
+}
+
+func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
+	uri := instanceURI(obj.Project, obj.Location, obj.Name)
+	var totalFilteredOps []*filev1beta1.Operation
+	var nextToken string
+	for {
+		resp, err := manager.operationsService.List(locationURI(obj.Project, obj.Location)).PageToken(nextToken).Context(ctx).Do()
+		if err != nil {
+			return false, fmt.Errorf("List operations for instance %q, token %q failed: %v", uri, nextToken, err)
+		}
+
+		filteredOps, err := ApplyFilter(resp.Operations, uri, operationType, done)
+		if err != nil {
+			return false, err
+		}
+
+		totalFilteredOps = append(totalFilteredOps, filteredOps...)
+		if resp.NextPageToken == "" {
+			break
+		}
+		nextToken = resp.NextPageToken
+	}
+
+	return len(totalFilteredOps) > 0, nil
+}
+
+func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done bool) ([]*filev1beta1.Operation, error) {
+	var res []*filev1beta1.Operation
+	for _, op := range ops {
+		var meta filev1beta1.OperationMetadata
+		if op.Metadata == nil {
+			continue
+		}
+		if err := json.Unmarshal(op.Metadata, &meta); err != nil {
+			return nil, err
+		}
+		if meta.Target == uri && meta.Verb == opType && op.Done == done {
+			glog.V(4).Infof("Operation %q match filter for target %q", op.Name, meta.Target)
+			res = append(res, op)
+		}
+	}
+	return res, nil
 }

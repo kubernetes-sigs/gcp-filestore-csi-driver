@@ -171,14 +171,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.Internal, msg)
 		}
 	} else {
-		// If we are creating a new instance, we need pick an unused /29 range from reserved-ipv4-cidr
+		// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
 		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 		if reservedIPV4CIDR, ok := req.GetParameters()[paramReservedIPV4CIDR]; ok {
 			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
 
 			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
 			// The ListInstances response will contain the reservedIPRange if the operation was started
-			// In case of abort, the /29 IP is released and available for reservation
+			// In case of abort, the CIDR IP is released and available for reservation
 			defer s.config.ipAllocator.ReleaseIPRange(reservedIPRange)
 			if err != nil {
 				return nil, err
@@ -218,7 +218,11 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 	if err != nil {
 		return "", err
 	}
-	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, cloudInstancesReservedIPRanges)
+	ipRangeSize := util.IpRangeSize
+	if filer.Tier == enterpriseTier {
+		ipRangeSize = util.IpRangeSizeEnterprise
+	}
+	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
 	if err != nil {
 		return "", err
 	}
@@ -458,18 +462,42 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
-		glog.Errorf("failed to get instance for volumeID %v expansion, error: %v", volumeID, err)
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	filer.Project = s.config.cloud.Project
+	filer, err = s.config.fileService.GetInstance(ctx, filer)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if filer.State != "READY" {
+		return nil, fmt.Errorf("Volume %q is not yet ready, current state %q", volumeID, filer.State)
+	}
+
+	if util.BytesToGb(reqBytes) <= util.BytesToGb(filer.Volume.SizeBytes) {
+		glog.Infof("Controller expand volume succeeded for volume %v, existing size(bytes): %v", volumeID, filer.Volume.SizeBytes)
+		return &csi.ControllerExpandVolumeResponse{
+			CapacityBytes:         filer.Volume.SizeBytes,
+			NodeExpansionRequired: false,
+		}, nil
+	}
+
+	hasPendingOps, err := s.config.fileService.HasOperations(ctx, filer, "update", false /* done */)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	if hasPendingOps {
+		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Update operation ongoing for volume %v", volumeID))
+	}
+
 	filer.Volume.SizeBytes = reqBytes
 	newfiler, err := s.config.fileService.ResizeInstance(ctx, filer)
 	if err != nil {
-		glog.Errorf("failed to resize volumeID %v, error: %v", volumeID, err)
-		return nil, err
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
+	glog.Infof("Controller expand volume succeeded for volume %v, new size(bytes): %v", volumeID, newfiler.Volume.SizeBytes)
 	return &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         newfiler.Volume.SizeBytes,
 		NodeExpansionRequired: false,

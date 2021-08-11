@@ -18,6 +18,7 @@ package util
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"testing"
 )
@@ -33,39 +34,45 @@ func TestParseCIDR(t *testing.T) {
 	cases := []struct {
 		name          string
 		cidr          string
+		ipRangeSize   int
 		ipExpected    string
 		errorExpected bool
 	}{
 		{
 			name:          "Valid /29 CIDR format",
 			cidr:          "192.168.92.192/29",
+			ipRangeSize:   IpRangeSize,
 			errorExpected: false,
 		},
 		{
 			name:          "Invalid CIDR format",
 			cidr:          "192.168.92.192",
+			ipRangeSize:   IpRangeSize,
 			errorExpected: true,
 		},
 		{
-			name:          "Invalid CIDR format with network address greater than 29 bits",
-			cidr:          "192.168.92.249/30",
+			name:          "Invalid CIDR format with network address greater than ipRangeSize bits",
+			cidr:          "192.168.92.192/29",
+			ipRangeSize:   IpRangeSizeEnterprise,
 			errorExpected: true,
 		},
 		{
-			name:          "Misaligned CIDR with network address less than 29 bits",
+			name:          "Misaligned CIDR with network address less than ipRangeSize bits",
 			cidr:          "192.168.92.249/28",
+			ipRangeSize:   IpRangeSize,
 			errorExpected: true,
 		},
 		{
-			name:          "Valid CIDR format with network address less than 29 bits",
+			name:          "Valid CIDR format with network address less than ipRangeSize bits",
 			cidr:          "192.168.92.248/28",
+			ipRangeSize:   IpRangeSize,
 			errorExpected: false,
 		},
 	}
 
 	ipAllocator := initTestIPAllocator()
 	for _, test := range cases {
-		ip, ipnet, err := ipAllocator.parseCIDR(test.cidr)
+		ip, ipnet, err := ipAllocator.parseCIDR(test.cidr, test.ipRangeSize)
 		if test.errorExpected && err == nil {
 			t.Errorf("error while validating cidr %s, expected error while validating, got response as valid", test.cidr)
 		} else if !test.errorExpected && err != nil {
@@ -87,11 +94,15 @@ func TestParseCIDR(t *testing.T) {
 }
 
 func TestGetUnReservedIPRange(t *testing.T) {
-	// Using IPs which are not the beginning IPs of /29 CIDRs to evaluate the edge case
-	ips := [8]string{"192.168.92.3/29", "192.168.92.10/29", "192.168.92.20/29", "192.168.92.28/29"}
+	// Using IPs which are not the beginning IPs of /24 and /29 CIDRs to evaluate the edge case
+	// each entry represents a ip address in different /29 CIDR under 192.168.92.0/27
+	ips := []string{"192.168.92.3/29", "192.168.92.10/29", "192.168.92.20/29", "192.168.92.28/29"}
+	// each entry represents a ip address in different /24 CIDR under 192.168.92.0/22
+	ipsLarge := []string{"192.168.92.103/24", "192.168.93.255/24", "192.168.94.20/24", "192.168.95.99/24"}
 	cases := []struct {
 		name                          string
 		cidr                          string
+		ipRangeSize                   int
 		pendingIPRanges               map[string]bool
 		cloudProviderReservedIPRanges map[string]bool
 		expected                      string
@@ -100,14 +111,25 @@ func TestGetUnReservedIPRange(t *testing.T) {
 		{
 			name:                          "0 Pending, 0 Used",
 			cidr:                          "192.168.92.0/27",
+			ipRangeSize:                   IpRangeSize,
 			pendingIPRanges:               make(map[string]bool),
 			cloudProviderReservedIPRanges: make(map[string]bool),
 			expected:                      "192.168.92.0/29",
 			errorExpected:                 false,
 		},
 		{
-			name:            "0 Pending, 1 Used",
+			name:                          "0 Pending, 0 Used enterprise",
+			cidr:                          "192.168.92.0/22",
+			ipRangeSize:                   IpRangeSizeEnterprise,
+			pendingIPRanges:               make(map[string]bool),
+			cloudProviderReservedIPRanges: make(map[string]bool),
+			expected:                      "192.168.92.0/24",
+			errorExpected:                 false,
+		},
+		{
+			name:            "0 Pending, 1 /29 Used",
 			cidr:            "192.168.92.0/27",
+			ipRangeSize:     IpRangeSize,
 			pendingIPRanges: make(map[string]bool),
 			cloudProviderReservedIPRanges: map[string]bool{
 				ips[0]: true,
@@ -116,18 +138,86 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			errorExpected: false,
 		},
 		{
-			name:            "1 Pending 0 Used",
-			cidr:            "192.168.92.0/27",
+			name:            "0 Pending, 1 /24 Used enterprise",
+			cidr:            "192.168.92.0/22",
+			ipRangeSize:     IpRangeSizeEnterprise,
 			pendingIPRanges: make(map[string]bool),
 			cloudProviderReservedIPRanges: map[string]bool{
-				ips[0]: true,
+				ipsLarge[0]: true,
 			},
-			expected:      "192.168.92.8/29",
+			expected:      "192.168.93.0/24",
 			errorExpected: false,
 		},
 		{
-			name: "1 Pending 1 Used",
-			cidr: "192.168.92.0/27",
+			name:            "0 Pending, 1 /24 Used",
+			cidr:            "192.168.92.0/22",
+			ipRangeSize:     IpRangeSize,
+			pendingIPRanges: make(map[string]bool),
+			cloudProviderReservedIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+			},
+			expected:      "192.168.93.0/29",
+			errorExpected: false,
+		},
+		{
+			name:            "0 Pending, 1 /29 Used enterprise",
+			cidr:            "192.168.92.0/22",
+			ipRangeSize:     IpRangeSizeEnterprise,
+			pendingIPRanges: make(map[string]bool),
+			cloudProviderReservedIPRanges: map[string]bool{
+				ips[3]: true,
+			},
+			expected:      "192.168.93.0/24",
+			errorExpected: false,
+		},
+		{
+			name:        "1 /29 Pending 0 Used",
+			cidr:        "192.168.92.0/27",
+			ipRangeSize: IpRangeSize,
+			pendingIPRanges: map[string]bool{
+				ips[0]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{},
+			expected:                      "192.168.92.8/29",
+			errorExpected:                 false,
+		},
+		{
+			name:        "1 /29 Pending 0 Used enterprise",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSizeEnterprise,
+			pendingIPRanges: map[string]bool{
+				ips[3]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{},
+			expected:                      "192.168.93.0/24",
+			errorExpected:                 false,
+		},
+		{
+			name:        "1 /24 Pending 0 Used",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSize,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{},
+			expected:                      "192.168.93.0/29",
+			errorExpected:                 false,
+		},
+		{
+			name:        "1 /24 Pending 0 Used enterprise",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSizeEnterprise,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{},
+			expected:                      "192.168.93.0/24",
+			errorExpected:                 false,
+		},
+		{
+			name:        "1 /29 Pending 1 /29 Used",
+			cidr:        "192.168.92.0/27",
+			ipRangeSize: IpRangeSize,
 			pendingIPRanges: map[string]bool{
 				ips[0]: true,
 			},
@@ -138,8 +228,35 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			errorExpected: false,
 		},
 		{
-			name: "2 Pending 1 Used",
-			cidr: "192.168.92.0/27",
+			name:        "1 /24 Pending 1 /24 Used",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSize,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{
+				ipsLarge[1]: true,
+			},
+			expected:      "192.168.94.0/29",
+			errorExpected: false,
+		},
+		{
+			name:        "1 /24 Pending 1 /24 Used Enterprise",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSizeEnterprise,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{
+				ipsLarge[1]: true,
+			},
+			expected:      "192.168.94.0/24",
+			errorExpected: false,
+		},
+		{
+			name:        "2 /29 Pending 1 /29 Used",
+			cidr:        "192.168.92.0/27",
+			ipRangeSize: IpRangeSize,
 			pendingIPRanges: map[string]bool{
 				ips[0]: true,
 				ips[2]: true,
@@ -151,8 +268,23 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			errorExpected: false,
 		},
 		{
-			name: "Pending and used IPs out of CIDR range",
-			cidr: "192.168.92.0/27",
+			name:        "2 /24 Pending 1 /24 Used Enterprise",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSizeEnterprise,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+				ipsLarge[2]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{
+				ipsLarge[1]: true,
+			},
+			expected:      "192.168.95.0/24",
+			errorExpected: false,
+		},
+		{
+			name:        "Pending and used IPs out of CIDR range",
+			cidr:        "192.168.92.0/27",
+			ipRangeSize: IpRangeSize,
 			pendingIPRanges: map[string]bool{
 				"192.168.33.33/29": true,
 				"192.168.44.44/29": true,
@@ -165,18 +297,31 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			errorExpected: false,
 		},
 		{
-			name: "Unreserved IP Range obtained with carry over to significant bytes",
-			cidr: "192.168.0.0/16",
+			name:        "Unreserved IP Range obtained with carry over to significant bytes",
+			cidr:        "192.168.0.0/16",
+			ipRangeSize: IpRangeSize,
 			// Using a function for this case as we reserve 32 IP ranges
-			pendingIPRanges: getIPRanges("192.168.0.0/16", 32, t),
+			pendingIPRanges: getIPRanges("192.168.0.0/16", 32, IpRangeSize, t),
 			// Reserving IP ranges from 192.168.0.0/29 to 192.168.1.248
-			cloudProviderReservedIPRanges: getIPRanges("192.168.1.0/16", 32, t),
+			cloudProviderReservedIPRanges: getIPRanges("192.168.1.0/16", 32, IpRangeSize, t),
 			expected:                      "192.168.2.0/29",
 			errorExpected:                 false,
 		},
 		{
-			name: "2 Pending 2 Used. Unreserved IPRange unavailable",
-			cidr: "192.168.92.0/27",
+			name:        "Unreserved IP Range obtained with carry over to significant bytes enterprise",
+			cidr:        "192.168.0.0/13",
+			ipRangeSize: IpRangeSizeEnterprise,
+			// Using a function for this case as we reserve 32 IP ranges
+			pendingIPRanges: getIPRanges("192.168.0.0/13", 256, IpRangeSizeEnterprise, t),
+			// Reserving IP ranges from 192.168.0.0/29 to 192.168.1.248
+			cloudProviderReservedIPRanges: getIPRanges("192.169.0.0/13", 256, IpRangeSizeEnterprise, t),
+			expected:                      "192.170.0.0/24",
+			errorExpected:                 false,
+		},
+		{
+			name:        "2 /29 Pending 2 /29 Used. Unreserved IPRange unavailable",
+			cidr:        "192.168.92.0/27",
+			ipRangeSize: IpRangeSize,
 			pendingIPRanges: map[string]bool{
 				ips[0]: true,
 				ips[2]: true,
@@ -187,12 +332,26 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			},
 			errorExpected: true,
 		},
+		{
+			name:        "2 /24 Pending 2 /24 Used. Unreserved IPRange unavailable enterprise",
+			cidr:        "192.168.92.0/22",
+			ipRangeSize: IpRangeSizeEnterprise,
+			pendingIPRanges: map[string]bool{
+				ipsLarge[0]: true,
+				ipsLarge[2]: true,
+			},
+			cloudProviderReservedIPRanges: map[string]bool{
+				ipsLarge[1]: true,
+				ipsLarge[3]: true,
+			},
+			errorExpected: true,
+		},
 	}
 
 	for _, test := range cases {
 		ipAllocator := initTestIPAllocator()
 		ipAllocator.pendingIPRanges = test.pendingIPRanges
-		ipRange, err := ipAllocator.GetUnreservedIPRange(test.cidr, test.cloudProviderReservedIPRanges)
+		ipRange, err := ipAllocator.GetUnreservedIPRange(test.cidr, test.ipRangeSize, test.cloudProviderReservedIPRanges)
 		if err != nil && !test.errorExpected {
 			t.Errorf("test %q failed: got error %s, expected %s", test.name, err.Error(), test.expected)
 		} else if err == nil && test.errorExpected {
@@ -203,7 +362,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 	}
 }
 
-func getIPRanges(cidr string, ipRangesCount int, t *testing.T) map[string]bool {
+func getIPRanges(cidr string, ipRangesCount int, ipRangeSize int, t *testing.T) map[string]bool {
 	ip, ipnet, err := net.ParseCIDR(cidr)
 	ipRangeMask := net.CIDRMask(ipRangeSize, ipV4Bits)
 	i := 0
@@ -212,7 +371,8 @@ func getIPRanges(cidr string, ipRangesCount int, t *testing.T) map[string]bool {
 	// 1) We have the required number of IP ranges in the set
 	// 2) IP range overflow occurs and IP increment is not possible
 	// 3) The incremented IP range is not contained in the cidr
-	for cidrIP := ip.Mask(ipRangeMask); ipnet.Contains(cidrIP) && err == nil && i < ipRangesCount; cidrIP, err = incrementIP(cidrIP, incrementStep29IPRange) {
+	incrementStepIPRange := (uint32)(math.Exp2(float64(ipV4Bits - ipRangeSize)))
+	for cidrIP := ip.Mask(ipRangeMask); ipnet.Contains(cidrIP) && err == nil && i < ipRangesCount; cidrIP, err = incrementIP(cidrIP, incrementStepIPRange) {
 		i++
 		ipRangeString := fmt.Sprint(cidrIP.String(), "/", ipRangeSize)
 		ipRanges[ipRangeString] = true
@@ -288,7 +448,7 @@ func TestIncrementIP(t *testing.T) {
 	cases := []struct {
 		name          string
 		currentIP     string
-		step          byte
+		step          uint32
 		expected      string
 		errorExpected bool
 	}{
@@ -304,6 +464,20 @@ func TestIncrementIP(t *testing.T) {
 			currentIP:     "192.255.255.253",
 			step:          255,
 			expected:      "193.0.0.252",
+			errorExpected: false,
+		},
+		{
+			name:          "Valid increment with step size 256 and carry forward to significant bytes with maximum step size",
+			currentIP:     "192.255.255.253",
+			step:          256,
+			expected:      "193.0.0.253",
+			errorExpected: false,
+		},
+		{
+			name:          "Valid increment with step size MaxUint32",
+			currentIP:     "0.0.0.0",
+			step:          math.MaxUint32,
+			expected:      "255.255.255.255",
 			errorExpected: false,
 		},
 		{
@@ -359,6 +533,12 @@ func TestIncrementIP(t *testing.T) {
 			name:          "Invalid increment with step size 3",
 			currentIP:     "255.255.255.253",
 			step:          3,
+			errorExpected: true,
+		},
+		{
+			name:          "Invalid increment with step size MaxUint32",
+			currentIP:     "0.0.0.3",
+			step:          math.MaxUint32,
 			errorExpected: true,
 		},
 		{
