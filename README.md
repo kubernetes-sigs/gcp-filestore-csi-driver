@@ -9,9 +9,9 @@ This driver allows volumes backed by Google Cloud Filestore instances to be
 dynamically created and mounted by workloads.
 
 ## Project Status
-Status: Beta
+Status: GA
 
-Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v0.6.1`
+Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.0.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
