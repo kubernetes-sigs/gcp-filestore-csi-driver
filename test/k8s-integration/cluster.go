@@ -22,6 +22,8 @@ import (
 	"k8s.io/klog"
 )
 
+const ClusterUpTimeoutMinute = 10
+
 const KubeSystemNamespace = "kube-system"
 const FilestoreNodeGkeDaemonset = "filestore-node"
 
@@ -345,7 +347,7 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 		if err != nil {
 			return fmt.Errorf("failed to Create kubernetes e2e cluster on gke: %v", err)
 		}
-		err = waitForOp(service.Projects.Locations.Operations, parent, op)
+		err = waitForOp(service.Projects.Locations.Operations, parent, op, ClusterUpTimeoutMinute)
 		if err != nil {
 			return fmt.Errorf("WaitFor Cluster Create operation failed: %v", err)
 		}
@@ -433,10 +435,10 @@ func waitForNodeDaemonset(driverNamespace string, nodeDaemonset string) error {
 	return nil
 }
 
-func waitForOp(operationsService *container.ProjectsLocationsOperationsService, parent string, op *container.Operation) error {
+func waitForOp(operationsService *container.ProjectsLocationsOperationsService, parent string, op *container.Operation, timeoutMinute int) error {
 	klog.Infof("Waiting for the %s call to finish", op.Name)
 	opName := fmt.Sprintf("%s/operations/%s", parent, op.Name)
-	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
+	return wait.Poll(5*time.Second, time.Duration(timeoutMinute)*time.Minute, func() (bool, error) {
 		pollOp, err := operationsService.Get(opName).Do()
 		if err != nil {
 			return false, err
