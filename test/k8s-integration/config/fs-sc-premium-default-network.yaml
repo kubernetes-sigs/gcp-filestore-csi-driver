@@ -1,8 +1,8 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: csi-filestore-enterprise
+  name: csi-filestore-premium
 provisioner: filestore.csi.storage.gke.io
 parameters:
-  tier: enterprise
+  tier: premium
 volumeBindingMode: Immediate
