@@ -27,6 +27,7 @@ const (
 	configTemplateFile = "test-config-template.in"
 	configFile         = "test-config.yaml"
 	enterpriseTier     = "enterprise"
+	premiumTier        = "premium"
 
 	// configurable timeouts for the k8s e2e testsuites.
 	podStartTimeout                 = "600s"
@@ -104,6 +105,9 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 	}
 
 	minimumVolumeSize := "1Ti"
+	if strings.Contains(storageClassFile, premiumTier) {
+		minimumVolumeSize = "2.5Ti"
+	}
 	// Filestore instance takes in the order of minutes to be provisioned, and with dynamic provisioning (WaitForFirstCustomer policy),
 	// some e2e tests need a longer pod start timeout.
 	timeouts := map[string]string{
