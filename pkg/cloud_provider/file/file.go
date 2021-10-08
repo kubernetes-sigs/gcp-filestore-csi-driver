@@ -290,18 +290,26 @@ func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Serv
 // ListInstances returns a list of active instances in a project at a specific location
 func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error) {
 	// Calling cloud provider service to get list of active instances. - indicates we are looking for instances in all the locations for a project
-	instances, err := manager.instancesService.List(locationURI(obj.Project, "-")).Context(ctx).Do()
-	if err != nil {
-		return nil, err
-	}
-
+	lCall := manager.instancesService.List(locationURI(obj.Project, "-")).Context(ctx)
+	nextPageToken := "pageToken"
 	var activeInstances []*ServiceInstance
-	for _, activeInstance := range instances.Instances {
-		serviceInstance, err := cloudInstanceToServiceInstance(activeInstance)
+
+	for nextPageToken != "" {
+		instances, err := lCall.Do()
 		if err != nil {
 			return nil, err
 		}
-		activeInstances = append(activeInstances, serviceInstance)
+
+		for _, activeInstance := range instances.Instances {
+			serviceInstance, err := cloudInstanceToServiceInstance(activeInstance)
+			if err != nil {
+				return nil, err
+			}
+			activeInstances = append(activeInstances, serviceInstance)
+		}
+
+		nextPageToken = instances.NextPageToken
+		lCall.PageToken(nextPageToken)
 	}
 	return activeInstances, nil
 }
