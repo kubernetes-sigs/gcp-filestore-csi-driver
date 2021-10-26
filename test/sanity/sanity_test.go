@@ -20,7 +20,7 @@ import (
 
 	sanity "github.com/kubernetes-csi/csi-test/v3/pkg/sanity"
 	"google.golang.org/grpc"
-	"k8s.io/utils/mount"
+	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"

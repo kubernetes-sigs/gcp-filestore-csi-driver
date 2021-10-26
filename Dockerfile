@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Build driver go binary
-FROM golang:1.14.4 as builder
+FROM golang:1.17.2 as builder
 WORKDIR /go/src/sigs.k8s.io/gcp-filestore-csi-driver
 ADD . .
 ARG TAG=latest

@@ -24,7 +24,7 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/klog"
-	"k8s.io/utils/mount"
+	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
