@@ -20,7 +20,7 @@ ARG TAG=latest
 RUN make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${TAG}
 
 # Install nfs packages
-FROM launcher.gcr.io/google/debian9 as deps
+FROM launcher.gcr.io/google/debian10 as deps
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
     mount \
