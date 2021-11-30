@@ -15,7 +15,7 @@ steps:
   # The image must contain bash and curl. Ideally it should also contain
   # the desired version of Go (currently defined in release-tools/travis.yml),
   # but that just speeds up the build and is not required.
-  - name: 'gcr.io/k8s-testimages/gcb-docker-gcloud:v20200713-e9b3d9d'
+  - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20211118-2f2d816b90'
     entrypoint: make
     env:
     - GIT_TAG=${_GIT_TAG}
