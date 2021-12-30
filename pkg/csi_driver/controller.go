@@ -40,6 +40,9 @@ const (
 	enterpriseTier = "enterprise"
 	defaultNetwork = "default"
 
+	directPeering        = "DIRECT_PEERING"
+	privateServiceAccess = "PRIVATE_SERVICE_ACCESS"
+
 	// Keys for Topology.
 	TopologyKeyZone = "topology.gke.io/zone"
 )
@@ -56,6 +59,8 @@ const (
 	paramLocation         = "location"
 	paramNetwork          = "network"
 	paramReservedIPV4CIDR = "reserved-ipv4-cidr"
+	paramReservedIPRange  = "reserved-ip-range"
+	paramConnectMode      = "connect-mode"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -171,9 +176,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.Internal, msg)
 		}
 	} else {
+		param := req.GetParameters()
 		// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
 		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
-		if reservedIPV4CIDR, ok := req.GetParameters()[paramReservedIPV4CIDR]; ok {
+		if newFiler.Network.ConnectMode == privateServiceAccess {
+			if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+				newFiler.Network.ReservedIpRange = reservedIPRange
+			}
+		} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
 			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
 
 			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
@@ -189,7 +199,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 
 		// Add labels.
-		labels, err := extractLabels(req.GetParameters(), s.config.driver.config.Name)
+		labels, err := extractLabels(param, s.config.driver.config.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -378,6 +388,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	// Set default parameters
 	tier := defaultTier
 	network := defaultNetwork
+	connectMode := directPeering
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -394,9 +405,15 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			}
 		case paramNetwork:
 			network = v
+		case paramConnectMode:
+			connectMode = v
+			if connectMode != directPeering && connectMode != privateServiceAccess {
+				return nil, fmt.Errorf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
+			}
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
-		case paramReservedIPV4CIDR:
+		// ignore IPRange flag as it will be handled at the same place as cidr
+		case paramReservedIPV4CIDR, paramReservedIPRange:
 			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
@@ -410,7 +427,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		Location: location,
 		Tier:     tier,
 		Network: file.Network{
-			Name: network,
+			Name:        network,
+			ConnectMode: connectMode,
 		},
 		Volume: file.Volume{
 			Name:      newInstanceVolume,
