@@ -344,7 +344,8 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Location: testLocation,
 				Tier:     defaultTier,
 				Network: file.Network{
-					Name: defaultNetwork,
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
 				},
 				Volume: file.Volume{
 					Name:      newInstanceVolume,
@@ -382,7 +383,8 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Location: "foo-location",
 				Tier:     "foo-tier",
 				Network: file.Network{
-					Name: "foo-network",
+					Name:        "foo-network",
+					ConnectMode: directPeering,
 				},
 				Volume: file.Volume{
 					Name:      newInstanceVolume,
@@ -425,7 +427,8 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Location: "bar-location",
 				Tier:     "foo-tier",
 				Network: file.Network{
-					Name: "foo-network",
+					Name:        "foo-network",
+					ConnectMode: directPeering,
 				},
 				Volume: file.Volume{
 					Name:      newInstanceVolume,
@@ -456,7 +459,48 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Location: "foo-location",
 				Tier:     "foo-tier",
 				Network: file.Network{
-					Name: "foo-network",
+					Name:        "foo-network",
+					ConnectMode: directPeering,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+			},
+		},
+		{
+			name: "custom params, private connect mode",
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+			},
+			params: map[string]string{
+				paramTier:                       "foo-tier",
+				paramNetwork:                    "foo-network",
+				paramConnectMode:                privateServiceAccess,
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: "foo-location",
+				Tier:     "foo-tier",
+				Network: file.Network{
+					Name:        "foo-network",
+					ConnectMode: privateServiceAccess,
 				},
 				Volume: file.Volume{
 					Name:      newInstanceVolume,
@@ -468,6 +512,13 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			name: "invalid params",
 			params: map[string]string{
 				"foo-param": "bar",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid connect mode",
+			params: map[string]string{
+				paramConnectMode: "CONNECT_MODE_UNSPECIFIED",
 			},
 			expectErr: true,
 		},

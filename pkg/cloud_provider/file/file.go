@@ -53,6 +53,7 @@ type Volume struct {
 
 type Network struct {
 	Name            string
+	ConnectMode     string
 	ReservedIpRange string
 	Ip              string
 }
@@ -124,18 +125,20 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
 				ReservedIpRange: obj.Network.ReservedIpRange,
+				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
 		Labels: obj.Labels,
 	}
 
-	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, labels %v",
+	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v, labels %v",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
 		betaObj.FileShares[0].CapacityGb,
 		betaObj.Networks[0].Network,
 		betaObj.Networks[0].ReservedIpRange,
+		betaObj.Networks[0].ConnectMode,
 		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
@@ -169,19 +172,21 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
 				ReservedIpRange: obj.Network.ReservedIpRange,
+				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
 		Labels: obj.Labels,
 		State:  obj.State,
 	}
 
-	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, labels %v backup source %v",
+	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v, labels %v backup source %v",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
 		instance.FileShares[0].CapacityGb,
 		instance.Networks[0].Network,
 		instance.Networks[0].ReservedIpRange,
+		instance.Networks[0].ConnectMode,
 		instance.Labels,
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
@@ -234,6 +239,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 			Name:            instance.Networks[0].Network,
 			Ip:              instance.Networks[0].IpAddresses[0],
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
+			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
 		Labels: instance.Labels,
 		State:  instance.State,
@@ -331,17 +337,20 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
 				ReservedIpRange: obj.Network.ReservedIpRange,
+				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
 	}
 
-	glog.V(4).Infof("Patching instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v",
+	glog.V(4).Infof("Patching instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
 		betaObj.FileShares[0].CapacityGb,
 		betaObj.Networks[0].Network,
-		betaObj.Networks[0].ReservedIpRange)
+		betaObj.Networks[0].ReservedIpRange,
+		betaObj.Networks[0].ConnectMode,
+	)
 	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("Patch operation failed: %v", err)
