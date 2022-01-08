@@ -1,3 +1,15 @@
+# v1.1.1 - Changelog since v1.1.0
+
+## Changes by Kind
+
+### Feature
+
+- enable dynamic provision with shared-vpc from service project ([#192](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/192), [@leiyiz](https://github.com/leiyiz))
+
+### Other (Cleanup or Flake)
+
+- document the new connect-mode and reserved-ip-range parameters ([#193](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/193), [@leiyiz](https://github.com/leiyiz))
+
 # v1.1.0 - Changelog since v1.0.0
 
 ## Changes by Kind
