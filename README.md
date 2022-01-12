@@ -169,4 +169,4 @@ See [here](https://cloud.google.com/filestore/docs/access-control#iam-access)
 
 ## Driver Release [Google internal only]
 
-* For releasing new versions of this driver, googlers should consult [go/filestore-oss-release-process](go/filestore-oss-release-process)
+* For releasing new versions of this driver, googlers should consult [go/filestore-oss-release-process](http://go/filestore-oss-release-process)
