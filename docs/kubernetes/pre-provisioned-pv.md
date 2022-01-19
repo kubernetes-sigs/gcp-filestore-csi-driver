@@ -1,4 +1,4 @@
-# Kubernetes Pre-Provisioned Filesore instance User Guide
+# Kubernetes Pre-Provisioned Filestore instance User Guide
 
 This guide gives a simple example on how to use this driver with filestore instances that have
 been pre-provisioned by an administrator.
