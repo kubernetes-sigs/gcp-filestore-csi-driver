@@ -29,6 +29,7 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	"google.golang.org/genproto/googleapis/rpc/code"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
@@ -488,6 +489,20 @@ func IsNotFoundErr(err error) bool {
 		if e.Reason == "notFound" {
 			return true
 		}
+	}
+	return false
+}
+
+// This function returns true if the error is a googleapi error caused by users, such as
+// Error 429: Quota limit exceeded and Error 403: Permission Denied.
+func IsUserError(err error) bool {
+	apiErr, ok := err.(*googleapi.Error)
+	if !ok {
+		return false
+	}
+
+	if apiErr.Code == int(code.Code_RESOURCE_EXHAUSTED) || apiErr.Code == int(code.Code_PERMISSION_DENIED) {
+		return true
 	}
 	return false
 }
