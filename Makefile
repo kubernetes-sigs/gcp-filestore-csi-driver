@@ -14,7 +14,7 @@
 
 # Core Filestore CSI driver binary
 DRIVERBINARY=gcp-filestore-csi-driver
-
+WEBHOOKBINARY=gcp-filestore-csi-driver-webhook
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
 $(info GIT_TAG is $(GIT_TAG))
 $(info PWD is $(PWD))
@@ -38,6 +38,14 @@ else
 endif
 $(info STAGINGIMAGE is $(STAGINGIMAGE))
 
+WEBHOOK_STAGINGIMAGE=
+ifdef GCP_FS_CSI_WEBHOOK_STAGING_IMAGE
+	WEBHOOK_STAGINGIMAGE=$(GCP_FS_CSI_WEBHOOK_STAGING_IMAGE)
+else
+	WEBHOOK_STAGINGIMAGE=gcr.io/$(PROJECT)/gcp-filestore-csi-driver-webhook
+endif
+$(info WEBHOOK_STAGINGIMAGE is $(WEBHOOK_STAGINGIMAGE))
+
 BINDIR?=bin
 
 # This flag is used only for csi-client and windows.
@@ -47,6 +55,34 @@ ifeq ($(VERSION),)
 endif
 
 all: image
+
+# Build the go binary for the CSI driver webhook.
+webhook:
+	mkdir -p ${BINDIR}
+	{                                                                                                                                                  \
+	set -e ;                                                                                                                                           \
+	for i in $(STAGINGVERSION) ; do                                                                                                                    \
+		CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$${i}"' -extldflags "-static"' -o ${BINDIR}/${WEBHOOKBINARY} ./cmd/webhook/; \
+		break;                                                                                                                                         \
+	done ;                                                                                                                                             \
+	}
+
+# Build the docker image for the webhook.
+webhook-image: init-build
+		{                                                                                                                                                                \
+		set -e ;                                                                                                                                                         \
+		for i in $(STAGINGVERSION) ;                                                                                                                                     \
+			do docker build --build-arg WEBHOOKBINARY=$(WEBHOOKBINARY) --build-arg TAG=$(STAGINGVERSION) -f ./cmd/webhook/Dockerfile -t $(WEBHOOK_STAGINGIMAGE):$${i} .; \
+		done ;                                                                                                                                                           \
+		}
+
+push-webhook-image: webhook-image
+	{                                       \
+	set -e ;                                \
+	for i in $(STAGINGVERSION) ;            \
+		do docker push $(WEBHOOK_STAGINGIMAGE):$${i}; \
+	done;                                   \
+	}
 
 # Build the docker image for the core CSI driver.
 image:
