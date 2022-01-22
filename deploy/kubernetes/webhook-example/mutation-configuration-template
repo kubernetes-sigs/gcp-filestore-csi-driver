@@ -1,0 +1,24 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: filestorecsi-mutation-webhook.storage.k8s.io
+webhooks:
+- name: filestorecsi-validation-webhook.storage.k8s.io
+  rules:
+  - apiGroups:   ["storage.k8s.io"]
+    apiVersions: ["v1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources:   ["storageclasses"]
+    scope:       "*"  
+  clientConfig:
+    caBundle: ${CA_BUNDLE}
+    service:
+      namespace: "default"
+      name: "filestorecsi-validation"
+      path: "/mutate-storageclasses"
+      port: 443
+  admissionReviewVersions: ["v1"]      
+  sideEffects: None
+  reinvocationPolicy: Never
+  failurePolicy: Ignore
+  timeoutSeconds: 2
