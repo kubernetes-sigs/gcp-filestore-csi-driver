@@ -446,6 +446,12 @@ func generateGKETestSkip(testParams *testParameters) string {
 		skipString = skipString + "|VolumeSnapshotDataSource"
 	}
 
+	// https://github.com/kubernetes/kubernetes/pull/107065 changes the node staging path and introduces
+	// this new test which filestore breaks on older node versions.
+	if curVer.lessThan(mustParseVersion("1.24.0")) || (nodeVer != nil && nodeVer.lessThan(mustParseVersion("1.24.0"))) {
+		skipString = skipString + "|should.mount.multiple.PV.pointing.to.the.same.storage.on.the.same.node"
+	}
+
 	return skipString
 }
 
