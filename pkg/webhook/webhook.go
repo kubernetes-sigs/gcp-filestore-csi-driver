@@ -27,9 +27,9 @@ import (
 	"github.com/spf13/cobra"
 
 	v1 "k8s.io/api/admission/v1"
-	//"k8s.io/api/admission/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 )
 
 var (
@@ -152,12 +152,12 @@ func serveStorageClassMutate(w http.ResponseWriter, r *http.Request) {
 	serve(w, r, newDelegateToV1AdmitHandler(mutateStorageClass))
 }
 
-func startServer(ctx context.Context, tlsConfig *tls.Config, cw *CertWatcher) error {
+func startServer(ctx context.Context, tlsConfig *tls.Config, cw *certwatcher.CertWatcher) error {
 	go func() {
-		klog.Info("Starting certificate watcher")
 		if err := cw.Start(ctx); err != nil {
 			klog.Errorf("certificate watcher error: %v", err)
 		}
+
 	}()
 
 	fmt.Println("Starting webhook server")
@@ -183,7 +183,7 @@ func main(cmd *cobra.Command, args []string) {
 	// Create new cert watcher
 	ctx, cancel := context.WithCancel(cmd.Context())
 	defer cancel() // stops certwatcher
-	cw, err := NewCertWatcher(certFile, keyFile)
+	cw, err := certwatcher.New(certFile, keyFile)
 	if err != nil {
 		klog.Fatalf("failed to initialize new cert watcher: %v", err)
 	}
