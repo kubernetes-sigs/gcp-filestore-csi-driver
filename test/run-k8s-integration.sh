@@ -19,7 +19,7 @@ readonly deployment_strategy=${DEPLOYMENT_STRATEGY:-gce}
 readonly kube_version=${GCE_FS_KUBE_VERSION:-master}
 readonly test_version=${TEST_VERSION:-master}
 readonly gce_zone=${GCE_CLUSTER_ZONE:-us-central1-b}
-readonly image_type=${IMAGE_TYPE:-cos}
+readonly image_type=${IMAGE_TYPE:-cos_containerd}
 readonly teardown_driver=${GCE_FS_TEARDOWN_DRIVER:-true}
 readonly gke_cluster_version=${GKE_CLUSTER_VERSION:-latest}
 readonly gke_release_channel=${GKE_RELEASE_CHANNEL:-""}
@@ -33,7 +33,7 @@ echo "make successful"
 base_cmd="${PKGDIR}/bin/k8s-integration-test \
             --run-in-prow=true --service-account-file=${E2E_GOOGLE_APPLICATION_CREDENTIALS} \
             --do-driver-build=${do_driver_build} --teardown-driver=${teardown_driver} --boskos-resource-type=${boskos_resource_type} \
-            --test-version=${test_version} --num-nodes=3 --image-type=${image_type} --deployment-strategy=${deployment_strategy}"
+            --test-version=${test_version} --num-nodes=3 --deployment-strategy=${deployment_strategy}"
 
 if [ "$use_staging_driver" = false ]; then
   base_cmd="${base_cmd} --deploy-overlay-name=${overlay_name}"
