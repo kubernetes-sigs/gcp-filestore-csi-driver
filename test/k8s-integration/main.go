@@ -42,7 +42,7 @@ var (
 	localK8sDir      = flag.String("local-k8s-dir", "", "local prebuilt kubernetes/kubernetes directory to use for cluster and test binaries")
 	deploymentStrat  = flag.String("deployment-strategy", "gce", "choose between deploying on gce or gke")
 	numNodes         = flag.Int("num-nodes", -1, "the number of nodes in the test cluster")
-	imageType        = flag.String("image-type", "cos", "the image type to use for the cluster")
+	imageType        = flag.String("image-type", "cos_containerd", "the image type to use for the cluster")
 
 	// Test infrastructure flags
 	boskosResourceType = flag.String("boskos-resource-type", "gce-project", "name of the boskos resource type to reserve")
@@ -142,7 +142,7 @@ func main() {
 	if !*bringupCluster {
 		ensureVariable(kubeFeatureGates, false, "kube-feature-gates set but not bringing up new cluster")
 	} else {
-		ensureVariable(imageType, true, "image type is a required flag. Available options include 'cos' and 'ubuntu'")
+		ensureVariable(imageType, true, "image type is a required flag. A good default is 'cos_containerd'")
 	}
 
 	if *deploymentStrat == "gce" {
