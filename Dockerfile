@@ -12,12 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+ARG BUILDPLATFORM
+
 # Build driver go binary
-FROM golang:1.17.2 as builder
+FROM --platform=$BUILDPLATFORM golang:1.17.2 as builder
+
+ARG STAGINGVERSION
+ARG TARGETPLATFORM
+
 WORKDIR /go/src/sigs.k8s.io/gcp-filestore-csi-driver
 ADD . .
-ARG TAG=latest
-RUN make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${TAG}
+RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${STAGINGVERSION}
 
 # Install nfs packages
 FROM launcher.gcr.io/google/debian10 as deps
