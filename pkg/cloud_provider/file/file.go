@@ -494,14 +494,14 @@ func IsNotFoundErr(err error) bool {
 }
 
 // This function returns true if the error is a googleapi error caused by users, such as
-// Error 429: Quota limit exceeded and Error 403: Permission Denied.
+// Error 429: Quota limit exceeded, Error 403: Permission Denied, and Error 400: Bad Request
 func IsUserError(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		return false
 	}
 
-	if apiErr.Code == int(code.Code_RESOURCE_EXHAUSTED) || apiErr.Code == int(code.Code_PERMISSION_DENIED) {
+	if apiErr.Code == int(code.Code_RESOURCE_EXHAUSTED) || apiErr.Code == int(code.Code_PERMISSION_DENIED) || apiErr.Code == int(code.Code_INVALID_ARGUMENT) {
 		return true
 	}
 	return false
