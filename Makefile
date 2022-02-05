@@ -16,7 +16,6 @@
 DRIVERBINARY=gcp-filestore-csi-driver
 
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
-$(info GIT_TAG is $(GIT_TAG))
 $(info PWD is $(PWD))
 
 # A space-separated list of image tags under which the current build is to be pushed.
@@ -48,20 +47,67 @@ endif
 
 all: image
 
+# Build the go binary for the CSI driver webhook.
+webhook:
+	mkdir -p ${BINDIR}
+	{                                                                                                                                                  \
+	set -e ;                                                                                                                                           \
+	CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$(STAGINGVERSION)"' -extldflags "-static"' -o ${BINDIR}/${WEBHOOKBINARY} ./cmd/webhook/; \
+	}
+
+# Build the docker image for the webhook.
+webhook-image: init-buildx
+		{                                                                                                                                                                \
+		set -e ;                                                                                                                                                         \
+		do docker buildx build \
+		    -- platform linux/amd64 \
+		    --build-arg WEBHOOKBINARY=$(WEBHOOKBINARY) \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/amd64 \
+			-f ./cmd/webhook/Dockerfile \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) --push .; \
+		}
+
+push-webhook-image: webhook-image
+
 # Build the docker image for the core CSI driver.
-image: init-buildx
+build-image-and-push: init-buildx
 		{                                                                   \
 		set -e ;                                                            \
-		for i in $(STAGINGVERSION) ; do                                     \
-			docker buildx build \
-				--platform linux/amd64 \
-				--build-arg STAGINGVERSION=$(STAGINGVERSION) \
-				--build-arg BUILDPLATFORM=linux/amd64 \
-				--build-arg TARGETPLATFORM=linux/amd64 \
-				-t $(STAGINGIMAGE):$${i} . \
-				--push ; \
-		done ;                                                              \
+		docker buildx build \
+			--platform linux/amd64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/amd64 \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION) --push .; \
 		}
+
+build-image-and-push-linux-amd64: init-buildx
+		{                                                                   \
+		set -e ;                                                            \
+		docker buildx build \
+			--platform linux/amd64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/amd64 \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push .; \
+		}
+
+build-image-and-push-linux-arm64: init-buildx
+		{                                                                   \
+		set -e ;                                                            \
+		docker buildx build \
+			--platform linux/arm64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/arm64 \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push .; \
+		}
+
+build-and-push-multi-arch: build-image-and-push-linux-arm64 build-image-and-push-linux-amd64
+	docker manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	docker manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the go binary for the CSI driver.
 # STAGINGVERSION may contain multiple tags (e.g. canary, vX.Y.Z etc). Use one of the tags
@@ -70,10 +116,8 @@ driver:
 	mkdir -p ${BINDIR}
 	{                                                                                                                                 \
 	set -e ;                                                                                                                          \
-	for i in $(STAGINGVERSION) ; do                                                                                                   \
-		CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$${i}"' -extldflags "-static"' -o ${BINDIR}/${DRIVERBINARY} ./cmd/; \
+		CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version=$(STAGINGVERSION) -extldflags "-static"' -o ${BINDIR}/${DRIVERBINARY} ./cmd/; \
 		break;                                                                                                                          \
-	done ;                                                                                                                            \
 	}
 
 windows: windows-local
@@ -82,8 +126,6 @@ windows: windows-local
 windows-local:
 	mkdir -p bin
 	GOOS=windows GOARCH=amd64 go build -ldflags "-X main.vendorVersion=${VERSION}" -o bin/gcfs-csi-driver.exe ./cmd/
-
-build-image-and-push: image
 
 skaffold-dev:
 	skaffold dev -f deploy/skaffold/skaffold.yaml
