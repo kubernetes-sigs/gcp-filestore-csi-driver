@@ -20,6 +20,9 @@ steps:
     env:
     - PULL_BASE_REF=${_PULL_BASE_REF}
     - PROJECT=${_STAGING_PROJECT}
+    # default cloudbuild has HOME=/builder/home and docker buildx is in /root/.docker/cli-plugins/docker-buildx
+    # set the home to /root explicitly to if using docker buildx
+    - HOME=/root
     args:
     - build-and-push-multi-arch
 substitutions:
