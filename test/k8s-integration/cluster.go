@@ -129,8 +129,9 @@ func clusterDownGCE(k8sDir string) error {
 func setImageTypeEnvs(imageType string) error {
 	switch strings.ToLower(imageType) {
 	case "cos":
+	case "cos_containerd":
 	case "gci": // GCI/COS is default type and does not need env vars set
-	case "ubuntu":
+	case "ubuntu", "ubuntu_containerd":
 		return errors.New("setting environment vars for bringing up *ubuntu* cluster on GCE is unimplemented")
 	default:
 		return fmt.Errorf("could not set env for image type %s, only gci, cos, ubuntu supported", imageType)
