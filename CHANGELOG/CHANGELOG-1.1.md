@@ -1,3 +1,45 @@
+# v1.1.2 - Changelog since v1.1.1
+
+## Changes by Kind
+
+### Uncategorized
+
+- Users will now see the InvalidArgument error code for the 400 googleapi errors caused by invalid arguments. ([#206](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/206), [@amacaskill](https://github.com/amacaskill))
+- Users will now see the InvalidArgument error code for the 403 and 429 googleapi errors. ([#203](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/203), [@amacaskill](https://github.com/amacaskill))
+
+## Dependencies
+
+### Added
+- github.com/benbjohnson/clock: [v1.1.0](https://github.com/benbjohnson/clock/tree/v1.1.0)
+- github.com/go-kit/log: [v0.1.0](https://github.com/go-kit/log/tree/v0.1.0)
+- github.com/go-task/slim-sprig: [348f09d](https://github.com/go-task/slim-sprig/tree/348f09d)
+- go.uber.org/goleak: v1.1.10
+
+### Changed
+- github.com/evanphx/json-patch: [v4.5.0+incompatible → v4.11.0+incompatible](https://github.com/evanphx/json-patch/compare/v4.5.0...v4.11.0)
+- github.com/go-logfmt/logfmt: [v0.4.0 → v0.5.0](https://github.com/go-logfmt/logfmt/compare/v0.4.0...v0.5.0)
+- github.com/go-logr/zapr: [v0.1.1 → v0.4.0](https://github.com/go-logr/zapr/compare/v0.1.1...v0.4.0)
+- github.com/imdario/mergo: [v0.3.9 → v0.3.12](https://github.com/imdario/mergo/compare/v0.3.9...v0.3.12)
+- github.com/jpillora/backoff: [3050d21 → v1.0.0](https://github.com/jpillora/backoff/compare/3050d21...v1.0.0)
+- github.com/json-iterator/go: [v1.1.10 → v1.1.11](https://github.com/json-iterator/go/compare/v1.1.10...v1.1.11)
+- github.com/julienschmidt/httprouter: [v1.2.0 → v1.3.0](https://github.com/julienschmidt/httprouter/compare/v1.2.0...v1.3.0)
+- github.com/nxadm/tail: [v1.4.5 → v1.4.8](https://github.com/nxadm/tail/compare/v1.4.5...v1.4.8)
+- github.com/onsi/ginkgo: [v1.14.1 → v1.16.4](https://github.com/onsi/ginkgo/compare/v1.14.1...v1.16.4)
+- github.com/onsi/gomega: [v1.10.2 → v1.15.0](https://github.com/onsi/gomega/compare/v1.10.2...v1.15.0)
+- github.com/prometheus/client_golang: [v1.6.0 → v1.11.0](https://github.com/prometheus/client_golang/compare/v1.6.0...v1.11.0)
+- github.com/prometheus/common: [v0.9.1 → v0.26.0](https://github.com/prometheus/common/compare/v0.9.1...v0.26.0)
+- github.com/prometheus/procfs: [v0.0.11 → v0.6.0](https://github.com/prometheus/procfs/compare/v0.0.11...v0.6.0)
+- go.uber.org/atomic: v1.6.0 → v1.7.0
+- go.uber.org/multierr: v1.5.0 → v1.6.0
+- go.uber.org/zap: v1.15.0 → v1.19.0
+- golang.org/x/time: 89c76fb → 1f47c86
+- gomodules.xyz/jsonpatch/v2: v2.1.0 → v2.2.0
+- gopkg.in/yaml.v2: v2.3.0 → v2.4.0
+- sigs.k8s.io/controller-runtime: v0.6.1 → v0.10.0
+
+### Removed
+_Nothing has changed._
+
 # v1.1.1 - Changelog since v1.1.0
 
 ## Changes by Kind
