@@ -55,12 +55,13 @@ const (
 
 // CreateVolume parameters
 const (
-	paramTier             = "tier"
-	paramLocation         = "location"
-	paramNetwork          = "network"
-	paramReservedIPV4CIDR = "reserved-ipv4-cidr"
-	paramReservedIPRange  = "reserved-ip-range"
-	paramConnectMode      = "connect-mode"
+	paramTier                     = "tier"
+	paramLocation                 = "location"
+	paramNetwork                  = "network"
+	paramReservedIPV4CIDR         = "reserved-ipv4-cidr"
+	paramReservedIPRange          = "reserved-ip-range"
+	paramConnectMode              = "connect-mode"
+	paramInstanceEncryptionKmsKey = "instance-encryption-kms-key"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -393,6 +394,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	tier := defaultTier
 	network := defaultNetwork
 	connectMode := directPeering
+	kmsKeyName := ""
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -414,6 +416,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if connectMode != directPeering && connectMode != privateServiceAccess {
 				return nil, fmt.Errorf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
+		case paramInstanceEncryptionKmsKey:
+			kmsKeyName = v
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
@@ -424,6 +428,9 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
+	}
+	if kmsKeyName != "" && tier != enterpriseTier {
+		return nil, fmt.Errorf("KMS Key data encryption is only supported for enterprise tier instances")
 	}
 	return &file.ServiceInstance{
 		Project:  s.config.cloud.Project,
@@ -438,6 +445,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			Name:      newInstanceVolume,
 			SizeBytes: capBytes,
 		},
+		KmsKeyName: kmsKeyName,
 	}, nil
 }
 
