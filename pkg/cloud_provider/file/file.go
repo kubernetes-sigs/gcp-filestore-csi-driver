@@ -37,14 +37,15 @@ import (
 )
 
 type ServiceInstance struct {
-	Project  string
-	Name     string
-	Location string
-	Tier     string
-	Network  Network
-	Volume   Volume
-	Labels   map[string]string
-	State    string
+	Project    string
+	Name       string
+	Location   string
+	Tier       string
+	Network    Network
+	Volume     Volume
+	Labels     map[string]string
+	State      string
+	KmsKeyName string
 }
 
 type Volume struct {
@@ -129,10 +130,11 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
-		Labels: obj.Labels,
+		KmsKeyName: obj.KmsKeyName,
+		Labels:     obj.Labels,
 	}
 
-	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v, labels %v",
+	glog.V(4).Infof("Creating instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
@@ -140,6 +142,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		betaObj.Networks[0].Network,
 		betaObj.Networks[0].ReservedIpRange,
 		betaObj.Networks[0].ConnectMode,
+		betaObj.KmsKeyName,
 		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
@@ -176,11 +179,12 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
-		Labels: obj.Labels,
-		State:  obj.State,
+		KmsKeyName: obj.KmsKeyName,
+		Labels:     obj.Labels,
+		State:      obj.State,
 	}
 
-	glog.V(4).Infof("Creating instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v, labels %v backup source %v",
+	glog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v backup source %q",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
@@ -188,6 +192,7 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		instance.Networks[0].Network,
 		instance.Networks[0].ReservedIpRange,
 		instance.Networks[0].ConnectMode,
+		instance.KmsKeyName,
 		instance.Labels,
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
@@ -242,8 +247,9 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
-		Labels: instance.Labels,
-		State:  instance.State,
+		KmsKeyName: instance.KmsKeyName,
+		Labels:     instance.Labels,
+		State:      instance.State,
 	}, nil
 }
 
@@ -260,6 +266,10 @@ func CompareInstances(a, b *ServiceInstance) error {
 	}
 	if a.Network.Name != b.Network.Name {
 		mismatches = append(mismatches, "network name")
+	}
+	// Filestore API does not include key version info in the Instance object, simple string comparison will work
+	if a.KmsKeyName != b.KmsKeyName {
+		mismatches = append(mismatches, "kms key name")
 	}
 
 	if len(mismatches) > 0 {
@@ -341,9 +351,10 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 				ConnectMode:     obj.Network.ConnectMode,
 			},
 		},
+		KmsKeyName: obj.KmsKeyName,
 	}
 
-	glog.V(4).Infof("Patching instance %v: location %v, tier %v, capacity %v, network %v, ipRange %v, connectMode %v",
+	glog.V(4).Infof("Patching instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
@@ -351,6 +362,7 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 		betaObj.Networks[0].Network,
 		betaObj.Networks[0].ReservedIpRange,
 		betaObj.Networks[0].ConnectMode,
+		betaObj.KmsKeyName,
 	)
 	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
 	if err != nil {

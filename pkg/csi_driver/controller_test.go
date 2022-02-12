@@ -33,6 +33,7 @@ import (
 const (
 	testProject          = "test-project"
 	testLocation         = "us-central1-c"
+	testRegion           = "us-central1"
 	testIP               = "1.1.1.1"
 	testCSIVolume        = "test-csi"
 	testCSIVolume2       = "test-csi-2"
@@ -507,6 +508,38 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					SizeBytes: testBytes,
 				},
 			},
+		},
+		{
+			name: "custom params, customer kms key",
+			params: map[string]string{
+				paramTier:                       enterpriseTier,
+				paramInstanceEncryptionKmsKey:   "foo-key",
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: testRegion,
+				Tier:     enterpriseTier,
+				Network: file.Network{
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+				KmsKeyName: "foo-key",
+			},
+		},
+		{
+			name: "non-enterprise tier, customer kms key",
+			params: map[string]string{
+				paramTier:                     "foo-tier",
+				paramInstanceEncryptionKmsKey: "foo-key",
+			},
+			expectErr: true,
 		},
 		{
 			name: "invalid params",
