@@ -2,7 +2,10 @@
 [Google Cloud Filestore](https://cloud.google.com/filestore) CSI driver for
 use in Kubernetes and other container orchestrators.
 
-Disclaimer: This is not an officially supported Google product.
+Disclaimer: Deploying this driver manually is not an officially supported Google
+product. For a fully managed and supported filestore experience on kubernetes,
+use [GKE with the managed filestore driver](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/filestore-csi-driver).
+
 
 ## Project Overview
 This driver allows volumes backed by Google Cloud Filestore instances to be
