@@ -11,6 +11,6 @@ patchesStrategicMerge:
 namespace: gcp-filestore-csi-driver
 # To change the dev image, add something like the following.
 #images:
-#- name: gcr.io/gke-release/gcp-filestore-csi-driver
+#- name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
 #  newName: <your-gcp-project-image-url>
 #  newTag: <imagetag>
