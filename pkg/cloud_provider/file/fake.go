@@ -236,3 +236,40 @@ func (m *fakeBlockingServiceManager) DeleteInstance(ctx context.Context, obj *Se
 func (m *fakeBlockingServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
 	return false, nil
 }
+
+// Multishare fake functions defined here
+func (manager *fakeServiceManager) GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *fakeServiceManager) WaitForOpWithOpts(ctx context.Context, opts PollOpts) error {
+	return nil
+}
