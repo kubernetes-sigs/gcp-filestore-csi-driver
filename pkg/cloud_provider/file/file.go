@@ -36,6 +36,33 @@ import (
 	filev1beta1 "google.golang.org/api/file/v1beta1"
 )
 
+type PollOpts struct {
+	Interval time.Duration
+	Timeout  time.Duration
+}
+
+type Share struct {
+	Name      string
+	SizeBytes int64
+}
+
+type MultishareInstance struct {
+	Project  string
+	Name     string
+	Location string
+	Tier     string
+	Network  Network
+	Shares   []Share
+	Labels   map[string]string
+	State    string
+}
+
+type ListFilter struct {
+	Project  string
+	Location string
+	Instance string
+}
+
 type ServiceInstance struct {
 	Project    string
 	Name       string
@@ -76,6 +103,16 @@ type Service interface {
 	DeleteBackup(ctx context.Context, backupId string) error
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
+	// Multishare ops
+	GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error)
+	ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error)
+	StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
+	StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
+	StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
+	StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
+	StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
+	StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
+	WaitForOpWithOpts(ctx context.Context, opts PollOpts) error
 }
 
 type gcfsServiceManager struct {
@@ -90,7 +127,7 @@ const (
 	instanceURIFmt  = locationURIFmt + "/instances/%s"
 	operationURIFmt = locationURIFmt + "/operations/%s"
 	backupURIFmt    = locationURIFmt + "/backups/%s"
-
+	shareURIFmt     = instanceURIFmt + "/shares/%s"
 	// Patch update masks
 	fileShareUpdateMask = "file_shares"
 )
@@ -574,4 +611,41 @@ func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done b
 		}
 	}
 	return res, nil
+}
+
+// Multishare functions defined here
+func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	return nil, nil
+}
+
+func (manager *gcfsServiceManager) WaitForOpWithOpts(ctx context.Context, opts PollOpts) error {
+	return nil
 }
