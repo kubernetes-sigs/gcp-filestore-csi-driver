@@ -1,3 +1,11 @@
+# v1.1.3 - Changelog since v1.1.2
+
+## Changes by Kind
+
+### Feature
+
+- Now Users can use GCP CMEK feature by specifying storage class parameter `instance-encryption-kms-key` ([#214](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/214), [@leiyiz](https://github.com/leiyiz))
+
 # v1.1.2 - Changelog since v1.1.1
 
 ## Changes by Kind
