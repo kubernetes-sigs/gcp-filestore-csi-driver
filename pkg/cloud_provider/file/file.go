@@ -42,25 +42,32 @@ type PollOpts struct {
 }
 
 type Share struct {
-	Name      string
-	SizeBytes int64
+	Name           string              // only the share name
+	Parent         *MultishareInstance // parent captures the project, location details.
+	State          string
+	MountPointName string
+	Labels         map[string]string
+	CapacityBytes  int64
 }
 
 type MultishareInstance struct {
-	Project  string
-	Name     string
-	Location string
-	Tier     string
-	Network  Network
-	Shares   []Share
-	Labels   map[string]string
-	State    string
+	Project            string
+	Name               string
+	Location           string
+	Tier               string
+	Network            Network
+	CapacityBytes      int64
+	MaxCapacityBytes   int64
+	CapacityStepSizeGb int64
+	Labels             map[string]string
+	State              string
+	KmsKeyName         string
 }
 
 type ListFilter struct {
-	Project  string
-	Location string
-	Instance string
+	Project      string
+	Location     string
+	InstanceName string
 }
 
 type ServiceInstance struct {
@@ -104,15 +111,19 @@ type Service interface {
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
 	// Multishare ops
-	GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error)
+	GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error)
 	ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error)
 	StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
 	StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
 	StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error)
+	ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error)
+	GetShare(ctx context.Context, obj *Share) (*Share, error)
 	StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
 	StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
 	StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error)
-	WaitForOpWithOpts(ctx context.Context, opts PollOpts) error
+	WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error
+	GetOp(ctx context.Context, op string) (*filev1beta1.Operation, error)
+	IsOpDone(op *filev1beta1.Operation) (bool, error)
 }
 
 type gcfsServiceManager struct {
@@ -491,9 +502,21 @@ func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta
 	})
 }
 
+// TODO: unify this function behavior with IsOpDone
 func isOpDone(op *filev1beta1.Operation) (bool, error) {
 	if op == nil {
 		return false, nil
+	}
+	if op.Error != nil {
+		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
+	}
+	return op.Done, nil
+}
+
+func (manager *gcfsServiceManager) IsOpDone(op *filev1beta1.Operation) (bool, error) {
+	// TODO: verify this behavior with filestore
+	if op == nil {
+		return true, nil
 	}
 	if op.Error != nil {
 		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
@@ -614,38 +637,140 @@ func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done b
 }
 
 // Multishare functions defined here
-func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error) {
+func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error) {
+	// TODO: do not silence not found error.
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
 func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+	// TODO
 	return nil, nil
 }
 
-func (manager *gcfsServiceManager) WaitForOpWithOpts(ctx context.Context, opts PollOpts) error {
+func (manager *gcfsServiceManager) WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error {
+	// TODO
+	return nil
+}
+
+func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev1beta1.Operation, error) {
+	opInfo, err := manager.operationsService.Get(op).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	return opInfo, nil
+}
+
+func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
+	return &Share{}, nil
+}
+
+func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
+	return nil, nil
+}
+
+func ParseShare(s *Share) (string, string, string, string, error) {
+	if s == nil || s.Parent == nil {
+		return "", "", "", "", fmt.Errorf("Missing parent object for share %s", s.Name)
+	}
+
+	if s.Parent.Project == "" || s.Parent.Location == "" || s.Parent.Name == "" || s.Name == "" {
+		return "", "", "", "", fmt.Errorf("Missing identifier in share")
+	}
+
+	return s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name, nil
+}
+
+func GetMultishareInstanceHandle(m *MultishareInstance) (string, error) {
+	if m == nil {
+		return "", fmt.Errorf("empty multishare instance")
+	}
+	return fmt.Sprintf("%s/%s/%s", m.Project, m.Location, m.Name), nil
+}
+
+func CompareMultishareInstances(a, b *MultishareInstance) error {
+	if a == nil || b == nil {
+		return fmt.Errorf("empty instance object detected")
+	}
+
+	mismatches := []string{}
+	if a.Project != b.Project {
+		mismatches = append(mismatches, "project")
+	}
+
+	if a.Location != b.Location {
+		mismatches = append(mismatches, "location")
+	}
+
+	if a.Name != b.Name {
+		mismatches = append(mismatches, "name")
+	}
+
+	if strings.ToLower(a.Tier) != strings.ToLower(b.Tier) {
+		mismatches = append(mismatches, "tier")
+	}
+
+	if a.Network.Name != b.Network.Name {
+		mismatches = append(mismatches, "network name")
+	}
+
+	// Filestore API does not include key version info in the Instance object, simple string comparison will work
+	if a.KmsKeyName != b.KmsKeyName {
+		mismatches = append(mismatches, "kms key name")
+	}
+
+	if len(mismatches) > 0 {
+		return fmt.Errorf("instance %v already exists but doesn't match expected: %+v", a.Name, mismatches)
+	}
+	return nil
+}
+
+func CompareShares(a, b *Share) error {
+	if a == nil || b == nil {
+		return fmt.Errorf("empty share object detected")
+	}
+
+	mismatches := []string{}
+	if a.Name != b.Name {
+		mismatches = append(mismatches, "tier")
+	}
+	if util.RoundBytesToGb(a.CapacityBytes) != util.RoundBytesToGb(b.CapacityBytes) {
+		mismatches = append(mismatches, "share size")
+	}
+	if len(mismatches) > 0 {
+		return fmt.Errorf("share %v already exists but doesn't match expected: %+v", a.Name, mismatches)
+	}
+	if err := CompareMultishareInstances(a.Parent, b.Parent); err != nil {
+		return err
+	}
 	return nil
 }

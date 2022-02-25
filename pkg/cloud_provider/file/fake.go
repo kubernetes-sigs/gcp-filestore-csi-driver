@@ -18,22 +18,29 @@ package file
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/genproto/googleapis/rpc/code"
+	"google.golang.org/grpc/codes"
 )
 
 const (
 	defaultProject    = "test-project"
 	defaultZone       = "us-central1-c"
+	defaultRegion     = "us-central1"
 	defaultTier       = "BASIC_HDD"
 	defaultCapacityGb = 1024
 )
 
 type fakeServiceManager struct {
-	createdInstances map[string]*ServiceInstance
-	backups          map[string]*BackupInfo
+	createdInstances          map[string]*ServiceInstance
+	backups                   map[string]*BackupInfo
+	createdMultishareInstance map[string]*MultishareInstance
+	createdMultishares        map[string]*Share
 }
 
 var _ Service = &fakeServiceManager{}
@@ -206,7 +213,8 @@ func notFoundError() *googleapi.Error {
 type fakeBlockingServiceManager struct {
 	*fakeServiceManager
 	// 'OperationUnblocker' channel is used to block the execution of the respective function using it. This is done by sending a channel of empty struct over 'OperationUnblocker' channel, and wait until the tester gives a go-ahead to proceed further in the execution of the function.
-	OperationUnblocker chan chan struct{}
+	OperationUnblocker  chan chan struct{}
+	MultishareUnblocker chan chan Signal
 }
 
 func NewFakeBlockingService(operationUnblocker chan chan struct{}) (Service, error) {
@@ -238,8 +246,12 @@ func (m *fakeBlockingServiceManager) HasOperations(ctx context.Context, obj *Ser
 }
 
 // Multishare fake functions defined here
-func (manager *fakeServiceManager) GetMultishareInstance(ctx context.Context, uri string) (*MultishareInstance, error) {
-	return nil, nil
+func (manager *fakeServiceManager) GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error) {
+	instance, ok := manager.createdMultishareInstance[obj.Name]
+	if !ok {
+		return nil, fmt.Errorf("notFound")
+	}
+	return instance, nil
 }
 
 func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
@@ -247,7 +259,39 @@ func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, 
 }
 
 func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
-	return nil, nil
+	instance := &MultishareInstance{
+		Project:       defaultProject,
+		Location:      defaultRegion,
+		Name:          obj.Name,
+		Tier:          obj.Tier,
+		CapacityBytes: obj.CapacityBytes,
+		Network: Network{
+			Name:            obj.Network.Name,
+			Ip:              "1.1.1.1",
+			ReservedIpRange: obj.Network.ReservedIpRange,
+		},
+		Labels: obj.Labels,
+		State:  "READY",
+	}
+	manager.createdMultishareInstance[instance.Name] = instance
+	manager.createdMultishareInstance[obj.Name] = instance
+	meta := &filev1beta1.OperationMetadata{
+		Target: fmt.Sprintf(instanceURIFmt, instance.Project, instance.Location, instance.Name),
+		Verb:   "CREATE",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+	return op, nil
+}
+
+type Signal struct {
+	ReportError             bool
+	ReportNotFoundError     bool
+	ReportRunning           bool
+	ReportOpWithErrorStatus bool
 }
 
 func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
@@ -259,17 +303,160 @@ func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 }
 
 func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
-	return nil, nil
+	if _, ok := manager.createdMultishareInstance[obj.Parent.Name]; !ok {
+		return nil, fmt.Errorf("host instance %s not found", obj.Parent.Name)
+	}
+
+	parent := &MultishareInstance{
+		Project:       obj.Parent.Project,
+		Location:      obj.Parent.Location,
+		Name:          obj.Parent.Name,
+		Tier:          obj.Parent.Tier,
+		CapacityBytes: obj.CapacityBytes,
+		Network: Network{
+			Name:            obj.Parent.Network.Name,
+			Ip:              "1.1.1.1",
+			ReservedIpRange: obj.Parent.Network.ReservedIpRange,
+		},
+		Labels: obj.Parent.Labels,
+		State:  "READY",
+	}
+	share := &Share{
+		Name:          obj.Name,
+		Parent:        parent,
+		CapacityBytes: obj.CapacityBytes,
+		Labels:        obj.Labels,
+	}
+	manager.createdMultishares[share.Name] = share
+
+	meta := &filev1beta1.OperationMetadata{
+		Target: fmt.Sprintf(shareURIFmt, share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name),
+		Verb:   "CREATE",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+
+	return op, nil
 }
 
 func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
-	return nil, nil
+	delete(manager.createdMultishares, obj.Name)
+
+	meta := &filev1beta1.OperationMetadata{
+		Target: fmt.Sprintf(shareURIFmt, obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name),
+		Verb:   "DELETE",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+
+	return op, nil
 }
 
 func (manager *fakeServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
 	return nil, nil
 }
 
-func (manager *fakeServiceManager) WaitForOpWithOpts(ctx context.Context, opts PollOpts) error {
+func (manager *fakeServiceManager) WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error {
 	return nil
+}
+
+func (manager *fakeServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1.Operation, error) {
+	op := &filev1beta1.Operation{
+		Name: opName,
+		Done: true,
+	}
+	return op, nil
+}
+
+func (manager *fakeServiceManager) IsOpDone(*filev1beta1.Operation) (bool, error) {
+	return true, nil
+}
+
+func (manager *fakeServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
+	share, ok := manager.createdMultishares[obj.Name]
+	if !ok {
+		return nil, notFoundError()
+	}
+	return share, nil
+}
+
+func (manager *fakeServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
+	var s []*Share
+	for _, v := range manager.createdMultishares {
+		if v.Parent.Project == filter.Project && v.Parent.Location == filter.Location && v.Parent.Name == filter.InstanceName {
+			s = append(s, v)
+		}
+	}
+
+	return s, nil
+}
+
+func NewFakeBlockingServiceForMultishare(unblocker chan chan Signal) (Service, error) {
+	return &fakeBlockingServiceManager{
+		fakeServiceManager: &fakeServiceManager{
+			createdMultishareInstance: make(map[string]*MultishareInstance),
+			createdMultishares:        make(map[string]*Share),
+		},
+		MultishareUnblocker: unblocker,
+	}, nil
+}
+
+func (manager *fakeBlockingServiceManager) GetMultishareInstance(ctx context.Context, instance *MultishareInstance) (*MultishareInstance, error) {
+	execute := make(chan Signal)
+	manager.MultishareUnblocker <- execute
+	val := <-execute
+	if val.ReportError {
+		return nil, fmt.Errorf("mock error")
+	}
+	if val.ReportNotFoundError {
+		return nil, &googleapi.Error{
+			Code: int(code.Code_NOT_FOUND),
+			Errors: []googleapi.ErrorItem{
+				{
+					Reason: "notFound",
+				},
+			},
+		}
+	}
+	return manager.fakeServiceManager.GetMultishareInstance(ctx, instance)
+}
+
+func (manager *fakeBlockingServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1.Operation, error) {
+	execute := make(chan Signal)
+	manager.MultishareUnblocker <- execute
+	val := <-execute
+	if val.ReportError {
+		return nil, fmt.Errorf("mock error")
+	}
+
+	op := &filev1beta1.Operation{
+		Name: opName,
+		Done: true,
+	}
+	if val.ReportOpWithErrorStatus {
+		op.Error = &filev1beta1.Status{Code: int64(codes.Internal)}
+		return op, nil
+	}
+
+	if val.ReportRunning {
+		op.Done = false
+	}
+	return op, nil
+}
+
+func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1.Operation) (bool, error) {
+	execute := make(chan Signal)
+	manager.MultishareUnblocker <- execute
+	val := <-execute
+	if val.ReportError {
+		return !val.ReportRunning, fmt.Errorf("mock error")
+	}
+
+	return !val.ReportRunning, nil
 }

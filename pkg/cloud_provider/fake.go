@@ -34,3 +34,11 @@ func NewFakeCloud() (*Cloud, error) {
 		Zone:    "us-central1-c",
 	}, nil
 }
+
+func NewFakeCloudWithFiler(filer file.Service, project, location string) (*Cloud, error) {
+	return &Cloud{
+		File:    filer,
+		Project: project,
+		Zone:    location,
+	}, nil
+}

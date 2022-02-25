@@ -58,3 +58,11 @@ func getFileInstanceFromID(id string) (*file.ServiceInstance, string, error) {
 		Volume:   file.Volume{Name: tokens[idVolume]},
 	}, tokens[idProvisioningMode], nil
 }
+
+func generateMultishareVolumeIdFromShare(s *file.Share) (string, error) {
+	if s == nil || s.Parent == nil {
+		return "", fmt.Errorf("invalid share object")
+	}
+
+	return fmt.Sprintf("%s/%s/%s/%s/%s", modeMultishare, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+}

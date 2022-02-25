@@ -200,3 +200,102 @@ func BackupVolumeSourceToCSIVolumeHandle(backupVolumeSource string) (string, err
 	}
 	return fmt.Sprintf("modeInstance/%s/%s/vol1", splitId[3], splitId[5]), nil
 }
+
+// Multishare util functions.
+
+func ConvertVolToShareName(csiVolName string) string {
+	s := strings.ToLower(csiVolName)
+	return strings.ReplaceAll(s, "-", "_")
+	// TODO: verify regex
+}
+
+func CheckLabelValueRegex(value string) error {
+	// Values can be empty, and have a maximum length of 63 characters.
+	regexValue, _ := regexp.Compile(`^[\p{Ll}0-9_-]{0,63}$`)
+	if !regexValue.MatchString(value) {
+		return fmt.Errorf("value %q is invalid (lowercase letter, digit, _ and - chars are allowed / 0-63 characters", value)
+	}
+
+	return nil
+}
+
+func ParseInstanceHandle(instanceHandle string) (string, string, string, error) {
+	// Expected instance handle <project-name>/<location-name>/<instance-name>
+	splitStr := strings.Split(instanceHandle, "/")
+	if len(splitStr) != InstanceHandleSplitLen {
+		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceHandle)
+	}
+
+	project := splitStr[0]
+	location := splitStr[1]
+	instanceName := splitStr[2]
+	if project == "" || location == "" || instanceName == "" {
+		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceHandle)
+	}
+
+	return project, location, instanceName, nil
+}
+
+func ParseInstanceURI(instanceURI string) (string, string, string, error) {
+	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>/shares/<share-name>
+	splitStr := strings.Split(instanceURI, "/")
+	if len(splitStr) != InstanceURISplitLen {
+		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
+	}
+
+	project := splitStr[1]
+	location := splitStr[3]
+	instanceName := splitStr[5]
+	if project == "" || location == "" || instanceName == "" {
+		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
+	}
+
+	return project, location, instanceName, nil
+}
+
+func ParseShareHandle(shareHandle string) (string, string, string, string, error) {
+	// Expected share handle <project-name>/<location-name>/<instance-name>/<share-name>
+	splitStr := strings.Split(shareHandle, "/")
+	if len(splitStr) != ShareHandleSplitLen {
+		return "", "", "", "", fmt.Errorf("Unknown share handle format %q", shareHandle)
+	}
+
+	project := splitStr[0]
+	location := splitStr[1]
+	instanceName := splitStr[2]
+	shareName := splitStr[3]
+	if project == "" || location == "" || instanceName == "" || shareName == "" {
+		return "", "", "", "", fmt.Errorf("Unknown share handle format %q", shareHandle)
+	}
+
+	return project, location, instanceName, shareName, nil
+}
+
+func ParseShareURI(shareURI string) (string, string, string, string, error) {
+	// Expected share URI projects/<project-name>/locations/<location-name>/instances/<instance-name>/shares/<share-name>
+	splitStr := strings.Split(shareURI, "/")
+	if len(splitStr) != ShareURISplitLen {
+		return "", "", "", "", fmt.Errorf("Unknown share URI format %q", shareURI)
+	}
+
+	project := splitStr[1]
+	location := splitStr[3]
+	instanceName := splitStr[5]
+	shareName := splitStr[7]
+	if project == "" || location == "" || instanceName == "" || shareName == "" {
+		return "", "", "", "", fmt.Errorf("Unknown share URI format %q", shareURI)
+	}
+
+	return project, location, instanceName, shareName, nil
+}
+
+func GetMultishareOpsTimeoutConfig(opType OperationType) (time.Duration, time.Duration, error) {
+	switch opType {
+	case InstanceCreate, InstanceDelete, ShareDelete:
+		return 1 * time.Hour, 5 * time.Second, nil
+	case InstanceExpand, InstanceShrink, ShareCreate, ShareExpand:
+		return 10 * time.Minute, 5 * time.Second, nil
+	default:
+		return 0, 0, fmt.Errorf("unknown op type %v", opType)
+	}
+}
