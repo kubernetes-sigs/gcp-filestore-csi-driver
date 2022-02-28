@@ -144,10 +144,6 @@ func serve(w http.ResponseWriter, r *http.Request, admit admitHandler) {
 	}
 }
 
-func serveStorageClassRequest(w http.ResponseWriter, r *http.Request) {
-	serve(w, r, newDelegateToV1AdmitHandler(admitStorageClass))
-}
-
 func serveStorageClassMutate(w http.ResponseWriter, r *http.Request) {
 	serve(w, r, newDelegateToV1AdmitHandler(mutateStorageClass))
 }
@@ -162,8 +158,7 @@ func startServer(ctx context.Context, tlsConfig *tls.Config, cw *certwatcher.Cer
 
 	fmt.Println("Starting webhook server")
 	mux := http.NewServeMux()
-	mux.HandleFunc("/storageclasses", serveStorageClassRequest)
-	mux.HandleFunc("/mutate-storageclasses", serveStorageClassMutate)
+	mux.HandleFunc("/storageclasses", serveStorageClassMutate)
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) { w.Write([]byte("ok")) })
 	srv := &http.Server{
 		Handler:   mux,
