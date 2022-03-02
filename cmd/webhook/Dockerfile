@@ -4,7 +4,7 @@ ADD . .
 ARG TAG=latest
 RUN make webhook BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${TAG}
 
-FROM launcher.gcr.io/google/debian10 as deps
+FROM gcr.io/distroless/static
 ARG WEBHOOKBINARY=gcp-filestore-csi-driver-webhook
 COPY --from=builder /bin/${WEBHOOKBINARY} /${WEBHOOKBINARY}
 ENTRYPOINT ["/gcp-filestore-csi-driver-webhook"]
