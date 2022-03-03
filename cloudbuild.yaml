@@ -15,7 +15,7 @@ steps:
   # The image must contain bash and curl. Ideally it should also contain
   # the desired version of Go (currently defined in release-tools/travis.yml),
   # but that just speeds up the build and is not required.
-  - name: 'gcr.io/k8s-testimages/gcb-docker-gcloud:v20210331-c732583'
+  - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20211118-2f2d816b90'
     entrypoint: make
     env:
     - PULL_BASE_REF=${_PULL_BASE_REF}
@@ -25,6 +25,16 @@ steps:
     - HOME=/root
     args:
     - build-and-push-multi-arch
+  - name: 'gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20211118-2f2d816b90'
+    entrypoint: make
+    env:
+    - PULL_BASE_REF=${_PULL_BASE_REF}
+    - PROJECT=${_STAGING_PROJECT}
+    # default cloudbuild has HOME=/builder/home and docker buildx is in /root/.docker/cli-plugins/docker-buildx
+    # set the home to /root explicitly to if using docker buildx
+    - HOME=/root
+    args:
+    - build-and-push-webhook-multi-arch
 substitutions:
   # _PULL_BASE_REF will contain the ref that was pushed to trigger this build -
   # a branch like 'master' or 'release-0.2', or a tag like 'v0.2'.
