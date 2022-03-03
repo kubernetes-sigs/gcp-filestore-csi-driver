@@ -60,7 +60,7 @@ webhook:
 	mkdir -p ${BINDIR}
 	{                                                                                                                                                  \
 	set -e ;                                                                                                                                           \
-	CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version='"$(STAGINGVERSION)"' -extldflags "-static"' -o ${BINDIR}/${WEBHOOKBINARY} ./cmd/webhook/; \
+	CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version=$(STAGINGVERSION) -extldflags "-static"' -o ${BINDIR}/${WEBHOOKBINARY} ./cmd/webhook/; \
 	}
 
 # Build the docker image for the webhook.
@@ -69,7 +69,6 @@ webhook-image: init-buildx
 		set -e ;                                                                                                                                                         \
 		docker buildx build \
 		    --platform linux/amd64 \
-		    --build-arg WEBHOOKBINARY=$(WEBHOOKBINARY) \
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
@@ -77,7 +76,33 @@ webhook-image: init-buildx
 			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) --push .; \
 		}
 
-push-webhook-image: webhook-image
+build-webhook-image-and-push-linux-amd64: init-buildx
+	{                                                                                                                                                                \
+		set -e ;                                                                                                                                                         \
+		docker buildx build \
+		    --platform linux/amd64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/amd64 \
+			-f ./cmd/webhook/Dockerfile \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push .; \
+	}
+
+build-webhook-image-and-push-linux-arm64: init-buildx
+	{                                                                                                                                                                \
+		set -e ;                                                                                                                                                         \
+		docker buildx build \
+		    --platform linux/amd64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/arm64 \
+			-f ./cmd/webhook/Dockerfile \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push .; \
+	}
+
+build-and-push-webhook-multi-arch: build-webhook-image-and-push-linux-arm64 build-webhook-image-and-push-linux-amd64
+	docker manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	docker manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the docker image for the core CSI driver.
 build-image-and-push: init-buildx
