@@ -67,8 +67,8 @@ webhook:
 webhook-image: init-buildx
 		{                                                                                                                                                                \
 		set -e ;                                                                                                                                                         \
-		do docker buildx build \
-		    -- platform linux/amd64 \
+		docker buildx build \
+		    --platform linux/amd64 \
 		    --build-arg WEBHOOKBINARY=$(WEBHOOKBINARY) \
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \

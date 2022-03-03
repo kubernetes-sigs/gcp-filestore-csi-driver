@@ -7,17 +7,17 @@ webhooks:
   rules:
   - apiGroups:   ["storage.k8s.io"]
     apiVersions: ["v1"]
-    operations:  ["CREATE", "UPDATE"]
+    operations:  ["CREATE"]
     resources:   ["storageclasses"]
-    scope:       "*"  
+    scope:       "*"
   clientConfig:
     caBundle: ${CA_BUNDLE}
     service:
       namespace: "default"
       name: "filestorecsi-validation"
-      path: "/mutate-storageclasses"
+      path: "/storageclasses"
       port: 443
-  admissionReviewVersions: ["v1"]      
+  admissionReviewVersions: ["v1"]
   sideEffects: None
   reinvocationPolicy: Never
   failurePolicy: Ignore

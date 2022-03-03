@@ -17,7 +17,8 @@ spec:
     spec:
       containers:
       - name: filestorecsi-validation
-        image: gcr.io/saikatroyc-test/gcp-filestore-csi-driver-webhook:v2
+        # change the following image to a correct image url
+        image: gcr.io/leiyi-k8s-testing/gcp-filestore-csi-driver-webhook:v0.2
         imagePullPolicy: Always
         args: ['--tls-cert-file=/etc/filestorecsi-validation-webhook/certs/cert.pem', '--tls-private-key-file=/etc/filestorecsi-validation-webhook/certs/key.pem']
         ports:
