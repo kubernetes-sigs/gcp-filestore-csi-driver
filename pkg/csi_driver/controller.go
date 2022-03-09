@@ -710,7 +710,11 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		glog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
-		return nil, status.Error(codes.Internal, err.Error())
+		if file.IsUserError(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		} else {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 	}
 	tp, err := util.ParseTimestamp(backupObj.CreateTime)
 	if err != nil {

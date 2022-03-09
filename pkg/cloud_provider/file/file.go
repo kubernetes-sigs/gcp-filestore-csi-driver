@@ -543,17 +543,20 @@ func IsNotFoundErr(err error) bool {
 }
 
 // This function returns true if the error is a googleapi error caused by users, such as
-// Error 429: Quota limit exceeded, Error 403: Permission Denied, and Error 400: Bad Request
+// Error 429: Quota limit exceeded, Error 403: Permission Denied, Error 400: Bad Request,
+// Error 404: Not found.
 func IsUserError(err error) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		return false
 	}
-
-	if apiErr.Code == int(code.Code_RESOURCE_EXHAUSTED) || apiErr.Code == int(code.Code_PERMISSION_DENIED) || apiErr.Code == int(code.Code_INVALID_ARGUMENT) {
-		return true
+	userErrors := map[code.Code]bool{
+		code.Code_RESOURCE_EXHAUSTED: true,
+		code.Code_PERMISSION_DENIED:  true,
+		code.Code_INVALID_ARGUMENT:   true,
+		code.Code_NOT_FOUND:          true,
 	}
-	return false
+	return userErrors[code.Code(apiErr.Code)]
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
