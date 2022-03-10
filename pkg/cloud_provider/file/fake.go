@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
@@ -258,7 +259,7 @@ func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, 
 	return nil, nil
 }
 
-func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	instance := &MultishareInstance{
 		Project:       defaultProject,
 		Location:      defaultRegion,
@@ -275,12 +276,12 @@ func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 	}
 	manager.createdMultishareInstance[instance.Name] = instance
 	manager.createdMultishareInstance[obj.Name] = instance
-	meta := &filev1beta1.OperationMetadata{
+	meta := &filev1beta1multishare.OperationMetadata{
 		Target: fmt.Sprintf(instanceURIFmt, instance.Project, instance.Location, instance.Name),
 		Verb:   "CREATE",
 	}
 	metaBytes, _ := json.Marshal(meta)
-	op := &filev1beta1.Operation{
+	op := &filev1beta1multishare.Operation{
 		Name:     "operation-" + uuid.New().String(),
 		Metadata: metaBytes,
 	}
@@ -294,15 +295,15 @@ type Signal struct {
 	ReportOpWithErrorStatus bool
 }
 
-func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	return nil, nil
 }
 
-func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	return nil, nil
 }
 
-func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
 	if _, ok := manager.createdMultishareInstance[obj.Parent.Name]; !ok {
 		return nil, fmt.Errorf("host instance %s not found", obj.Parent.Name)
 	}
@@ -334,7 +335,7 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 		Verb:   "CREATE",
 	}
 	metaBytes, _ := json.Marshal(meta)
-	op := &filev1beta1.Operation{
+	op := &filev1beta1multishare.Operation{
 		Name:     "operation-" + uuid.New().String(),
 		Metadata: metaBytes,
 	}
@@ -342,15 +343,15 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 	return op, nil
 }
 
-func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
 	delete(manager.createdMultishares, obj.Name)
 
-	meta := &filev1beta1.OperationMetadata{
+	meta := &filev1beta1multishare.OperationMetadata{
 		Target: fmt.Sprintf(shareURIFmt, obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name),
 		Verb:   "DELETE",
 	}
 	metaBytes, _ := json.Marshal(meta)
-	op := &filev1beta1.Operation{
+	op := &filev1beta1multishare.Operation{
 		Name:     "operation-" + uuid.New().String(),
 		Metadata: metaBytes,
 	}
@@ -358,7 +359,7 @@ func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *
 	return op, nil
 }
 
-func (manager *fakeServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1.Operation, error) {
+func (manager *fakeServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
 	return nil, nil
 }
 
@@ -366,15 +367,15 @@ func (manager *fakeServiceManager) WaitForOpWithOpts(ctx context.Context, op str
 	return nil
 }
 
-func (manager *fakeServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1.Operation, error) {
-	op := &filev1beta1.Operation{
+func (manager *fakeServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1multishare.Operation, error) {
+	op := &filev1beta1multishare.Operation{
 		Name: opName,
 		Done: true,
 	}
 	return op, nil
 }
 
-func (manager *fakeServiceManager) IsOpDone(*filev1beta1.Operation) (bool, error) {
+func (manager *fakeServiceManager) IsOpDone(*filev1beta1multishare.Operation) (bool, error) {
 	return true, nil
 }
 
@@ -427,7 +428,7 @@ func (manager *fakeBlockingServiceManager) GetMultishareInstance(ctx context.Con
 	return manager.fakeServiceManager.GetMultishareInstance(ctx, instance)
 }
 
-func (manager *fakeBlockingServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1.Operation, error) {
+func (manager *fakeBlockingServiceManager) GetOp(ctx context.Context, opName string) (*filev1beta1multishare.Operation, error) {
 	execute := make(chan Signal)
 	manager.MultishareUnblocker <- execute
 	val := <-execute
@@ -435,12 +436,12 @@ func (manager *fakeBlockingServiceManager) GetOp(ctx context.Context, opName str
 		return nil, fmt.Errorf("mock error")
 	}
 
-	op := &filev1beta1.Operation{
+	op := &filev1beta1multishare.Operation{
 		Name: opName,
 		Done: true,
 	}
 	if val.ReportOpWithErrorStatus {
-		op.Error = &filev1beta1.Status{Code: int64(codes.Internal)}
+		op.Error = &filev1beta1multishare.Status{Code: int64(codes.Internal)}
 		return op, nil
 	}
 
@@ -450,7 +451,7 @@ func (manager *fakeBlockingServiceManager) GetOp(ctx context.Context, opName str
 	return op, nil
 }
 
-func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1.Operation) (bool, error) {
+func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Operation) (bool, error) {
 	execute := make(chan Signal)
 	manager.MultishareUnblocker <- execute
 	val := <-execute
