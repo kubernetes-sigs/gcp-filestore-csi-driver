@@ -126,6 +126,20 @@ func TestMutateStorageClass(t *testing.T) {
 			patch:       fmt.Sprintf(`[{"op":"add", "path":"/parameters/%s","value": "%s"}]`, InstanceStorageClassLabel, storageClassName),
 		},
 		{
+			name: "should fill in instanceStorageClassLabel if not present and convert to lower case",
+			storageClass: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: strings.ToUpper(storageClassName)},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"multishare": "true",
+					"tier":       TierEnterprise,
+				},
+			},
+			operation:   v1.Create,
+			shouldAdmit: true,
+			patch:       fmt.Sprintf(`[{"op":"add", "path":"/parameters/%s","value": "%s"}]`, InstanceStorageClassLabel, storageClassName),
+		},
+		{
 			name: "should not change instanceStorageClassLabel if already set",
 			storageClass: &storagev1.StorageClass{
 				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},

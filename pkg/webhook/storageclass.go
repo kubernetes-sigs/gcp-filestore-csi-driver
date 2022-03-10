@@ -32,7 +32,7 @@ var (
 	StorageClassV1GVR         = metav1.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}
 	FilestoreCSIDriver        = "filestore.csi.storage.gke.io"
 	TierEnterprise            = "enterprise"
-	InstanceStorageClassLabel = "instanceStorageClassLabel"
+	InstanceStorageClassLabel = "instance-storageclass-label"
 	Multishare                = "multishare"
 )
 
@@ -106,11 +106,12 @@ func applyV1StorageClassPatch(sc *storagev1.StorageClass) *v1.AdmissionResponse 
 		}
 	}
 
-	if !validateInstanceLabel(sc.Name) {
-		return rejectV1AdmissionResponse(fmt.Errorf("if using storageclass name as %q, it can contain only lowercase letters, numeric characters, underscores, and dashes and have a maximum length of 63 characters", InstanceStorageClassLabel))
+	instanceLabel := strings.ToLower(sc.Name)
+	if !validateInstanceLabel(instanceLabel) {
+		return rejectV1AdmissionResponse(fmt.Errorf("if using storageclass name as %q, it can contain only letters, numeric characters, underscores, and dashes and have a maximum length of 63 characters", InstanceStorageClassLabel))
 	}
 
-	scPatch := fmt.Sprintf(`[{"op":"add", "path":"/parameters/%s","value": "%s"}]`, InstanceStorageClassLabel, sc.Name)
+	scPatch := fmt.Sprintf(`[{"op":"add", "path":"/parameters/%s","value": "%s"}]`, InstanceStorageClassLabel, instanceLabel)
 	klog.Infof("patching value: %s", scPatch)
 	reviewResponse.Patch = []byte(scPatch)
 	pt := v1.PatchTypeJSONPatch
