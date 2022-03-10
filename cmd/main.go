@@ -40,6 +40,7 @@ var (
 	cloudConfigFilePath = flag.String("cloud-config", "", "Path to GCE cloud provider config")
 	httpEndpoint        = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
 	metricsPath         = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+	enableMultishare    = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -56,6 +57,9 @@ func main() {
 	defer cancel()
 	var meta metadata.Service
 	if *runController {
+		if *enableMultishare {
+			klog.Fatalf("provisioning of multishare instances not supported")
+		}
 		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
 			mm := metrics.NewMetricsManager()
 			mm.InitializeHttpHandler(*httpEndpoint, *metricsPath)
@@ -80,14 +84,15 @@ func main() {
 
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
-		Name:            driverName,
-		Version:         version,
-		NodeID:          *nodeID,
-		RunController:   *runController,
-		RunNode:         *runNode,
-		Mounter:         mounter,
-		Cloud:           provider,
-		MetadataService: meta,
+		Name:             driverName,
+		Version:          version,
+		NodeID:           *nodeID,
+		RunController:    *runController,
+		RunNode:          *runNode,
+		Mounter:          mounter,
+		Cloud:            provider,
+		MetadataService:  meta,
+		EnableMultishare: *enableMultishare,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

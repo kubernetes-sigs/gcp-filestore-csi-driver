@@ -55,13 +55,14 @@ const (
 
 // CreateVolume parameters
 const (
-	paramTier                     = "tier"
-	paramLocation                 = "location"
-	paramNetwork                  = "network"
-	paramReservedIPV4CIDR         = "reserved-ipv4-cidr"
-	paramReservedIPRange          = "reserved-ip-range"
-	paramConnectMode              = "connect-mode"
-	paramInstanceEncryptionKmsKey = "instance-encryption-kms-key"
+	paramTier                      = "tier"
+	paramLocation                  = "location"
+	paramNetwork                   = "network"
+	paramReservedIPV4CIDR          = "reserved-ipv4-cidr"
+	paramReservedIPRange           = "reserved-ip-range"
+	paramConnectMode               = "connect-mode"
+	paramInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
+	paramMultishareInstanceScLabel = "instance-storageclass-label"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -84,15 +85,20 @@ type controllerServer struct {
 }
 
 type controllerServerConfig struct {
-	driver      *GCFSDriver
-	fileService file.Service
-	cloud       *cloud.Cloud
-	ipAllocator *util.IPAllocator
-	volumeLocks *util.VolumeLocks
+	driver               *GCFSDriver
+	fileService          file.Service
+	cloud                *cloud.Cloud
+	ipAllocator          *util.IPAllocator
+	volumeLocks          *util.VolumeLocks
+	enableMultishare     bool
+	multiShareController *MultishareController
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
+	if config.enableMultishare {
+		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks)
+	}
 	return &controllerServer{config: config}
 }
 
