@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 // Ordering of elements in volume id
@@ -59,10 +60,31 @@ func getFileInstanceFromID(id string) (*file.ServiceInstance, string, error) {
 	}, tokens[idProvisioningMode], nil
 }
 
-func generateMultishareVolumeIdFromShare(s *file.Share) (string, error) {
+func generateMultishareVolumeIdFromShare(instancePrefix string, s *file.Share) (string, error) {
+	if instancePrefix == "" {
+		return "", fmt.Errorf("invalid instance prefix")
+	}
+
 	if s == nil || s.Parent == nil {
 		return "", fmt.Errorf("invalid share object")
 	}
 
-	return fmt.Sprintf("%s/%s/%s/%s/%s", modeMultishare, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", modeMultishare, instancePrefix, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+}
+
+func parseMultishareVolId(volId string) (string, string, string, string, string, error) {
+	tokens := strings.Split(volId, "/")
+	if len(tokens) != util.MultishareCSIVolIdSplitLen {
+		return "", "", "", "", "", fmt.Errorf("invalid volume id %v", volId)
+	}
+
+	prefix := tokens[0]
+	project := tokens[1]
+	location := tokens[2]
+	instanceName := tokens[3]
+	shareName := tokens[4]
+	if project == "" || location == "" || instanceName == "" || shareName == "" {
+		return "", "", "", "", "", fmt.Errorf("invalid volume id %v", volId)
+	}
+	return prefix, project, location, instanceName, shareName, nil
 }

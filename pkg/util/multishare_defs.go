@@ -17,10 +17,11 @@ limitations under the License.
 package util
 
 const (
-	InstanceHandleSplitLen = 3
-	InstanceURISplitLen    = 6
-	ShareHandleSplitLen    = 4
-	ShareURISplitLen       = 8
+	InstanceHandleSplitLen     = 3
+	InstanceURISplitLen        = 6
+	ShareHandleSplitLen        = 4
+	ShareURISplitLen           = 8
+	MultishareCSIVolIdSplitLen = 6
 
 	MinMultishareInstanceSizeBytes    int64 = 1 * Tb
 	MaxShareSizeBytes                 int64 = 1 * Tb

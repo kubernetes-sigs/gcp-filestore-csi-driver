@@ -88,7 +88,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 
 	if share != nil {
-		return m.getShareAndGenerateCSIResponse(ctx, share)
+		return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, share)
 	}
 
 	timeout, pollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
@@ -102,7 +102,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 
 	if workflow.opType == util.ShareCreate {
-		return m.getShareAndGenerateCSIResponse(ctx, workflow.share)
+		return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, workflow.share)
 	}
 
 	var shareCreateWorkflow *Workflow
@@ -131,17 +131,17 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, status.Errorf(codes.Internal, "operation %q poll error: %v", workflow.opName, err)
 	}
 
-	return m.getShareAndGenerateCSIResponse(ctx, newShare)
+	return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, newShare)
 }
 
-func (m *MultishareController) getShareAndGenerateCSIResponse(ctx context.Context, s *file.Share) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) getShareAndGenerateCSIResponse(ctx context.Context, instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
 	share, err := m.fileService.GetShare(ctx, s)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
 
 	// TODO: do we need any further validation here?
-	return generateCSICreateVolumeResponse(share)
+	return generateCSICreateVolumeResponse(instancePrefix, share)
 }
 
 func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -359,8 +359,8 @@ func getShareRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 	return rCap, nil
 }
 
-func generateCSICreateVolumeResponse(s *file.Share) (*csi.CreateVolumeResponse, error) {
-	volId, err := generateMultishareVolumeIdFromShare(s)
+func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
+	volId, err := generateMultishareVolumeIdFromShare(instancePrefix, s)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
 	}
