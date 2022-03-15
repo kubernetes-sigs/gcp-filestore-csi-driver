@@ -466,3 +466,70 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateCSICreateVolumeResponse(t *testing.T) {
+	tests := []struct {
+		name         string
+		prefix       string
+		share        *file.Share
+		expectedResp *csi.CreateVolumeResponse
+		expectError  bool
+	}{
+		{
+			name:        "empty prefix",
+			expectError: true,
+		},
+		{
+			name:        "empty share object",
+			prefix:      testInstanceScPrefix,
+			expectError: true,
+		},
+		{
+			name:   "invalid share object - missing parent",
+			prefix: testInstanceScPrefix,
+			share: &file.Share{
+				Name: testShareName,
+			},
+			expectError: true,
+		},
+		{
+			name:   "valid share object",
+			prefix: testInstanceScPrefix,
+			share: &file.Share{
+				Name: testShareName,
+				Parent: &file.MultishareInstance{
+					Name:     testInstanceName,
+					Project:  testProject,
+					Location: testLocation,
+					Network: file.Network{
+						Ip: "1.1.1.1",
+					},
+				},
+				CapacityBytes: 1 * util.Tb,
+			},
+			expectedResp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
+					CapacityBytes: 1 * util.Tb,
+					VolumeContext: map[string]string{
+						attrIP: "1.1.1.1",
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, err := generateCSICreateVolumeResponse(tc.prefix, tc.share)
+			if tc.expectError && err == nil {
+				t.Error("expected error, got none")
+			}
+			if !tc.expectError && err != nil {
+				t.Error("unexpected error")
+			}
+			if !reflect.DeepEqual(resp, tc.expectedResp) {
+				t.Errorf("got %v, want %v", resp, tc.expectedResp)
+			}
+		})
+	}
+}
