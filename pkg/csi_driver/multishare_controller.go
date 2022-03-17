@@ -144,18 +144,57 @@ func (m *MultishareController) getShareAndGenerateCSIResponse(ctx context.Contex
 	return generateCSICreateVolumeResponse(instancePrefix, share)
 }
 
-func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	// Handle higher level csi params validation, try locks
-	// Initiate share workflow by calling Multishare OpsManager functions
-	// Prepare and return csi response
-	return nil, nil
+func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
+	if acquired := m.volumeLocks.TryAcquire(req.VolumeId); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, req.VolumeId)
+	}
+	defer m.volumeLocks.Release(req.VolumeId)
+
+	prefix, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	share, err := m.cloud.File.GetShare(ctx, &file.Share{
+		Parent: &file.MultishareInstance{
+			Project:  project,
+			Location: location,
+			Name:     instanceName,
+		},
+		Name: shareName,
+	})
+	if err != nil {
+		if !file.IsNotFoundErr(err) {
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	workflow, err := m.opsManager.checkAndStartShareDeleteWorkflow(ctx, prefix, share)
+	if err != nil {
+		return nil, err
+	}
+
+	if workflow == nil {
+		return &csi.DeleteVolumeResponse{}, nil
+	}
+
+	shareDeletetimeout, shareDeletePollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	err = m.cloud.File.WaitForOpWithOpts(ctx, workflow.opName, file.PollOpts{Timeout: shareDeletetimeout, Interval: shareDeletePollInterval})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "operation %q poll error: %v", workflow.opName, err)
+	}
+
+	return &csi.DeleteVolumeResponse{}, nil
 }
 
 func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	// Handle higher level csi params validation, try locks
 	// Initiate share workflow by calling Multishare OpsManager functions
 	// Prepare and return csi response
-	return nil, nil
+	return nil, status.Error(codes.Unimplemented, "ControllerExpandVolume unsupported for multi share instances")
 }
 
 func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {

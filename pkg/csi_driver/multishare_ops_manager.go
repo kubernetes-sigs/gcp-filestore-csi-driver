@@ -282,7 +282,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	// verify instance is ready.
 	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.share.Parent)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "Instance %q check error: %v", w.share.Parent.Name, err)
+		return nil, status.Errorf(codes.Internal, "Instance %q check error: %v", w.share.Parent.Name, err)
 	}
 	if !instanceReady {
 		return nil, status.Errorf(codes.Aborted, "Instance %q not ready", w.share.Parent.Name)
@@ -291,7 +291,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	// Verify share is ready.
 	shareReady, err := m.verifyNoRunningShareOp(ctx, instanceSCPrefix, w.share)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "Share %q check error: %v", w.share.Name, err)
+		return nil, status.Errorf(codes.Internal, "Share %q check error: %v", w.share.Name, err)
 	}
 	if !shareReady {
 		return nil, status.Errorf(codes.Aborted, "Share %q not ready", w.share.Name)
@@ -576,4 +576,31 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 		return true, share.Parent.CapacityBytes + (share.CapacityBytes - remainingBytes), nil
 	}
 	return false, 0, nil
+}
+
+func (m *MultishareOpsManager) startShareDeleteWorkflow(ctx context.Context, instanceScPrefix string, share *file.Share) (*Workflow, error) {
+	return m.startShareWorkflow(ctx, instanceScPrefix, &Workflow{
+		share:  share,
+		opType: util.ShareDelete,
+	})
+}
+
+func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Context, instanceScPrefix string, share *file.Share) (*Workflow, error) {
+	m.Lock()
+	defer m.Unlock()
+
+	// Check the status of the last known op (if any) for the given share in cache.
+	opInfo, opStatus, err := m.checkAndUpdateShareOp(ctx, instanceScPrefix, share)
+	if err != nil {
+		return nil, err
+	}
+	if opInfo != nil && opStatus == util.StatusRunning {
+		return nil, status.Errorf(codes.Aborted, "Share operation %q in progress", opInfo.Name)
+	}
+
+	if opInfo.Type == util.ShareDelete && opStatus == util.StatusSuccess {
+		return nil, nil
+	}
+
+	return m.startShareDeleteWorkflow(ctx, instanceScPrefix, share)
 }

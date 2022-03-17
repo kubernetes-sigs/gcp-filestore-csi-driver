@@ -42,6 +42,9 @@ var (
 		attrIP:     "1.1.1.1",
 		attrVolume: "test-volume",
 	}
+	testMultishareVolumeAttributes = map[string]string{
+		attrIP: "1.1.1.1",
+	}
 	testDevice = "1.1.1.1:/test-volume"
 
 	testWindowsValidPath = "C:\\test"
@@ -98,7 +101,7 @@ func TestNodePublishVolume(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "valid request not already mounted",
+			name: "volid request not already mounted",
 			req: &csi.NodePublishVolumeRequest{
 				VolumeId:          testVolumeID,
 				StagingTargetPath: stagingTargetPath,
@@ -110,7 +113,7 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind"}},
 		},
 		{
-			name:   "valid request already mounted",
+			name:   "volid request already mounted",
 			mounts: []mount.MountPoint{{Device: "/test-device", Path: testTargetPath}},
 			req: &csi.NodePublishVolumeRequest{
 				VolumeId:          testVolumeID,
@@ -189,6 +192,104 @@ func TestNodePublishVolume(t *testing.T) {
 			name: "invalid volume attribute",
 			req: &csi.NodePublishVolumeRequest{
 				VolumeId:         testVolumeID,
+				TargetPath:       testTargetPath,
+				VolumeCapability: testVolumeCapability,
+			},
+			expectErr: true,
+		},
+		// multishare
+		{
+			name: "multishare volid request not already mounted",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testMultishareVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testMultishareVolumeAttributes,
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind"}},
+		},
+		{
+			name:   "multishare volid request already mounted",
+			mounts: []mount.MountPoint{{Device: "/test-device", Path: testTargetPath}},
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testMultishareVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testMultishareVolumeAttributes,
+			},
+			expectedMount: &mount.MountPoint{Device: "/test-device", Path: testTargetPath},
+		},
+		{
+			name: "multishare volid request with user mount options",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testMultishareVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability: &csi.VolumeCapability{
+					AccessType: &csi.VolumeCapability_Mount{
+						Mount: &csi.VolumeCapability_MountVolume{
+							MountFlags: []string{"foo", "bar"},
+						},
+					},
+					AccessMode: &csi.VolumeCapability_AccessMode{
+						Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+					},
+				},
+				VolumeContext: testMultishareVolumeAttributes,
+			},
+			actions: []mount.FakeAction{{Action: mount.FakeActionMount}},
+
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "foo", "bar"}},
+		},
+		{
+			name: "multishare volid request read only",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testMultishareVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testMultishareVolumeAttributes,
+				Readonly:          true,
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "ro"}},
+		},
+		{
+			name: "multishare volid empty target path",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testMultishareVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testMultishareVolumeAttributes,
+			},
+			expectErr: true,
+		},
+		{
+			name: "multishare volid empty staging target path",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:         testMultishareVolumeID,
+				TargetPath:       testTargetPath,
+				VolumeCapability: testVolumeCapability,
+				VolumeContext:    testMultishareVolumeAttributes,
+			},
+			expectErr: true,
+		},
+		{
+			name: "multishare volid invalid volume capability",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:      testMultishareVolumeID,
+				TargetPath:    testTargetPath,
+				VolumeContext: testMultishareVolumeAttributes,
+			},
+			expectErr: true,
+		},
+		{
+			name: "multishare volid invalid volume attribute",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:         testMultishareVolumeID,
 				TargetPath:       testTargetPath,
 				VolumeCapability: testVolumeCapability,
 			},
@@ -336,11 +437,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
+	defer os.RemoveAll(base)
 	testTargetPath := filepath.Join(base, "mount")
 	if err = os.MkdirAll(testTargetPath, defaultPerm); err != nil {
 		t.Fatalf("failed to setup target path: %v", err)
 	}
-	defer os.RemoveAll(base)
 
 	cases := []struct {
 		name          string

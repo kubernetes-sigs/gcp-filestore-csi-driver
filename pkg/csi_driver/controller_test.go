@@ -31,15 +31,16 @@ import (
 )
 
 const (
-	testProject          = "test-project"
-	testLocation         = "us-central1-c"
-	testRegion           = "us-central1"
-	testIP               = "1.1.1.1"
-	testCSIVolume        = "test-csi"
-	testCSIVolume2       = "test-csi-2"
-	testVolumeID         = "modeInstance/us-central1-c/test-csi/vol1"
-	testReservedIPV4CIDR = "192.168.92.0/26"
-	testBytes            = 1 * util.Tb
+	testProject            = "test-project"
+	testLocation           = "us-central1-c"
+	testRegion             = "us-central1"
+	testIP                 = "1.1.1.1"
+	testCSIVolume          = "test-csi"
+	testCSIVolume2         = "test-csi-2"
+	testVolumeID           = "modeInstance/us-central1-c/test-csi/vol1"
+	testMultishareVolumeID = modeMultishare + "/us-central1-c/test-csi/share1"
+	testReservedIPV4CIDR   = "192.168.92.0/26"
+	testBytes              = 1 * util.Tb
 )
 
 func initTestController(t *testing.T) csi.ControllerServer {
