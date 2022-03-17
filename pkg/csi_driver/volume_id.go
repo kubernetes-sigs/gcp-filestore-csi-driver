@@ -88,3 +88,7 @@ func parseMultishareVolId(volId string) (string, string, string, string, string,
 	}
 	return prefix, project, location, instanceName, shareName, nil
 }
+
+func isMultishareVolId(volId string) bool {
+	return strings.Contains(volId, modeMultishare)
+}

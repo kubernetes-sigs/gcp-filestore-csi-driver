@@ -199,9 +199,22 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	}
 
 	// Validate volume attributes
+	var source string
 	attr := req.GetVolumeContext()
-	if err := validateVolumeAttributes(attr); err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+	if isMultishareVolId(volumeID) {
+		if err := validateMultishareVolumeAttributes(attr); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		_, _, _, _, shareName, err := parseMultishareVolId(volumeID)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		source = fmt.Sprintf("%s:/%s", attr[attrIP], shareName)
+	} else {
+		if err := validateVolumeAttributes(attr); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		source = fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
 	}
 
 	if acquired := s.volumeLocks.TryAcquire(volumeID); !acquired {
@@ -210,7 +223,6 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	defer s.volumeLocks.Release(volumeID)
 
 	// Mount source
-	source := fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
 	mounted, err := s.isDirMounted(stagingTargetPath)
 	needsCreateDir := false
 	if err != nil {
@@ -364,4 +376,16 @@ func (s *nodeServer) isDirMounted(targetPath string) (bool, error) {
 		return true, nil
 	}
 	return false, nil
+}
+
+func validateMultishareVolumeAttributes(attr map[string]string) error {
+	instanceip, ok := attr[attrIP]
+	if !ok {
+		return fmt.Errorf("volume attribute key %v not set", attrIP)
+	}
+	// Check for valid IPV4 address.
+	if net.ParseIP(instanceip) == nil {
+		return fmt.Errorf("invalid IP address %v in volume attributes", instanceip)
+	}
+	return nil
 }
