@@ -26,6 +26,7 @@ import (
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -39,6 +40,7 @@ type GCFSDriverConfig struct {
 	Cloud            *cloud.Cloud    // Cloud provider
 	MetadataService  metadataservice.Service
 	EnableMultishare bool
+	Metrics          *metrics.MetricsManager
 }
 
 type GCFSDriver struct {
@@ -62,7 +64,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 	if config.Version == "" {
 		return nil, fmt.Errorf("driver version missing")
 	}
-	if config.RunController == false && config.RunNode == false {
+	if !config.RunController && !config.RunNode {
 		return nil, fmt.Errorf("must run at least one controller or node service")
 	}
 
@@ -104,6 +106,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			cloud:            config.Cloud,
 			volumeLocks:      util.NewVolumeLocks(),
 			enableMultishare: config.EnableMultishare,
+			metricsManager:   config.Metrics,
 		})
 	}
 

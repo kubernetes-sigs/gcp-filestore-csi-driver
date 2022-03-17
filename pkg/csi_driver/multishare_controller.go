@@ -32,6 +32,9 @@ import (
 
 const (
 	modeMultishare = "modeMultishare"
+
+	methodCreateVolume = "CreateVolume"
+	methodDeleteVolume = "DeleteVolume"
 )
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
