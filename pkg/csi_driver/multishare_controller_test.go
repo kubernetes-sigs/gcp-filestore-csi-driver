@@ -305,8 +305,8 @@ func TestExtractInstanceLabels(t *testing.T) {
 			name:   "user labels",
 			driver: testDriverName,
 			params: map[string]string{
-				ParameterKeyLabels:                  "a=b,c=d",
-				util.ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             "a=b,c=d",
+				paramMultishareInstanceScLabel: "testsc",
 			},
 			expectedLabel: map[string]string{
 				tagKeyCreatedBy:                        testDrivernameLabelValue,
@@ -353,18 +353,18 @@ func TestExtractShareLabels(t *testing.T) {
 		{
 			name: "user labels ignored",
 			params: map[string]string{
-				ParameterKeyLabels:                  "a=b,c=d",
-				util.ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             "a=b,c=d",
+				paramMultishareInstanceScLabel: "testsc",
 			},
 		},
 		{
 			name: "driver labels",
 			params: map[string]string{
-				ParameterKeyLabels:                  "a=b,c=d",
-				util.ParamMultishareInstanceScLabel: "testsc",
-				ParameterKeyPVCName:                 testPVCName,
-				ParameterKeyPVCNamespace:            testPVCNamespace,
-				ParameterKeyPVName:                  testPVName,
+				ParameterKeyLabels:             "a=b,c=d",
+				paramMultishareInstanceScLabel: "testsc",
+				ParameterKeyPVCName:            testPVCName,
+				ParameterKeyPVCNamespace:       testPVCNamespace,
+				ParameterKeyPVName:             testPVName,
 			},
 			expectedLabel: map[string]string{
 				tagKeyCreatedForClaimName:      testPVCName,
@@ -425,9 +425,9 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 			instanceName: testInstanceName,
 			req: &csi.CreateVolumeRequest{
 				Parameters: map[string]string{
-					paramConnectMode:                    directPeering,
-					ParameterKeyLabels:                  "a=b,c=d",
-					util.ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramConnectMode:               directPeering,
+					ParameterKeyLabels:             "a=b,c=d",
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 			},
 			expectedInstance: &file.MultishareInstance{

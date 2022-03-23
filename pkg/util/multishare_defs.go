@@ -28,7 +28,6 @@ const (
 	MinShareSizeBytes                 int64 = 100 * Gb
 	MaxSharesPerInstance                    = 10
 	NewMultishareInstancePrefix             = "fs-"
-	ParamMultishareInstanceScLabel          = "instanceStorageClassLabel"
 	ParamMultishareInstanceScLabelKey       = "storage_gke_io_storage-class-id"
 )
 
