@@ -239,7 +239,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		// ignore IPRange flag as it will be handled at the same place as cidr
 		case paramReservedIPV4CIDR, paramReservedIPRange:
 			continue
-		case strings.ToLower(util.ParamMultishareInstanceScLabel):
+		case paramMultishareInstanceScLabel:
 			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
@@ -320,7 +320,7 @@ func extractInstanceLabels(parameters map[string]string, driverName string) (map
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
 			}
-		case strings.ToLower(util.ParamMultishareInstanceScLabel):
+		case paramMultishareInstanceScLabel:
 			err := util.CheckLabelValueRegex(v)
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
