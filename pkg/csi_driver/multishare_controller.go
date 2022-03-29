@@ -108,7 +108,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	var shareCreateWorkflow *Workflow
 	var newShare *file.Share
 	switch workflow.opType {
-	case util.InstanceCreate, util.InstanceExpand:
+	case util.InstanceCreate, util.InstanceUpdate:
 		newShare, err = generateNewShare(util.ConvertVolToShareName(req.Name), workflow.instance, req)
 		if err != nil {
 			return nil, err
@@ -201,7 +201,7 @@ func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
 	params := req.GetParameters()
 	v, ok := params[paramMultishareInstanceScLabel]
 	if ok {
-		return "", fmt.Errorf("Failed to find instance prefix key")
+		return "", fmt.Errorf("failed to find instance prefix key")
 	}
 
 	if v == "" {

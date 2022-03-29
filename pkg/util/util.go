@@ -219,25 +219,25 @@ func CheckLabelValueRegex(value string) error {
 	return nil
 }
 
-func ParseInstanceHandle(instanceHandle string) (string, string, string, error) {
+func ParseInstanceKey(instanceKey InstanceKey) (string, string, string, error) {
 	// Expected instance handle <project-name>/<location-name>/<instance-name>
-	splitStr := strings.Split(instanceHandle, "/")
+	splitStr := strings.Split(string(instanceKey), "/")
 	if len(splitStr) != InstanceHandleSplitLen {
-		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceHandle)
+		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceKey)
 	}
 
 	project := splitStr[0]
 	location := splitStr[1]
 	instanceName := splitStr[2]
 	if project == "" || location == "" || instanceName == "" {
-		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceHandle)
+		return "", "", "", fmt.Errorf("Unknown instance handle format %q", instanceKey)
 	}
 
 	return project, location, instanceName, nil
 }
 
 func ParseInstanceURI(instanceURI string) (string, string, string, error) {
-	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>/shares/<share-name>
+	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>
 	splitStr := strings.Split(instanceURI, "/")
 	if len(splitStr) != InstanceURISplitLen {
 		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
@@ -293,7 +293,7 @@ func GetMultishareOpsTimeoutConfig(opType OperationType) (time.Duration, time.Du
 	switch opType {
 	case InstanceCreate, InstanceDelete, ShareDelete:
 		return 1 * time.Hour, 5 * time.Second, nil
-	case InstanceExpand, InstanceShrink, ShareCreate, ShareExpand:
+	case InstanceUpdate, ShareCreate, ShareUpdate:
 		return 10 * time.Minute, 5 * time.Second, nil
 	default:
 		return 0, 0, fmt.Errorf("unknown op type %v", opType)

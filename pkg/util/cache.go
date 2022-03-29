@@ -25,9 +25,17 @@ type OpInfo struct {
 	Type OperationType
 }
 
+func (op *OpInfo) Equals(t *OpInfo) bool {
+	return t != nil && op.Name == t.Name && op.Type == t.Type
+}
+
+func DummyOp() OpInfo {
+	return OpInfo{Name: "", Type: UnknownOp}
+}
+
 type ShareCreateOpInfo struct {
-	InstanceHandle string // Placeholder instance of the form project/location/instanceName
-	OpName         string // share create op
+	InstanceHandle InstanceKey // Placeholder instance of the form project/location/instanceName
+	OpName         string      // share create op
 }
 
 type ShareCreateMapItem struct {
@@ -85,7 +93,7 @@ func (s InstanceMap) DeleteValue(key InstanceKey, opName string) error {
 		return fmt.Errorf("For key %q, cannot clear op %q, cache already contains op %q", key, opName, k.Name)
 	}
 
-	s[key] = OpInfo{Name: "", Type: UnknownOp}
+	s[key] = DummyOp()
 	return nil
 }
 
@@ -103,6 +111,18 @@ func (s InstanceMap) Items() []InstanceMapItem {
 		items = append(items, InstanceMapItem{Key: k, OpInfo: v})
 	}
 	return items
+}
+
+func (s InstanceMap) Equals(t InstanceMap) bool {
+	if len(s) != len(t) {
+		return false
+	}
+	for k, v := range s {
+		if !v.Equals(t.Get(k)) {
+			return false
+		}
+	}
+	return true
 }
 
 // Map of share name to last known share creation operation
@@ -147,6 +167,19 @@ func (s ShareCreateMap) Items() []ShareCreateMapItem {
 		items = append(items, ShareCreateMapItem{Key: k, OpInfo: v})
 	}
 	return items
+}
+
+func (s ShareCreateMap) Equals(t ShareCreateMap) bool {
+	if len(s) != len(t) || t == nil {
+		return false
+	}
+	for k, v := range s {
+		vt := t.Get(k)
+		if vt == nil || string(v.InstanceHandle) != string(vt.InstanceHandle) || v.OpName != vt.OpName {
+			return false
+		}
+	}
+	return true
 }
 
 // Map of share handle to share operation details
@@ -194,10 +227,34 @@ func (s ShareOpsMap) Items() []ShareOpsMapItem {
 	return items
 }
 
+func (s ShareOpsMap) Equals(t ShareOpsMap) bool {
+	if len(s) != len(t) || t == nil {
+		return false
+	}
+	for k, v := range s {
+		if !v.Equals(t.Get(k)) {
+			return false
+		}
+	}
+	return true
+}
+
 type StorageClassInfo struct {
 	InstanceMap    InstanceMap    // Map of Filestore instance handle to last known Instance ops.
 	ShareCreateMap ShareCreateMap // Map of share name to last known ongoing share creation operation on a given placeholder Filestore instance.
 	ShareOpsMap    ShareOpsMap    // Map of share handle (project/location/instance/share) to share operation details
+}
+
+func (s StorageClassInfo) Equals(t StorageClassInfo) bool {
+	return s.InstanceMap.Equals(t.InstanceMap) && s.ShareCreateMap.Equals(t.ShareCreateMap) && s.ShareOpsMap.Equals(t.ShareOpsMap)
+}
+
+func NewStorageClassInfo() StorageClassInfo {
+	return StorageClassInfo{
+		InstanceMap:    make(InstanceMap),
+		ShareCreateMap: make(ShareCreateMap),
+		ShareOpsMap:    make(ShareOpsMap),
+	}
 }
 
 // Map of storageclass name to StorageClassInfo
@@ -223,11 +280,7 @@ func (m *StorageClassInfoCache) GetInstanceMap(scInfoMapKey string) InstanceMap 
 func (m *StorageClassInfoCache) AddInstanceOp(scInfoMapKey string, instanceKey InstanceKey, opInfo OpInfo) {
 	_, ok := m.ScInfoMap[scInfoMapKey]
 	if !ok {
-		m.ScInfoMap[scInfoMapKey] = StorageClassInfo{
-			InstanceMap:    make(InstanceMap),
-			ShareCreateMap: make(ShareCreateMap),
-			ShareOpsMap:    make(ShareOpsMap),
-		}
+		m.ScInfoMap[scInfoMapKey] = NewStorageClassInfo()
 	}
 	m.ScInfoMap[scInfoMapKey].InstanceMap.Add(instanceKey, opInfo)
 }

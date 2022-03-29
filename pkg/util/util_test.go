@@ -318,7 +318,7 @@ func TestConvertVolToShareName(t *testing.T) {
 func TestParseInstanceHandle(t *testing.T) {
 	tests := []struct {
 		name           string
-		instanceHandle string
+		instanceHandle InstanceKey
 		expectErr      bool
 		project        string
 		location       string
@@ -343,7 +343,7 @@ func TestParseInstanceHandle(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p, l, n, err := ParseInstanceHandle(tc.instanceHandle)
+			p, l, n, err := ParseInstanceKey(tc.instanceHandle)
 			if !tc.expectErr && err != nil {
 				t.Error("unexpected error")
 			}
@@ -382,7 +382,7 @@ func TestParseInstanceURI(t *testing.T) {
 			expectErr:   true,
 		},
 		{
-			name:         "invalid uri",
+			name:         "valid uri",
 			instanceuri:  "projects/" + testProject + "/locations/" + testRegion + "/instances/" + testInstanceName,
 			project:      testProject,
 			location:     testRegion,

@@ -67,9 +67,9 @@ type MultishareInstance struct {
 }
 
 type ListFilter struct {
-	Project      string
-	Location     string
-	InstanceName string
+	Project  string
+	Location string
+	Name     string
 }
 
 type ServiceInstance struct {
@@ -124,6 +124,7 @@ type Service interface {
 	StartDeleteShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error)
 	StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error)
 	WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error
+	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	GetOp(ctx context.Context, op string) (*filev1beta1multishare.Operation, error)
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 }
@@ -672,7 +673,7 @@ func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, ob
 		return cloudInstanceToMultishareInstance(instance)
 	}
 
-	return nil, nil
+	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
 }
 
 func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
@@ -788,6 +789,25 @@ func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev
 	return opInfo, nil
 }
 
+func (manager *gcfsServiceManager) ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error) {
+	lCall := manager.multishareOperationsServices.List(locationURI(resource.Project, "-")).Context(ctx)
+	nextPageToken := "pageToken"
+	var activeOperations []*filev1beta1multishare.Operation
+
+	for nextPageToken != "" {
+		operations, err := lCall.Do()
+		if err != nil {
+			return nil, err
+		}
+
+		activeOperations = append(activeOperations, operations.Operations...)
+
+		nextPageToken = operations.NextPageToken
+		lCall.PageToken(nextPageToken)
+	}
+	return activeOperations, nil
+}
+
 func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
 	return &Share{}, nil
 }
@@ -808,11 +828,11 @@ func ParseShare(s *Share) (string, string, string, string, error) {
 	return s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name, nil
 }
 
-func GetMultishareInstanceHandle(m *MultishareInstance) (string, error) {
+func GetMultishareInstanceHandle(m *MultishareInstance) (util.InstanceKey, error) {
 	if m == nil {
 		return "", fmt.Errorf("empty multishare instance")
 	}
-	return fmt.Sprintf("%s/%s/%s", m.Project, m.Location, m.Name), nil
+	return util.CreateInstanceKey(m.Project, m.Location, m.Name), nil
 }
 
 func CompareMultishareInstances(a, b *MultishareInstance) error {

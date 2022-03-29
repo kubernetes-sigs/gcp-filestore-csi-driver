@@ -27,8 +27,12 @@ const (
 	MaxShareSizeBytes                 int64 = 1 * Tb
 	MinShareSizeBytes                 int64 = 100 * Gb
 	MaxSharesPerInstance                    = 10
-	NewMultishareInstancePrefix             = "fs-"
+	NewMultishareInstancePrefix             = "multishare-fs-"
 	ParamMultishareInstanceScLabelKey       = "storage_gke_io_storage-class-id"
+
+	VerbCreate = "create"
+	VerbUpdate = "update"
+	VerbDelete = "delete"
 )
 
 type OperationType int
@@ -36,11 +40,10 @@ type OperationType int
 const (
 	InstanceCreate OperationType = iota
 	InstanceDelete
-	InstanceExpand
-	InstanceShrink
+	InstanceUpdate
 	ShareCreate
 	ShareDelete
-	ShareExpand
+	ShareUpdate
 	UnknownOp
 )
 

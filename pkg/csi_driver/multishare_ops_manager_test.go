@@ -17,10 +17,12 @@ limitations under the License.
 package driver
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"golang.org/x/net/context"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -33,7 +35,7 @@ const (
 )
 
 var (
-	testInstanceHandle = fmt.Sprintf("%s/%s/%s", testProject, testRegion, testInstanceName)
+	testInstanceHandle = util.CreateInstanceKey(testProject, testRegion, testInstanceName)
 )
 
 type Item struct {
@@ -75,6 +77,303 @@ type Response struct {
 	instanceNeedsExpand  bool
 	targetBytes          int64
 	err                  error
+}
+
+func instanceTarget(project, location, instanceName string) string {
+	return fmt.Sprintf("projects/%s/locations/%s/instances/%s", project, location, instanceName)
+}
+
+func shareTarget(instanceTarget, share string) string {
+	return fmt.Sprintf("%s/shares/%s", instanceTarget, share)
+}
+
+func genOp(opName, target, verb string, done bool) filev1beta1multishare.Operation {
+	meta, _ := json.Marshal(filev1beta1multishare.OperationMetadata{
+		Verb:   verb,
+		Target: target,
+	})
+	return filev1beta1multishare.Operation{
+		Done:     done,
+		Name:     opName,
+		Metadata: meta,
+	}
+}
+
+func TestPopulateCache(t *testing.T) {
+	singleInstance := file.MultishareInstance{
+		Project:  testProject,
+		Location: testLocation,
+		Name:     testInstanceName,
+		Tier:     enterpriseTier,
+	}
+	createSingleInstanceMeta, _ := json.Marshal(filev1beta1multishare.OperationMetadata{
+		Verb:   util.VerbCreate,
+		Target: instanceTarget(testProject, testLocation, testInstanceName),
+	})
+	createSingleInstance := filev1beta1multishare.Operation{
+		Done:     false,
+		Name:     "createSingleInstance",
+		Metadata: createSingleInstanceMeta,
+	}
+	multishareInstance1 := file.MultishareInstance{
+		Project:  testProject,
+		Location: testLocation,
+		Name:     util.NewMultishareInstancePrefix + testInstanceName + "-1",
+		Tier:     enterpriseTier,
+		Labels: map[string]string{
+			util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+		},
+	}
+	targetMultishareInstance1 := instanceTarget(testProject, testLocation, multishareInstance1.Name)
+	createMultishareInstance1 := genOp("createMultishareInstance1", targetMultishareInstance1, util.VerbCreate, false)
+	deleteMultishareInstance1 := genOp("deleteMultishareInstance1", targetMultishareInstance1, util.VerbDelete, false)
+	deleteMultishareInstance1Done := genOp("deleteMultishareInstance1", targetMultishareInstance1, util.VerbDelete, true)
+	updateMultishareInstance1 := genOp("updateMultishareInstance1", targetMultishareInstance1, util.VerbUpdate, false)
+	updateMultishareInstance1Done := genOp("updateMultishareInstance1", targetMultishareInstance1, util.VerbUpdate, true)
+	instanceKey1 := util.CreateInstanceKey(multishareInstance1.Project, multishareInstance1.Location, multishareInstance1.Name)
+
+	shareName1 := testShareName + "-1"
+	targetShare1 := shareTarget(targetMultishareInstance1, shareName1)
+	shareKey1 := util.CreateShareKey(multishareInstance1.Project, multishareInstance1.Location, multishareInstance1.Name, shareName1)
+	createShare1 := genOp("createShare1", targetShare1, util.VerbCreate, false)
+	createShare1Done := genOp("createShare1", targetShare1, util.VerbCreate, true)
+	updateShare1 := genOp("updateShare1", targetShare1, util.VerbUpdate, false)
+	updateShare1Done := genOp("updateShare1", targetShare1, util.VerbUpdate, true)
+	deleteShare1 := genOp("deleteShare1", targetShare1, util.VerbDelete, false)
+
+	tests := []struct {
+		name               string
+		initInstances      []file.MultishareInstance
+		initOps            []*filev1beta1multishare.Operation
+		desiredScInfoMap   map[string]util.StorageClassInfo
+		desiredCreateStage util.InstanceMap
+	}{
+		{
+			name: "basic case, no Ops",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap:    make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: make(util.InstanceMap),
+		},
+		{
+			name:             "no existing instance, single and multishare instance create Ops",
+			initInstances:    []file.MultishareInstance{},
+			initOps:          []*filev1beta1multishare.Operation{&createSingleInstance, &createMultishareInstance1},
+			desiredScInfoMap: map[string]util.StorageClassInfo{},
+			desiredCreateStage: util.InstanceMap{
+				instanceKey1: util.OpInfo{Name: createMultishareInstance1.Name, Type: util.InstanceCreate},
+			},
+		},
+		{
+			name: "instanceDelete done on non-existing instance",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&deleteMultishareInstance1Done,
+			},
+			desiredScInfoMap:   map[string]util.StorageClassInfo{},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "instanceDelete done on existing instance",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&deleteMultishareInstance1Done,
+			},
+			desiredScInfoMap:   map[string]util.StorageClassInfo{testInstanceScPrefix: util.NewStorageClassInfo()},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "instanceDelete on existing instance",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&deleteMultishareInstance1,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: {Name: deleteMultishareInstance1.Name, Type: util.InstanceDelete},
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap:    make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "instanceUpdate on instance",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&updateMultishareInstance1,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: {Name: updateMultishareInstance1.Name, Type: util.InstanceUpdate},
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap:    make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "instanceUpdate done on instance",
+			initInstances: []file.MultishareInstance{
+				singleInstance,
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&updateMultishareInstance1Done,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap:    make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "shareCreate on instance",
+			initInstances: []file.MultishareInstance{
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&createShare1,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: util.ShareCreateMap{
+						shareName1: util.ShareCreateOpInfo{InstanceHandle: instanceKey1, OpName: createShare1.Name},
+					},
+					ShareOpsMap: make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "shareCreate done on instance",
+			initInstances: []file.MultishareInstance{
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&createShare1Done,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap:    make(util.ShareOpsMap),
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "shareUpdate on instance",
+			initInstances: []file.MultishareInstance{
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&updateShare1,
+				&createShare1Done,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap: util.ShareOpsMap{
+						shareKey1: util.OpInfo{Name: updateShare1.Name, Type: util.ShareUpdate},
+					},
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+		{
+			name: "shareUpdate done followed by shareDelete",
+			initInstances: []file.MultishareInstance{
+				multishareInstance1,
+			},
+			initOps: []*filev1beta1multishare.Operation{
+				&deleteShare1,
+				&updateShare1Done,
+			},
+			desiredScInfoMap: map[string]util.StorageClassInfo{
+				testInstanceScPrefix: {
+					InstanceMap: util.InstanceMap{
+						instanceKey1: util.DummyOp(),
+					},
+					ShareCreateMap: make(util.ShareCreateMap),
+					ShareOpsMap: util.ShareOpsMap{
+						shareKey1: util.OpInfo{Name: deleteShare1.Name, Type: util.ShareDelete},
+					},
+				},
+			},
+			desiredCreateStage: util.InstanceMap{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fbs := file.NewFakeServiceForMultishareWithState(test.initInstances, test.initOps)
+
+			cloudProvider, err := cloud.NewFakeCloudWithFiler(fbs, testProject, testLocation)
+			if err != nil {
+				t.Errorf("failed to initialize blocking GCFS service: %v", err)
+			}
+			manager := NewMultishareOpsManager(cloudProvider)
+
+			manager.populateCache()
+
+			actualScInfoMap := manager.cache.ScInfoMap
+			if len(test.desiredScInfoMap) != len(actualScInfoMap) {
+				t.Fatalf("Cache state not match, EXPECTED: %v ACTUAL:%v", test.desiredScInfoMap, actualScInfoMap)
+			}
+			for scKey, scInfo := range manager.cache.ScInfoMap {
+				desiredScInfo, ok := test.desiredScInfoMap[scKey]
+				if !ok {
+					t.Errorf("Cache state not match, EXPECTED: %v ACTUAL:%v", test.desiredScInfoMap, actualScInfoMap)
+				}
+				if !scInfo.Equals(desiredScInfo) {
+					t.Errorf("Cache state not match, EXPECTED: %v ACTUAL:%v", test.desiredScInfoMap, actualScInfoMap)
+				}
+			}
+			if !test.desiredCreateStage.Equals(*manager.createStaging) {
+				t.Errorf("Cache state not match, EXPECTED: %v ACTUAL:%v", test.desiredCreateStage, *manager.createStaging)
+			}
+		})
+	}
 }
 
 func TestCheckAndUpdateShareCreateOp(t *testing.T) {
@@ -218,11 +517,7 @@ func TestCheckAndUpdateShareCreateOp(t *testing.T) {
 			// Pre-populate the cache.
 			for _, v := range tc.initShareCreateOpMap {
 				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
+					manager.cache.ScInfoMap[v.scKey] = util.NewStorageClassInfo()
 				}
 				err := manager.cache.AddShareCreateOp(v.scKey, v.shareCreateKey, v.createOp)
 				if err != nil {
@@ -444,11 +739,7 @@ func TestCheckAndUpdateShareOp(t *testing.T) {
 			// Pre-populate the cache.
 			for _, v := range tc.initShareOpMap {
 				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
+					manager.cache.ScInfoMap[v.scKey] = util.NewStorageClassInfo()
 				}
 				err := manager.cache.AddShareOp(v.scKey, v.shareKey, v.op)
 				if err != nil {
@@ -924,11 +1215,7 @@ func TestVerifyNoRunningShareOp(t *testing.T) {
 			// Pre-populate the share create op map
 			for _, v := range tc.initShareCreateOpMap {
 				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
+					manager.cache.ScInfoMap[v.scKey] = util.NewStorageClassInfo()
 				}
 				manager.cache.AddShareCreateOp(v.scKey, v.shareCreateKey, v.createOp)
 			}
@@ -936,11 +1223,7 @@ func TestVerifyNoRunningShareOp(t *testing.T) {
 			// Pre-populate the share op map
 			for _, v := range tc.initShareOpMap {
 				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
+					manager.cache.ScInfoMap[v.scKey] = util.NewStorageClassInfo()
 				}
 				manager.cache.AddShareOp(v.scKey, v.shareKey, v.op)
 			}
@@ -1218,7 +1501,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"2"),
 					op: util.OpInfo{
 						Name: "op-2",
-						Type: util.InstanceExpand,
+						Type: util.InstanceUpdate,
 					},
 				},
 			},

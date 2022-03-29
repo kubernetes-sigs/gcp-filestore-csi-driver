@@ -78,7 +78,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -99,7 +99,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -121,7 +121,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -142,7 +142,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -164,7 +164,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -186,7 +186,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearValue: true,
@@ -225,7 +225,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -236,7 +236,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearValue: true,
@@ -259,7 +259,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					expectEmptyValue: true,
@@ -282,7 +282,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -293,7 +293,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearValue: true,
@@ -316,7 +316,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -338,7 +338,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -349,7 +349,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-3",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					expectError: true,
@@ -373,7 +373,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -395,7 +395,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -406,7 +406,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"3")),
 						op: OpInfo{
 							Name: "op-3",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearValue: true,
@@ -429,7 +429,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -458,7 +458,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -480,7 +480,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearKey: true,
@@ -519,7 +519,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -530,7 +530,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearKey: true,
@@ -553,7 +553,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					expectEmpty: true,
@@ -576,7 +576,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -587,7 +587,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearKey: true,
@@ -610,7 +610,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -632,7 +632,7 @@ func TestInstanceMap(t *testing.T) {
 					instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 					op: OpInfo{
 						Name: "op-2",
-						Type: InstanceExpand,
+						Type: InstanceUpdate,
 					},
 				},
 			},
@@ -643,7 +643,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"3")),
 						op: OpInfo{
 							Name: "op-3",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 					clearKey: true,
@@ -666,7 +666,7 @@ func TestInstanceMap(t *testing.T) {
 						instanceKey: InstanceKey(CreateInstanceKey(testProject, testLocation, testInstance+"2")),
 						op: OpInfo{
 							Name: "op-2",
-							Type: InstanceExpand,
+							Type: InstanceUpdate,
 						},
 					},
 				},
@@ -742,7 +742,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance, testShare+"1"),
 						op: OpInfo{
 							Name: "op-1",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -764,7 +764,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance, testShare+"1"),
 						op: OpInfo{
 							Name: "op-1",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -799,7 +799,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -821,7 +821,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -846,7 +846,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -891,7 +891,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -949,7 +949,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -982,7 +982,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1007,7 +1007,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1041,7 +1041,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1066,7 +1066,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1099,7 +1099,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1124,7 +1124,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1157,7 +1157,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 				},
@@ -1184,7 +1184,7 @@ func TestShareOpsMap(t *testing.T) {
 						shareKey: CreateShareKey(testProject, testLocation, testInstance+"2", testShare+"2"),
 						op: OpInfo{
 							Name: "op-2",
-							Type: ShareExpand,
+							Type: ShareUpdate,
 						},
 					},
 					skipInitSCKey: true,
@@ -1242,10 +1242,6 @@ func TestShareOpsMap(t *testing.T) {
 
 }
 
-func createInstanceHandle(project, location, instance string) string {
-	return fmt.Sprintf("%s/%s/%s", project, location, instance)
-}
-
 func TestShareCreateOpMap(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -1261,7 +1257,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance),
 							OpName:         "op-1",
 						},
 					},
@@ -1271,7 +1267,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance),
 							OpName:         "op-2",
 						},
 					},
@@ -1283,7 +1279,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance),
 							OpName:         "op-1",
 						},
 					},
@@ -1293,7 +1289,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance),
 							OpName:         "op-2",
 						},
 					},
@@ -1308,7 +1304,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1318,7 +1314,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1330,7 +1326,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1340,7 +1336,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1355,7 +1351,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1365,7 +1361,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1400,7 +1396,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1410,7 +1406,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1433,7 +1429,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1443,7 +1439,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1459,7 +1455,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1469,7 +1465,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1492,7 +1488,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1502,7 +1498,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1517,7 +1513,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1527,7 +1523,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1550,7 +1546,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1560,7 +1556,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1575,7 +1571,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1585,7 +1581,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1609,7 +1605,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1619,7 +1615,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},
@@ -1634,7 +1630,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-1",
 						shareCreateKey: testShare + "1",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"1"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"1"),
 							OpName:         "op-1",
 						},
 					},
@@ -1646,7 +1642,7 @@ func TestShareCreateOpMap(t *testing.T) {
 						scKey:          "sc-2",
 						shareCreateKey: testShare + "2",
 						createOp: ShareCreateOpInfo{
-							InstanceHandle: createInstanceHandle(testProject, testLocation, testInstance+"2"),
+							InstanceHandle: CreateInstanceKey(testProject, testLocation, testInstance+"2"),
 							OpName:         "op-2",
 						},
 					},

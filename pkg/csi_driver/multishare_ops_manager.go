@@ -18,17 +18,26 @@ package driver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
+)
+
+const (
+	hydrationRetry        = 5 * time.Minute
+	createStagingInterval = 91 * time.Second
 )
 
 // A workflow is defined as a sequence of steps to safely (by checking the storage class cache) initiate instance or share operations.
@@ -41,21 +50,230 @@ type Workflow struct {
 
 // MultishareOpsManager manages storage class cache, manages the lifecycle of all instance and share operations.
 type MultishareOpsManager struct {
-	sync.Mutex // Lock to perform thread safe operations on the cache.
-	cache      *util.StorageClassInfoCache
-	cloud      *cloud.Cloud
+	sync.Mutex    // Lock to perform thread safe operations on the cache.
+	cache         *util.StorageClassInfoCache
+	createStaging *util.InstanceMap
+	cloud         *cloud.Cloud
 }
 
 func NewMultishareOpsManager(cloud *cloud.Cloud) *MultishareOpsManager {
+	createStagingMap := make(util.InstanceMap)
 	return &MultishareOpsManager{
-		cache: util.NewStorageClassInfoCache(),
-		cloud: cloud,
+		cache:         util.NewStorageClassInfoCache(),
+		createStaging: &createStagingMap,
+		cloud:         cloud,
 	}
 }
 
 func (m *MultishareOpsManager) Run() {
-	// TODO: Start periodic cache hydration
+	err := m.populateCache()
+	errCounter := 0
+	for err != nil {
+		errCounter += 1
+		klog.Errorf("Error Encountered during cache hydration: %v", err)
+		if errCounter > 5 {
+			klog.Fatalf("Error building up cache during start-up")
+		}
+		time.Sleep(hydrationRetry)
+		err = m.populateCache()
+	}
+	// Start periodic createStaging check
+	createStagingTicker := time.NewTicker(createStagingInterval)
+	go func() {
+		for {
+			<-createStagingTicker.C
+			if m.allStagedCreationDone() {
+				return
+			}
+		}
+	}()
+
 	// TODO: Start periodic instance inspection for delete and shrink
+}
+
+func (m *MultishareOpsManager) allStagedCreationDone() bool {
+	m.Lock()
+	defer m.Unlock()
+
+	for _, instanceKey := range m.createStaging.Keys() {
+		project, location, instanceName, err := util.ParseInstanceKey(instanceKey)
+		if err != nil {
+			klog.Errorf(err.Error())
+			continue
+		}
+		fetched, err := m.fetchInstanceToCache(context.Background(), project, location, instanceName, instanceKey)
+		if err != nil {
+			klog.Errorf(err.Error())
+		}
+		if fetched {
+			m.createStaging.DeleteKey(instanceKey)
+		}
+	}
+
+	return len(*m.createStaging) == 0
+}
+
+func (m *MultishareOpsManager) populateCache() error {
+	// no need to lock here because cache.Ready will stay false and should prevent any other method from accessing cache.
+	ctx := context.Background()
+
+	instanceScLookup := make(map[string]string)
+
+	// list instance and fill in InstanceMap
+	instances, err := m.cloud.File.ListMultishareInstances(ctx, &file.ListFilter{Project: m.cloud.Project})
+	if err != nil {
+		//TODO: surface the error so that people doing kubectl describe pod can see what's wrong?
+		return status.Errorf(codes.Internal, "failed to list Filestore instances during startup: %v", err)
+	}
+
+	for _, instance := range instances {
+		if label, ok := instance.Labels[util.ParamMultishareInstanceScLabelKey]; ok {
+			m.cache.AddInstanceOp(label, util.CreateInstanceKey(instance.Project, instance.Location, instance.Name), util.DummyOp())
+			instanceScLookup[instance.Name] = label
+		}
+	}
+
+	// list Op and fill in InstanceMap, ShareCreateMap and ShareOpsMap
+	ops, err := m.cloud.File.ListOps(ctx, &file.ListFilter{Project: m.cloud.Project})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to list Operations during startup: %v", err)
+	}
+
+	for _, op := range ops {
+		var meta filev1beta1multishare.OperationMetadata
+		if op.Metadata == nil {
+			continue
+		}
+		if err := json.Unmarshal(op.Metadata, &meta); err != nil {
+			return status.Errorf(codes.Internal, "failed to unmarshal Operation's Metadata: %v", err)
+		}
+		splitStr := strings.Split(meta.Target, "/")
+		if len(splitStr) != util.ShareURISplitLen && len(splitStr) != util.InstanceURISplitLen {
+			return status.Errorf(codes.Internal, "unknown Operation target format %q", meta.Target)
+		}
+		isInstanceOp := len(splitStr) == util.InstanceURISplitLen
+
+		project := splitStr[1]
+		location := splitStr[3]
+		instanceName := splitStr[5]
+		scKey, scExist := instanceScLookup[instanceName]
+
+		opDone, err := m.cloud.File.IsOpDone(op)
+		if err != nil {
+			klog.Warning(err)
+			continue
+		}
+
+		if isInstanceOp {
+			if strings.HasPrefix(instanceName, util.NewMultishareInstancePrefix) {
+				opType := operationTypeFromMetadata(meta, true)
+				instanceKey := util.CreateInstanceKey(project, location, instanceName)
+
+				switch opType {
+				case util.InstanceCreate:
+					if opDone {
+						if !scExist {
+							_, err := m.fetchInstanceToCache(ctx, project, location, instanceName, instanceKey)
+							if err != nil {
+								return err
+							}
+						}
+					} else {
+						m.createStaging.Add(instanceKey, util.OpInfo{Name: op.Name, Type: util.InstanceCreate})
+					}
+				case util.InstanceDelete:
+					if opDone {
+						// if instance was in InstanceMap, remove it
+						if scExist {
+							m.cache.DeleteInstance(scKey, instanceKey)
+						}
+					} else {
+						// add Op to InstanceMap
+						m.cache.AddInstanceOp(scKey, instanceKey, util.OpInfo{Name: op.Name, Type: util.InstanceDelete})
+					}
+				case util.InstanceUpdate:
+					if !opDone {
+						// add Op to InstanceMap
+						m.cache.AddInstanceOp(scKey, instanceKey, util.OpInfo{Name: op.Name, Type: util.InstanceUpdate})
+					}
+				default:
+					klog.Warningf("encountered UnknownOp during cache hydration: %v", op)
+				}
+			}
+		} else {
+			shareName := splitStr[7]
+			opType := operationTypeFromMetadata(meta, false)
+			switch opType {
+			case util.ShareCreate:
+				if opDone {
+					m.cache.DeleteShareCreateOp(scKey, shareName, op.Name)
+				} else {
+					err := m.cache.AddShareCreateOp(scKey, shareName, util.ShareCreateOpInfo{
+						InstanceHandle: util.CreateInstanceKey(project, location, instanceName),
+						OpName:         op.Name})
+					if err != nil {
+						return status.Errorf(codes.Internal, "error occured at cache hydration while trying to add ShareCreateOp to cache: %v", err)
+					}
+				}
+			case util.ShareDelete, util.ShareUpdate:
+				shareKey := util.CreateShareKey(project, location, instanceName, shareName)
+				if opDone {
+					m.cache.DeleteShareOp(scKey, shareKey, op.Name)
+				} else {
+					m.cache.AddShareOp(scKey, shareKey, util.OpInfo{
+						Name: op.Name,
+						Type: opType,
+					})
+				}
+			default:
+				klog.Warningf("encountered UnknownOp during cache hydration: %v", op)
+			}
+		}
+	}
+	m.cache.Ready = true
+	return nil
+}
+
+func (m *MultishareOpsManager) fetchInstanceToCache(ctx context.Context, project, location, instanceName string, instanceKey util.InstanceKey) (bool, error) {
+	instance, err := m.cloud.File.GetMultishareInstance(ctx, &file.MultishareInstance{
+		Project:  project,
+		Location: location,
+		Name:     instanceName,
+	})
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			return false, nil
+		} else {
+			return false, status.Errorf(codes.Internal, "failed to GET for instance key %v, err:%v", instanceKey, err)
+		}
+	}
+	m.cache.AddInstanceOp(instance.Labels[util.ParamMultishareInstanceScLabelKey], instanceKey, util.DummyOp())
+	return true, nil
+}
+
+func operationTypeFromMetadata(meta filev1beta1multishare.OperationMetadata, isInstance bool) util.OperationType {
+	switch meta.Verb {
+	case util.VerbCreate:
+		if isInstance {
+			return util.InstanceCreate
+		} else {
+			return util.ShareCreate
+		}
+	case util.VerbUpdate:
+		if isInstance {
+			return util.InstanceUpdate
+		} else {
+			return util.ShareUpdate
+		}
+	case util.VerbDelete:
+		if isInstance {
+			return util.InstanceDelete
+		} else {
+			return util.ShareDelete
+		}
+	default:
+		return util.UnknownOp
+	}
 }
 
 // setupEligibleInstanceAndStartWorkflow returns a workflow object (to indicate an instance or share level workflow is started), or a share object (if existing share already found), or error.
@@ -124,7 +342,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 		if needExpand {
 			eligible[index].CapacityBytes = targetBytes
-			w, err := m.startInstanceWorkflow(ctx, instanceScPrefix, &Workflow{instance: eligible[index], opType: util.InstanceExpand})
+			w, err := m.startInstanceWorkflow(ctx, instanceScPrefix, &Workflow{instance: eligible[index], opType: util.InstanceUpdate})
 			return w, nil, err
 		}
 
@@ -246,7 +464,7 @@ func (m *MultishareOpsManager) startInstanceWorkflow(ctx context.Context, instan
 			return nil, status.Errorf(codes.Internal, err.Error())
 		}
 		w.opName = op.Name
-	case util.InstanceExpand:
+	case util.InstanceUpdate:
 		op, err := m.cloud.File.StartResizeMultishareInstanceOp(ctx, w.instance)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, err.Error())
@@ -320,7 +538,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 			OpName:         op.Name,
 		})
 		w.opName = op.Name
-	case util.ShareExpand:
+	case util.ShareUpdate:
 		// validate no entry in cache for the share
 		item := m.cache.GetShareOp(instanceSCPrefix, util.CreateShareKey(w.share.Parent.Project, w.share.Parent.Location, w.share.Parent.Name, w.share.Name))
 		if item != nil {
@@ -433,8 +651,8 @@ func (m *MultishareOpsManager) verifyNoRunningShareOpsForInstance(ctx context.Co
 	return true, nil
 }
 
-func (m *MultishareOpsManager) validateShareExists(ctx context.Context, instanceHandle, shareName string) (*file.Share, error) {
-	project, location, instanceName, err := util.ParseInstanceHandle(instanceHandle)
+func (m *MultishareOpsManager) validateShareExists(ctx context.Context, instanceHandle util.InstanceKey, shareName string) (*file.Share, error) {
+	project, location, instanceName, err := util.ParseInstanceKey(instanceHandle)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "failed to parse instance handle %v", instanceHandle)
 	}
@@ -451,12 +669,12 @@ func (m *MultishareOpsManager) validateShareExists(ctx context.Context, instance
 
 func (m *MultishareOpsManager) checkInstanceListForShare(ctx context.Context, instanceScPrefix string, targetShareName string) (*file.Share, error) {
 	for _, item := range m.cache.GetInstanceMap(instanceScPrefix).Items() {
-		project, location, instanceName, err := util.ParseInstanceHandle(string(item.Key))
+		project, location, instanceName, err := util.ParseInstanceKey(item.Key)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to parse instance key %q, err: %v", item.Key, err)
 		}
 
-		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, InstanceName: instanceName})
+		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, Name: instanceName})
 		// TODO: verify a list on a non existent instance would return not found error. or we need to check GET instance before listing shares.
 		if err != nil && !file.IsNotFoundErr(err) {
 			return nil, status.Errorf(codes.Internal, "failed to list shares for Instance %q, err: %v", item.Key, err)
@@ -485,7 +703,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	for _, item := range items {
 		instanceKey := item.Key
 		opInfo := item.OpInfo
-		project, location, instanceName, err := util.ParseInstanceHandle(string(instanceKey))
+		project, location, instanceName, err := util.ParseInstanceKey(instanceKey)
 		if err != nil {
 			klog.Warningf("Failed to parse instance key %v", instanceKey)
 			continue
@@ -516,7 +734,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 
 	var eligibleReadyInstances []*file.MultishareInstance
 	for _, instanceKey := range readyInstanceKeys {
-		project, location, instanceName, err := util.ParseInstanceHandle(string(instanceKey))
+		project, location, instanceName, err := util.ParseInstanceKey(instanceKey)
 		if err != nil {
 			klog.Warningf("Failed to parse instance key %v", instanceKey)
 			continue
@@ -537,7 +755,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 			continue
 		}
 
-		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, InstanceName: instanceName})
+		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, Name: instanceName})
 		// TODO: verify what is the behavior for 0 share instance? i.e. len(shares)=0, err = nil?
 		if err != nil {
 			klog.Warningf("failed to list shares for Instance %q, err: %v", instanceKey, err)
@@ -557,10 +775,10 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 		return false, 0, fmt.Errorf("empty share")
 	}
 	if share.Parent == nil {
-		return false, 0, fmt.Errorf("Parent missing from share %q", share.Name)
+		return false, 0, fmt.Errorf("parent missing from share %q", share.Name)
 	}
 
-	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: share.Parent.Project, Location: share.Parent.Location, InstanceName: share.Parent.Name})
+	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: share.Parent.Project, Location: share.Parent.Location, Name: share.Parent.Name})
 	if err != nil {
 		return false, 0, err
 	}
@@ -570,8 +788,7 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 		sumShareBytes = sumShareBytes + s.CapacityBytes
 	}
 	// TODO: Check if we need to align the increment to step size.
-	var remainingBytes int64
-	remainingBytes = share.Parent.CapacityBytes - sumShareBytes
+	var remainingBytes int64 = share.Parent.CapacityBytes - sumShareBytes
 	if remainingBytes < share.CapacityBytes {
 		return true, share.Parent.CapacityBytes + (share.CapacityBytes - remainingBytes), nil
 	}

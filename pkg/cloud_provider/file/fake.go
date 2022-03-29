@@ -42,6 +42,7 @@ type fakeServiceManager struct {
 	backups                   map[string]*BackupInfo
 	createdMultishareInstance map[string]*MultishareInstance
 	createdMultishares        map[string]*Share
+	existingOps               []*filev1beta1multishare.Operation
 }
 
 var _ Service = &fakeServiceManager{}
@@ -51,6 +52,21 @@ func NewFakeService() (Service, error) {
 		createdInstances: map[string]*ServiceInstance{},
 		backups:          map[string]*BackupInfo{},
 	}, nil
+}
+
+func NewFakeServiceForMultishareWithState(initMultiShareInstances []MultishareInstance, initOps []*filev1beta1multishare.Operation) Service {
+	service := &fakeServiceManager{
+		createdMultishareInstance: make(map[string]*MultishareInstance),
+		createdMultishares:        make(map[string]*Share),
+		existingOps:               make([]*filev1beta1multishare.Operation, 0),
+	}
+	for _, instance := range initMultiShareInstances {
+		service.createdMultishareInstance[instance.Name] = &instance
+	}
+
+	service.existingOps = append(service.existingOps, initOps...)
+
+	return service
 }
 
 func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
@@ -123,7 +139,7 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instance, ok := manager.createdInstances[obj.Name]
 	if !ok {
-		return nil, fmt.Errorf("Instance %v not found", obj.Name)
+		return nil, fmt.Errorf("instance %v not found", obj.Name)
 	}
 
 	instance.Volume.SizeBytes = obj.Volume.SizeBytes
@@ -140,7 +156,7 @@ func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
 	if backupInfo, ok := manager.backups[backupUri]; ok {
 		if backupInfo.SourceVolumeHandle != backupSource {
-			return nil, fmt.Errorf("Mismatch in source volume handle for existing snapshot")
+			return nil, fmt.Errorf("mismatch in source volume handle for existing snapshot")
 		}
 		return backupInfo.Backup, nil
 	}
@@ -256,7 +272,11 @@ func (manager *fakeServiceManager) GetMultishareInstance(ctx context.Context, ob
 }
 
 func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
-	return nil, nil
+	res := make([]*MultishareInstance, 0, len(manager.createdMultishareInstance))
+	for _, instance := range manager.createdMultishareInstance {
+		res = append(res, instance)
+	}
+	return res, nil
 }
 
 func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
@@ -375,8 +395,14 @@ func (manager *fakeServiceManager) GetOp(ctx context.Context, opName string) (*f
 	return op, nil
 }
 
-func (manager *fakeServiceManager) IsOpDone(*filev1beta1multishare.Operation) (bool, error) {
-	return true, nil
+func (manager *fakeServiceManager) IsOpDone(op *filev1beta1multishare.Operation) (bool, error) {
+	if op == nil {
+		return true, nil
+	}
+	if op.Error != nil {
+		return true, fmt.Errorf("operation %v failed (%v): %v", op.Name, op.Error.Code, op.Error.Message)
+	}
+	return op.Done, nil
 }
 
 func (manager *fakeServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
@@ -390,12 +416,16 @@ func (manager *fakeServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 func (manager *fakeServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
 	var s []*Share
 	for _, v := range manager.createdMultishares {
-		if v.Parent.Project == filter.Project && v.Parent.Location == filter.Location && v.Parent.Name == filter.InstanceName {
+		if v.Parent.Project == filter.Project && v.Parent.Location == filter.Location && v.Parent.Name == filter.Name {
 			s = append(s, v)
 		}
 	}
 
 	return s, nil
+}
+
+func (manager *fakeServiceManager) ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error) {
+	return manager.existingOps, nil
 }
 
 func NewFakeBlockingServiceForMultishare(unblocker chan chan Signal) (Service, error) {
