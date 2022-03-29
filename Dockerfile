@@ -15,7 +15,7 @@
 ARG BUILDPLATFORM
 
 # Build driver go binary
-FROM --platform=$BUILDPLATFORM golang:1.17.2 as builder
+FROM --platform=$BUILDPLATFORM golang:1.17.8 as builder
 
 ARG STAGINGVERSION
 ARG TARGETPLATFORM
@@ -25,7 +25,7 @@ ADD . .
 RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${STAGINGVERSION}
 
 # Install nfs packages
-FROM launcher.gcr.io/google/debian10 as deps
+FROM launcher.gcr.io/google/debian11 as deps
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
     mount \
