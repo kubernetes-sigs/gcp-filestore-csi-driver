@@ -1,3 +1,23 @@
+# v1.1.4 - Changelog since v1.1.3
+
+## Changes by Kind
+
+### Feature
+
+- Multishare create volume changes ([#229](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/229), [@saikat-royc](https://github.com/saikat-royc))
+- Import filestore multi-share supported go client ([#236](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/236), @saikat-royc)
+- Add instance prefix to the CSI volume Id for multishare ([#237](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/237), [@saikat-royc](https://github.com/saikat-royc))
+- Implement CSI Delete Volume and CSI Node stage for multishare ([#238](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/238), [@saikat-royc](https://github.com/saikat-royc))
+
+
+### Bug or Regression
+
+- Users will now see the InvalidArgument error code for the 404 googleapi errors caused by invalid arguments. ([#231](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/231), @amacaskill)
+- Change multishare instancelabel and convert sc name to lower case ([#235](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/235), [@leiyiz](https://github.com/leiyiz))
+- Fix inconsistency in definition of paramMultishareInstanceScLabel ([#240](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/240), [@leiyiz](https://github.com/leiyiz))
+- Update golang and debian for CVE fixes ([#242](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/242), [@saikat-royc](https://github.com/saikat-royc))
+
+
 # v1.1.3 - Changelog since v1.1.2
 
 ## Changes by Kind
