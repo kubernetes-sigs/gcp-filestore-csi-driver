@@ -19,6 +19,7 @@ package driver
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
@@ -27,6 +28,7 @@ import (
 	"google.golang.org/grpc/status"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -61,6 +63,7 @@ const (
 	paramReservedIPV4CIDR          = "reserved-ipv4-cidr"
 	paramReservedIPRange           = "reserved-ip-range"
 	paramConnectMode               = "connect-mode"
+	paramMultishare                = "multishare"
 	paramInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
 	paramMultishareInstanceScLabel = "instance-storageclass-label"
 
@@ -92,6 +95,7 @@ type controllerServerConfig struct {
 	volumeLocks          *util.VolumeLocks
 	enableMultishare     bool
 	multiShareController *MultishareController
+	metricsManager       *metrics.MetricsManager
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
@@ -104,6 +108,14 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 
 // CreateVolume creates a GCFS instance
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {
+		start := time.Now()
+		response, err := s.config.multiShareController.CreateVolume(ctx, req)
+		duration := time.Since(start)
+		s.config.metricsManager.RecordOperationMetrics(err, methodCreateVolume, modeMultishare, duration)
+		return response, err
+	}
+
 	glog.V(4).Infof("CreateVolume called with request %+v", req)
 	name := req.GetName()
 	if len(name) == 0 {
@@ -272,6 +284,14 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
 
+	if isMultishareVolId(volumeID) {
+		start := time.Now()
+		response, err := s.config.multiShareController.DeleteVolume(ctx, req)
+		duration := time.Since(start)
+		s.config.metricsManager.RecordOperationMetrics(err, methodDeleteVolume, modeMultishare, duration)
+		return response, err
+	}
+
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		// An invalid ID should be treated as doesn't exist
@@ -368,11 +388,11 @@ func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 	lSet := lCap > 0
 
 	if lSet && rSet && lCap < rCap {
-		return 0, fmt.Errorf("Limit bytes %v is less than required bytes %v", lCap, rCap)
+		return 0, fmt.Errorf("limit bytes %v is less than required bytes %v", lCap, rCap)
 	}
 
 	if lSet && lCap < minVolumeSize {
-		return 0, fmt.Errorf("Limit bytes %v is less than minimum instance size bytes %v", lCap, minVolumeSize)
+		return 0, fmt.Errorf("limit bytes %v is less than minimum instance size bytes %v", lCap, minVolumeSize)
 	}
 
 	if lSet {
@@ -507,7 +527,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if filer.State != "READY" {
-		return nil, fmt.Errorf("Volume %q is not yet ready, current state %q", volumeID, filer.State)
+		return nil, fmt.Errorf("lolume %q is not yet ready, current state %q", volumeID, filer.State)
 	}
 
 	if util.BytesToGb(reqBytes) <= util.BytesToGb(filer.Volume.SizeBytes) {
@@ -635,7 +655,7 @@ func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (
 
 	for k, v := range scLabels {
 		if _, ok := result[k]; ok {
-			return nil, fmt.Errorf("Storage Class labels cannot contain metadata label key %s", k)
+			return nil, fmt.Errorf("storage Class labels cannot contain metadata label key %s", k)
 		}
 
 		result[k] = v
