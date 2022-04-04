@@ -104,6 +104,22 @@ build-and-push-webhook-multi-arch: build-webhook-image-and-push-linux-arm64 buil
 	docker manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
 	docker manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
 
+# Used by hack/verify-docker-deps.sh, not used for building artifacts
+validate-container-linux-amd64: init-buildx
+	docker buildx build --platform=linux/amd64 \
+		-t validation_linux_amd64 \
+		--target validation-image \
+		--build-arg BUILDPLATFORM=linux \
+		--build-arg STAGINGVERSION=$(STAGINGVERSION) .
+
+# Used by hack/verify-docker-deps.sh, not used for building artifacts
+validate-container-linux-arm64: init-buildx
+	docker buildx build --platform=linux/arm64 \
+		-t validation_linux_arm64 \
+		--target validation-image \
+		--build-arg BUILDPLATFORM=linux \
+		--build-arg STAGINGVERSION=$(STAGINGVERSION) .
+
 # Build the docker image for the core CSI driver.
 build-image-and-push: init-buildx
 		{                                                                   \

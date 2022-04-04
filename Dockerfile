@@ -49,69 +49,155 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install
     mount \
     netbase \
     ca-certificates \
-    nfs-common
+    nfs-common \
+    bash
 
 # This is needed for rpcbind
 RUN mkdir /run/sendsigs.omit.d
 
+RUN cd /tmp && \
+    apt-get update && apt-get download \
+    #     ca-certificates && \
+    # apt-get download \ 
+        ca-certificates \
+        mount \
+        netbase \
+        rpcbind \
+        adduser \
+        passwd \
+        init \
+        gnupg \
+        keyutils \
+        nfs-common \
+        bash \
+        libevent-2.1-6 \
+        libsemanage1 \
+        libgssapi-krb5-2 \
+        libk5crypto3 && \
+    # We need status for vulnerability scanners: https://github.com/GoogleContainerTools/distroless/issues/863#issuecomment-984389747 
+    mkdir -p /dpkg/var/lib/dpkg/status.d/ && \
+    for deb in *.deb; do \
+            package_name=$(dpkg-deb -I ${deb} | awk '/^ Package: .*$/ {print $2}'); \ 
+            echo "Process: ${package_name}"; \
+            dpkg --ctrl-tarfile $deb | tar -Oxvf - ./control > /dpkg/var/lib/dpkg/status.d/${package_name}; \
+            dpkg --extract $deb /dpkg || exit 10; \
+    done 
+
 # Hold required packages to avoid breaking the installation of packages
 RUN apt-mark hold apt gnupg adduser passwd libsemanage1 libcap2 mount nfs-common init
-
-# Clean up unnecessary packages
-# This list is copied from
-# https://github.com/kubernetes/kubernetes/blob/master/build/debian-base/Dockerfile.build
-# and modified to keep nfs dependencies
-RUN echo "Yes, do as I say!" | apt-get purge \
-    # bash \
-    e2fslibs \
-    e2fsprogs \
-    # init \
-    # initscripts \
-    # libkmod2 \
-    # libmount1 \
-    # libsmartcols1 \
-    # libudev1 \
-    # libblkid1 \
-    libncursesw5 \
-    libss2 \
-    ncurses-base \
-    ncurses-bin \
-    # systemd \
-    # systemd-sysv \
-    tzdata
 
 # Cleanup cached and unnecessary files.
 RUN apt-get autoremove -y && \
     apt-get clean -y && \
-    tar -czf /usr/share/copyrights.tar.gz /usr/share/common-licenses /usr/share/doc/*/copyright && \
     rm -rf \
-        /usr/share/doc \
-        /usr/share/man \
-        /usr/share/info \
-        /usr/share/locale \
-        /var/lib/apt/lists/* \
-        /var/log/* \
-        /var/cache/debconf/* \
-        /usr/share/common-licenses* \
-        /usr/share/bash-completion \
+        /dpkg/usr/share/doc \
+        /dpkg/usr/share/man \
+        /dpkg/usr/share/info \
+        /dpkg/usr/share/locale \
+        /dpkg/var/lib/apt/lists/* \
+        /dpkg/var/log/* \
+        /dpkg/var/cache/debconf/* \
+        /dpkg/usr/share/common-licenses* \
+        /dpkg/usr/share/bash-completion \
         ~/.bashrc \
         ~/.profile \
         # /etc/systemd \
         # /lib/lsb \
-        /lib/udev \
-        /usr/lib/x86_64-linux-gnu/gconv/IBM* \
-        /usr/lib/x86_64-linux-gnu/gconv/EBC* && \
-    mkdir -p /usr/share/man/man1 /usr/share/man/man2 \
-        /usr/share/man/man3 /usr/share/man/man4 \
-        /usr/share/man/man5 /usr/share/man/man6 \
-        /usr/share/man/man7 /usr/share/man/man8
+        /dpkg/lib/udev \
+        /dpkg/usr/lib/x86_64-linux-gnu/gconv/IBM* \
+        /dpkg/usr/lib/x86_64-linux-gnu/gconv/EBC* && \
+    mkdir -p /dpkg/usr/share/man/man1 /dpkg/usr/share/man/man2 \
+        /dpkg/usr/share/man/man3 /dpkg/usr/share/man/man4 \
+        /dpkg/usr/share/man/man5 /dpkg/usr/share/man/man6 \
+        /dpkg/usr/share/man/man7 /dpkg/usr/share/man/man8
 
-# Copy driver into image
-FROM deps
+# Since we're leveraging apt to pull in dependencies, we use `gcr.io/distroless/base` because it includes glibc.
+FROM gcr.io/distroless/base-debian10 as distroless-base
+# The distroless amd64 image has a target triplet of x86_64
+FROM distroless-base AS distroless-amd64
+ENV LIB_DIR_PREFIX x86_64
+
+# The distroless arm64 image has a target triplet of aarch64
+FROM distroless-base AS distroless-arm64
+ENV LIB_DIR_PREFIX aarch64
+
+FROM distroless-$TARGETARCH as output-image
+
 ARG DRIVERBINARY=gcp-filestore-csi-driver
 COPY --from=builder /bin/${DRIVERBINARY} /${DRIVERBINARY}
+
+
+# Copy the libraries from the extractor stage into root
+COPY --from=deps /dpkg /
+
+# Copy necessary dependencies into distroless base.
+COPY --from=deps /sbin/start-stop-daemon /sbin/start-stop-daemon
+COPY --from=deps /etc/ca-certificates.conf /etc/ca-certificates.conf
+COPY --from=deps /bin/bash /bin/bash
+COPY --from=deps /bin/mkdir /bin/mkdir
+COPY --from=deps /bin/grep /bin/grep
+COPY --from=deps /sbin/blkid /sbin/blkid
+COPY --from=deps /sbin/blockdev /sbin/blockdev
+COPY --from=deps /sbin/fsck* /sbin/
+COPY --from=debian /sbin/mkfs* /sbin/
+
+# Old buster distro has /bin and /sbin packages duplicated to /usr/bin and /usr/sbin.
+COPY --from=deps /bin/* /usr/bin/
+COPY --from=deps /sbin/* /usr/sbin/
+
+COPY --from=deps /lib/${LIB_DIR_PREFIX}-linux-gnu/libblkid.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libkeyutils.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libc.so.6 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libcom_err.so.2 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libudev.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libmount.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libsmartcols.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libaudit.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libudev.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libpam.so.0 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libsystemd.so.0 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libtinfo.so.6 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libuuid.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libtirpc.so.3 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libz.so.1  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libdl.so.2  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libpthread.so.0 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libpcre.so.3 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libnfsidmap.so.0  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libwrap.so.0  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libcap.so.2  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libdevmapper.so.1.02.1  \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libcrypt.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libselinux.so.1  \
+                 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/libkrb5.so.3 \
+                 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/libkrb5support.so.0 \
+                 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/libacl.so.1 \
+                 # /usr/sbin/useradd 
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/liblzma.so.5 \
+                 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/liblz4.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libgcrypt.so.20 \
+                 # sbin/rpcbind
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libpam_misc.so.0 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libcap-ng.so.0 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libgpg-error.so.0 \
+                 # /usr/bin/gpasswd 
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libsepol.so.1 \
+                 /lib/${LIB_DIR_PREFIX}-linux-gnu/libbz2.so.1.0  \
+                 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/libattr.so.1 /usr/lib/${LIB_DIR_PREFIX}-linux-gnu/
+
+# Build stage used for validation of the output-image
+# See validate-container-linux-* targets in Makefile
+FROM output-image as validation-image
+
+COPY --from=debian /usr/bin/ldd /usr/bin/find /usr/bin/xargs /usr/bin/
+COPY --from=builder /go/src/sigs.k8s.io/gcp-filestore-csi-driver/hack/print-missing-deps.sh /print-missing-deps.sh
+SHELL ["/bin/bash", "-c"]
+RUN mkdir -p /run/sendsigs.omit.d
+RUN /print-missing-deps.sh
 RUN true
 COPY deploy/kubernetes/nfs_services_start.sh /nfs_services_start.sh
 
+# Final build stage, create the real Docker image with ENTRYPOINT
+FROM output-image
 
 ENTRYPOINT ["/gcp-filestore-csi-driver"]
