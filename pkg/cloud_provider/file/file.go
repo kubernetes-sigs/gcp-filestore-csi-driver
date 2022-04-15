@@ -162,7 +162,9 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 	}
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
-	fileMultishareService, err := filev1beta1multishare.NewService(ctx, createFilestoreEndpointUrlBasePath(endpoint), option.WithHTTPClient(client))
+	basepath := createFilestoreEndpointUrlBasePath(endpoint)
+	glog.Infof("Using endpoint %s for multshare", createFilestoreEndpointUrlBasePath(endpoint))
+	fileMultishareService, err := filev1beta1multishare.NewService(ctx, basepath, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}
