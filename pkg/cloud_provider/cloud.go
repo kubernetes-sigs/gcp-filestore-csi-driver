@@ -51,7 +51,7 @@ type ConfigGlobal struct {
 	Zone      string `gcfg:"zone"`
 }
 
-func NewCloud(ctx context.Context, version string, configPath string) (*Cloud, error) {
+func NewCloud(ctx context.Context, version string, configPath string, filestoreServiceEndpoint string) (*Cloud, error) {
 	configFile, err := maybeReadConfig(configPath)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func NewCloud(ctx context.Context, version string, configPath string) (*Cloud, e
 		return nil, err
 	}
 
-	file, err := file.NewGCFSService(version, client)
+	file, err := file.NewGCFSService(version, client, filestoreServiceEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize Filestore service: %v", err)
 	}
