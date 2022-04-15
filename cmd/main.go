@@ -58,9 +58,6 @@ func main() {
 	var meta metadata.Service
 	var mm *metrics.MetricsManager
 	if *runController {
-		if *enableMultishare {
-			klog.Fatalf("provisioning of multishare instances not supported")
-		}
 		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
 			mm = metrics.NewMetricsManager()
 			mm.InitializeHttpHandler(*httpEndpoint, *metricsPath)

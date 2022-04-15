@@ -702,7 +702,8 @@ func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, 
 
 func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, instance *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	targetinstance := &filev1beta1multishare.Instance{
-		Tier: instance.Tier,
+		MultiShareEnabled: true,
+		Tier:              instance.Tier,
 		Networks: []*filev1beta1multishare.NetworkConfig{
 			{
 				Network:         instance.Network.Name,
