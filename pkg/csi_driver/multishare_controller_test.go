@@ -17,6 +17,7 @@ limitations under the License.
 package driver
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -44,7 +45,7 @@ func initTestMultishareController(t *testing.T) *MultishareController {
 	if err != nil {
 		t.Fatalf("Failed to get cloud provider: %v", err)
 	}
-	return NewMultishareController(initTestDriver(t), fileService, cloudProvider, util.NewVolumeLocks())
+	return NewMultishareController(initTestDriver(t), fileService, cloudProvider, util.NewVolumeLocks(), "")
 }
 
 func TestPickRegion(t *testing.T) {
@@ -529,6 +530,52 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 			}
 			if !reflect.DeepEqual(resp, tc.expectedResp) {
 				t.Errorf("got %v, want %v", resp, tc.expectedResp)
+			}
+		})
+	}
+}
+
+func TestGenerateInstanceDescFromEcfsDesc(t *testing.T) {
+	tests := []struct {
+		name       string
+		inputdesc  string
+		outputdesc string
+	}{
+		{
+			name: "empty",
+		},
+		{
+			name:      "invalid key value pair, unknown key",
+			inputdesc: "k1=v1",
+		},
+		{
+			name:      "invalid key value pair, unknown key1",
+			inputdesc: "k1=v1,ecfs-version=test",
+		},
+		{
+			name:      "invalid key value pair, unknown key2",
+			inputdesc: "k1=v1,image-project-id=test",
+		},
+		{
+			name:      "invalid key value pair",
+			inputdesc: "k1=v1,image-project-id",
+		},
+		{
+			name:       "case1: valid key value pair",
+			inputdesc:  "ecfs-version=ems-filestore-scaleout-3-6-0-1-70bd79ed0a91,image-project-id=elastifile-ci",
+			outputdesc: fmt.Sprintf(ecfsDataPlaneVersionFormat, "elastifile-ci", "ems-filestore-scaleout-3-6-0-1-70bd79ed0a91"),
+		},
+		{
+			name:       "case2: valid key value pair",
+			inputdesc:  "image-project-id=elastifile-ci,ecfs-version=ems-filestore-scaleout-3-6-0-1-70bd79ed0a91",
+			outputdesc: fmt.Sprintf(ecfsDataPlaneVersionFormat, "elastifile-ci", "ems-filestore-scaleout-3-6-0-1-70bd79ed0a91"),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			op := generateInstanceDescFromEcfsDesc(tc.inputdesc)
+			if op != tc.outputdesc {
+				t.Errorf("got %s, want %s", op, tc.outputdesc)
 			}
 		})
 	}

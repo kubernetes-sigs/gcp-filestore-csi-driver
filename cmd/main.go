@@ -42,6 +42,7 @@ var (
 	metricsPath             = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
 	enableMultishare        = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
 	filestoreServiceEnpoint = flag.String("filestore-service-endpoint", "", "Endpoint for filestore service")
+	ecfsDescription         = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -93,6 +94,7 @@ func main() {
 		MetadataService:  meta,
 		EnableMultishare: *enableMultishare,
 		Metrics:          mm,
+		EcfsDescription:  *ecfsDescription,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

@@ -33,26 +33,29 @@ import (
 const (
 	modeMultishare = "modeMultishare"
 
-	methodCreateVolume = "CreateVolume"
-	methodDeleteVolume = "DeleteVolume"
+	methodCreateVolume         = "CreateVolume"
+	methodDeleteVolume         = "DeleteVolume"
+	ecfsDataPlaneVersionFormat = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
 )
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareController struct {
-	driver      *GCFSDriver
-	fileService file.Service
-	cloud       *cloud.Cloud
-	opsManager  *MultishareOpsManager
-	volumeLocks *util.VolumeLocks
+	driver          *GCFSDriver
+	fileService     file.Service
+	cloud           *cloud.Cloud
+	opsManager      *MultishareOpsManager
+	volumeLocks     *util.VolumeLocks
+	ecfsDescription string
 }
 
-func NewMultishareController(driver *GCFSDriver, fileService file.Service, cloud *cloud.Cloud, volumeLock *util.VolumeLocks) *MultishareController {
+func NewMultishareController(driver *GCFSDriver, fileService file.Service, cloud *cloud.Cloud, volumeLock *util.VolumeLocks, ecfsDescription string) *MultishareController {
 	return &MultishareController{
-		opsManager:  NewMultishareOpsManager(cloud),
-		driver:      driver,
-		fileService: fileService,
-		cloud:       cloud,
-		volumeLocks: volumeLock,
+		opsManager:      NewMultishareOpsManager(cloud),
+		driver:          driver,
+		fileService:     fileService,
+		cloud:           cloud,
+		volumeLocks:     volumeLock,
+		ecfsDescription: ecfsDescription,
 	}
 }
 
@@ -270,8 +273,9 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			Name:        network,
 			ConnectMode: connectMode,
 		},
-		KmsKeyName: kmsKeyName,
-		Labels:     labels,
+		KmsKeyName:  kmsKeyName,
+		Labels:      labels,
+		Description: generateInstanceDescFromEcfsDesc(m.ecfsDescription),
 	}, nil
 }
 
@@ -422,4 +426,43 @@ func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi
 func containsInstancePrefix(shareHandle string, project, location, instanceName string) bool {
 	targetInstance := fmt.Sprintf("%s/%s/%s", project, location, instanceName)
 	return strings.Contains(shareHandle, targetInstance)
+}
+
+func generateInstanceDescFromEcfsDesc(desc string) string {
+	if desc == "" {
+		return desc
+	}
+
+	parts := strings.Split(desc, ",")
+	descMap := make(map[string]string)
+	for _, part := range parts {
+		pair := strings.Split(part, "=")
+		if len(pair) != 2 {
+			continue
+		}
+		descMap[pair[0]] = pair[1]
+	}
+
+	const (
+		ecfsVersionKey    = "ecfs-version"
+		imageProjectIdKey = "image-project-id"
+	)
+	var (
+		ecfsVersion    string
+		imageProjectId string
+	)
+	for k, v := range descMap {
+		switch k {
+		case ecfsVersionKey:
+			ecfsVersion = v
+		case imageProjectIdKey:
+			imageProjectId = v
+		}
+	}
+
+	if ecfsVersion == "" || imageProjectId == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(ecfsDataPlaneVersionFormat, imageProjectId, ecfsVersion)
 }
