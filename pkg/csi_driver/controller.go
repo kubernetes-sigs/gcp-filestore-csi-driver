@@ -109,6 +109,9 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 // CreateVolume creates a GCFS instance
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {
+		if s.config.multiShareController == nil {
+			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
+		}
 		start := time.Now()
 		response, err := s.config.multiShareController.CreateVolume(ctx, req)
 		duration := time.Since(start)
@@ -285,6 +288,9 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	}
 
 	if isMultishareVolId(volumeID) {
+		if s.config.multiShareController == nil {
+			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
+		}
 		start := time.Now()
 		response, err := s.config.multiShareController.DeleteVolume(ctx, req)
 		duration := time.Since(start)
