@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/klog"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -464,5 +465,7 @@ func generateInstanceDescFromEcfsDesc(desc string) string {
 		return ""
 	}
 
-	return fmt.Sprintf(ecfsDataPlaneVersionFormat, imageProjectId, ecfsVersion)
+	d := fmt.Sprintf(ecfsDataPlaneVersionFormat, imageProjectId, ecfsVersion)
+	klog.V(4).Infof("generated description for multishare instance %s", d)
+	return d
 }
