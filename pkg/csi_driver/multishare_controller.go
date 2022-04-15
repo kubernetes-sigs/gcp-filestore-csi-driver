@@ -203,7 +203,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
 	params := req.GetParameters()
 	v, ok := params[paramMultishareInstanceScLabel]
-	if ok {
+	if !ok {
 		return "", fmt.Errorf("Failed to find instance prefix key")
 	}
 
@@ -244,7 +244,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			continue
 		case paramMultishareInstanceScLabel:
 			continue
-		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
+		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("invalid parameter %q", k))
