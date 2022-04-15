@@ -41,6 +41,7 @@ type GCFSDriverConfig struct {
 	MetadataService  metadataservice.Service
 	EnableMultishare bool
 	Metrics          *metrics.MetricsManager
+	EcfsDescription  string
 }
 
 type GCFSDriver struct {
@@ -107,6 +108,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			volumeLocks:      util.NewVolumeLocks(),
 			enableMultishare: config.EnableMultishare,
 			metricsManager:   config.Metrics,
+			ecfsDescription:  config.EcfsDescription,
 		})
 	}
 

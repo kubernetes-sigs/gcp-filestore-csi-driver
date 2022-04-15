@@ -64,6 +64,7 @@ type MultishareInstance struct {
 	Labels             map[string]string
 	State              string
 	KmsKeyName         string
+	Description        string
 }
 
 type ListFilter struct {
@@ -712,9 +713,10 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 				ConnectMode:     instance.Network.ConnectMode,
 			},
 		},
-		CapacityGb: util.BytesToGb(instance.CapacityBytes),
-		KmsKeyName: instance.KmsKeyName,
-		Labels:     instance.Labels,
+		CapacityGb:  util.BytesToGb(instance.CapacityBytes),
+		KmsKeyName:  instance.KmsKeyName,
+		Labels:      instance.Labels,
+		Description: instance.Description,
 	}
 
 	klog.V(4).Infof("Creating instance %q: project %q, location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v", instance.Name, instance.Project, instance.Location, targetinstance.Tier, targetinstance.CapacityGb, targetinstance.Networks[0].Network, targetinstance.Networks[0].ReservedIpRange, targetinstance.Networks[0].ConnectMode, targetinstance.KmsKeyName, targetinstance.Labels)
@@ -896,6 +898,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		CapacityBytes:      instance.CapacityGb * util.Gb,
 		MaxCapacityBytes:   instance.MaxCapacityGb * util.Gb,
 		CapacityStepSizeGb: instance.CapacityStepSizeGb,
+		Description:        instance.Description,
 	}, nil
 }
 

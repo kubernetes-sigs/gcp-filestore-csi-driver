@@ -96,12 +96,13 @@ type controllerServerConfig struct {
 	enableMultishare     bool
 	multiShareController *MultishareController
 	metricsManager       *metrics.MetricsManager
+	ecfsDescription      string
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
 	if config.enableMultishare {
-		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks)
+		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks, config.ecfsDescription)
 	}
 	return &controllerServer{config: config}
 }
