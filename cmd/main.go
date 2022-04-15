@@ -33,14 +33,15 @@ import (
 )
 
 var (
-	endpoint            = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
-	nodeID              = flag.String("nodeid", "", "node id")
-	runController       = flag.Bool("controller", false, "run controller service")
-	runNode             = flag.Bool("node", false, "run node service")
-	cloudConfigFilePath = flag.String("cloud-config", "", "Path to GCE cloud provider config")
-	httpEndpoint        = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
-	metricsPath         = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
-	enableMultishare    = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
+	endpoint                = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
+	nodeID                  = flag.String("nodeid", "", "node id")
+	runController           = flag.Bool("controller", false, "run controller service")
+	runNode                 = flag.Bool("node", false, "run node service")
+	cloudConfigFilePath     = flag.String("cloud-config", "", "Path to GCE cloud provider config")
+	httpEndpoint            = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsPath             = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+	enableMultishare        = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
+	filestoreServiceEnpoint = flag.String("filestore-service-endpoint", "", "Endpoint for filestore service")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -64,7 +65,7 @@ func main() {
 			mm.EmitGKEComponentVersion()
 		}
 
-		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath)
+		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *filestoreServiceEnpoint)
 	} else {
 		if *nodeID == "" {
 			klog.Fatalf("nodeid cannot be empty for node service")
