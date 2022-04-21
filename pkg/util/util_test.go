@@ -408,7 +408,7 @@ func TestParseInstanceURI(t *testing.T) {
 func TestParseShareHandle(t *testing.T) {
 	tests := []struct {
 		name         string
-		sharehandle  string
+		sharehandle  ShareKey
 		expectErr    bool
 		project      string
 		location     string
@@ -426,7 +426,7 @@ func TestParseShareHandle(t *testing.T) {
 		},
 		{
 			name:         "valid handle",
-			sharehandle:  testProject + "/" + testRegion + "/" + testInstanceName + "/" + testShareName,
+			sharehandle:  CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
 			project:      testProject,
 			location:     testRegion,
 			instancename: testInstanceName,
@@ -435,7 +435,7 @@ func TestParseShareHandle(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			p, l, n, s, err := ParseShareHandle(tc.sharehandle)
+			p, l, n, s, err := ParseShareKey(tc.sharehandle)
 			if !tc.expectErr && err != nil {
 				t.Error("unexpected error")
 			}

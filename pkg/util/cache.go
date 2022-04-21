@@ -39,13 +39,13 @@ type ShareCreateOpInfo struct {
 }
 
 type ShareCreateMapItem struct {
-	Key    string
-	OpInfo ShareCreateOpInfo
+	ShareName string
+	OpInfo    ShareCreateOpInfo
 }
 
 type ShareOpsMapItem struct {
-	Key    ShareKey
-	OpInfo OpInfo
+	ShareKey ShareKey
+	OpInfo   OpInfo
 }
 
 type InstanceMapItem struct {
@@ -164,7 +164,7 @@ func (s ShareCreateMap) Keys() []string {
 func (s ShareCreateMap) Items() []ShareCreateMapItem {
 	var items []ShareCreateMapItem
 	for k, v := range s {
-		items = append(items, ShareCreateMapItem{Key: k, OpInfo: v})
+		items = append(items, ShareCreateMapItem{ShareName: k, OpInfo: v})
 	}
 	return items
 }
@@ -222,7 +222,7 @@ func (s ShareOpsMap) Keys() []ShareKey {
 func (s ShareOpsMap) Items() []ShareOpsMapItem {
 	var items []ShareOpsMapItem
 	for k, v := range s {
-		items = append(items, ShareOpsMapItem{Key: k, OpInfo: v})
+		items = append(items, ShareOpsMapItem{ShareKey: k, OpInfo: v})
 	}
 	return items
 }

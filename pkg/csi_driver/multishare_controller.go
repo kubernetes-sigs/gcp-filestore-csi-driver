@@ -416,7 +416,7 @@ func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi
 	return resp, nil
 }
 
-func containsInstancePrefix(shareHandle string, project, location, instanceName string) bool {
+func containsInstancePrefix(shareHandle util.ShareKey, project, location, instanceName string) bool {
 	targetInstance := fmt.Sprintf("%s/%s/%s", project, location, instanceName)
-	return strings.Contains(shareHandle, targetInstance)
+	return strings.Contains(string(shareHandle), targetInstance)
 }

@@ -253,11 +253,11 @@ func ParseInstanceURI(instanceURI string) (string, string, string, error) {
 	return project, location, instanceName, nil
 }
 
-func ParseShareHandle(shareHandle string) (string, string, string, string, error) {
+func ParseShareKey(shareHandle ShareKey) (string, string, string, string, error) {
 	// Expected share handle <project-name>/<location-name>/<instance-name>/<share-name>
-	splitStr := strings.Split(shareHandle, "/")
+	splitStr := strings.Split(string(shareHandle), "/")
 	if len(splitStr) != ShareHandleSplitLen {
-		return "", "", "", "", fmt.Errorf("Unknown share handle format %q", shareHandle)
+		return "", "", "", "", fmt.Errorf("unknown share handle format %q", shareHandle)
 	}
 
 	project := splitStr[0]
@@ -265,7 +265,7 @@ func ParseShareHandle(shareHandle string) (string, string, string, string, error
 	instanceName := splitStr[2]
 	shareName := splitStr[3]
 	if project == "" || location == "" || instanceName == "" || shareName == "" {
-		return "", "", "", "", fmt.Errorf("Unknown share handle format %q", shareHandle)
+		return "", "", "", "", fmt.Errorf("unknown share handle format %q", shareHandle)
 	}
 
 	return project, location, instanceName, shareName, nil

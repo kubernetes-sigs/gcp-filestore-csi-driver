@@ -38,6 +38,7 @@ import (
 const (
 	hydrationRetry        = 5 * time.Minute
 	createStagingInterval = 91 * time.Second
+	deleteShrinkInterval  = 20 * time.Minute
 )
 
 // A workflow is defined as a sequence of steps to safely (by checking the storage class cache) initiate instance or share operations.
@@ -89,6 +90,125 @@ func (m *MultishareOpsManager) Run() {
 	}()
 
 	// TODO: Start periodic instance inspection for delete and shrink
+	shrinkDeleteTicker := time.NewTicker(deleteShrinkInterval)
+	go func() {
+		for {
+			<-shrinkDeleteTicker.C
+			m.minimizeInstancePool()
+		}
+	}()
+}
+
+func (m *MultishareOpsManager) minimizeInstancePool() {
+	m.Lock()
+	defer m.Unlock()
+
+	ctx := context.Background()
+
+	for scPrefix, scInfo := range m.cache.ScInfoMap {
+
+		// build share Op reverse lookup map
+		reverseLookup := make(map[util.InstanceKey]util.OpInfo)
+		for _, item := range scInfo.ShareCreateMap.Items() {
+			op, err := m.cloud.File.GetOp(ctx, item.OpInfo.OpName)
+			if err != nil && !file.IsNotFoundErr(err) {
+				klog.Errorf("Failed to get operation %q", item.OpInfo.OpName)
+				continue
+			}
+
+			if done, _ := m.cloud.File.IsOpDone(op); done {
+				m.cache.DeleteShareCreateOp(scPrefix, item.ShareName, item.OpInfo.OpName)
+			} else {
+				reverseLookup[item.OpInfo.InstanceHandle] = util.OpInfo{Name: item.OpInfo.OpName, Type: util.ShareCreate}
+			}
+		}
+		for _, item := range scInfo.ShareOpsMap.Items() {
+			op, err := m.cloud.File.GetOp(ctx, item.OpInfo.Name)
+			if err != nil && !file.IsNotFoundErr(err) {
+				klog.Errorf("Failed to get operation %q", item.OpInfo.Name)
+				continue
+			}
+
+			if done, _ := m.cloud.File.IsOpDone(op); done {
+				m.cache.DeleteShareOp(scPrefix, item.ShareKey, item.OpInfo.Name)
+			} else {
+				project, location, instanceName, _, err := util.ParseShareKey(item.ShareKey)
+				if err != nil {
+					klog.Errorf("ShareKey parsing failed: %v", err)
+					continue
+				}
+				reverseLookup[util.CreateInstanceKey(project, location, instanceName)] = item.OpInfo
+			}
+		}
+
+		// iterate over instances
+		for _, mapItem := range scInfo.InstanceMap.Items() {
+			instanceKey := mapItem.Key
+			opInfo := mapItem.OpInfo
+
+			// if there's instance Op ongoing, remove it if failed and check next instance
+			if opInfo.Name != "" {
+				op, err := m.cloud.File.GetOp(ctx, opInfo.Name)
+				if err != nil && !file.IsNotFoundErr(err) {
+					klog.Errorf("Failed to get operation %q", opInfo.Name)
+					continue
+				}
+				if _, err := m.cloud.File.IsOpDone(op); err != nil {
+					m.cache.DeleteInstanceOp(scPrefix, instanceKey, opInfo.Name)
+				}
+				continue
+			}
+
+			// if there's Share Op ongoing, check next instance
+			if _, ok := reverseLookup[instanceKey]; !ok {
+				continue
+			}
+
+			// if there's no share on instance, delete the instance
+			project, location, instanceName, _ := util.ParseInstanceKey(instanceKey)
+			shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, Name: instanceName})
+			// TODO: verify a list on a non existent instance would return not found error. or we need to check GET instance before listing shares.
+			if err != nil && !file.IsNotFoundErr(err) {
+				klog.Error(status.Errorf(codes.Internal, "failed to list shares for Instance %v, err: %v", instanceKey, err))
+			}
+			instance := &file.MultishareInstance{Project: project, Location: location, Name: instanceName}
+			if len(shares) == 0 {
+				op, err := m.cloud.File.StartDeleteMultishareInstanceOp(ctx, instance)
+				if err != nil {
+					klog.Errorf("Failed to delete multishare instance %v: %v", instanceKey, err)
+					continue
+				}
+				m.cache.AddInstanceOp(scPrefix, instanceKey, util.OpInfo{Name: op.Name, Type: util.InstanceDelete})
+				continue
+			}
+
+			// if there's some share on instance, instance size > total share size, shrink the instance
+			instance, err = m.cloud.File.GetMultishareInstance(ctx, instance)
+			if err != nil {
+				if file.IsNotFoundErr(err) {
+					klog.Errorf("Instance %v not found despite having shares on it", instanceKey)
+				} else {
+					klog.Errorf("Failed to GET for instance key %v: %v", instanceKey, err)
+				}
+				continue
+			}
+			var totalShareCap int64
+			for _, share := range shares {
+				totalShareCap += share.CapacityBytes
+			}
+			if totalShareCap < instance.CapacityBytes && instance.CapacityBytes > util.MinMultishareInstanceSizeBytes {
+				instance.CapacityBytes = util.Max(totalShareCap, util.MinMultishareInstanceSizeBytes)
+				op, err := m.cloud.File.StartResizeMultishareInstanceOp(ctx, instance)
+				if err != nil {
+					klog.Errorf("Failed to resize multishare instance %v: %v", instanceKey, err)
+					continue
+				}
+				m.cache.AddInstanceOp(scPrefix, instanceKey, util.OpInfo{Name: op.Name, Type: util.InstanceUpdate})
+				continue
+			}
+		}
+	}
+
 }
 
 func (m *MultishareOpsManager) allStagedCreationDone() bool {
@@ -440,7 +560,7 @@ func (m *MultishareOpsManager) startInstanceWorkflow(ctx context.Context, instan
 		return nil, status.Errorf(codes.Internal, "instance not found in workflow object")
 	}
 
-	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.instance)
+	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.instance, true)
 	if err != nil {
 		return nil, status.Errorf(codes.Aborted, "Instance %q check error: %v", w.instance.Name, err)
 	}
@@ -498,7 +618,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	}
 
 	// verify instance is ready.
-	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.share.Parent)
+	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.share.Parent, true)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Instance %q check error: %v", w.share.Parent.Name, err)
 	}
@@ -572,7 +692,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	return w, nil
 }
 
-func (m *MultishareOpsManager) verifyNoRunningInstanceOps(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance) (bool, error) {
+func (m *MultishareOpsManager) verifyNoRunningInstanceOps(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance, cleanup bool) (bool, error) {
 	opInfo := m.cache.GetInstanceOp(instanceSCPrefix, util.CreateInstanceKey(instance.Project, instance.Location, instance.Name))
 	if opInfo == nil {
 		return true, nil
@@ -588,7 +708,7 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOps(ctx context.Context, i
 
 	// This method returns error if op completed with error. Instance is still considered ready since op completed.
 	done, _ := m.cloud.File.IsOpDone(op)
-	if done {
+	if done && cleanup {
 		m.cache.DeleteInstanceOp(instanceSCPrefix, util.CreateInstanceKey(instance.Project, instance.Location, instance.Name), opInfo.Name)
 	}
 	return done, nil
@@ -619,7 +739,7 @@ func (m *MultishareOpsManager) verifyNoRunningShareOpsForInstance(ctx context.Co
 		if item.OpInfo.InstanceHandle != targetInstanceHandle {
 			continue
 		}
-		shareCreateOpInfo, shareCreateOpStatus, err := m.checkAndUpdateShareCreateOp(ctx, instanceScPrefix, item.Key)
+		shareCreateOpInfo, shareCreateOpStatus, err := m.checkAndUpdateShareCreateOp(ctx, instanceScPrefix, item.ShareName)
 		if err != nil {
 			return false, err
 		}
@@ -629,12 +749,11 @@ func (m *MultishareOpsManager) verifyNoRunningShareOpsForInstance(ctx context.Co
 	}
 
 	for _, item := range m.cache.GetShareOpsMap(instanceScPrefix).Items() {
-		shareHandle := item.Key
-		if !containsInstancePrefix(string(shareHandle), instance.Project, instance.Location, instance.Name) {
+		if !containsInstancePrefix(item.ShareKey, instance.Project, instance.Location, instance.Name) {
 			continue
 		}
 
-		_, _, _, shareName, err := util.ParseShareHandle(string(item.Key))
+		_, _, _, shareName, err := util.ParseShareKey(item.ShareKey)
 		if err != nil {
 			return false, err
 		}
@@ -718,7 +837,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 			Project:  project,
 			Location: location,
 			Name:     instanceName,
-		})
+		}, false)
 		if err != nil {
 			klog.Warningf("Failed to check instance ready for instance key %v, err:%v", instanceKey, err)
 		}

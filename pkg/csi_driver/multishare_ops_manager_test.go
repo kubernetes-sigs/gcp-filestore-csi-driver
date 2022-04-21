@@ -813,6 +813,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 		scKey                      string
 		instanceKey                util.InstanceKey
 		instance                   *file.MultishareInstance
+		cleanup                    bool
 		initInstanceOpMap          []Item
 		signalGetOp                bool
 		signalIsOpDone             bool
@@ -832,6 +833,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup:                   true,
 			expectedVerificationStaus: true,
 		},
 		{
@@ -843,6 +845,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup: true,
 			initInstanceOpMap: []Item{
 				{
 					scKey:       testInstanceScPrefix,
@@ -854,7 +857,6 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 			emptyOpExpected:            true,
 			expectedVerificationStaus:  true,
 		},
-
 		{
 			name:        "tc3 - get instance op returns error, status not verified",
 			scKey:       testInstanceScPrefix,
@@ -864,6 +866,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup: true,
 			initInstanceOpMap: []Item{
 				{
 					scKey:       testInstanceScPrefix,
@@ -890,6 +893,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup: true,
 			initInstanceOpMap: []Item{
 				{
 					scKey:       testInstanceScPrefix,
@@ -917,6 +921,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup: true,
 			initInstanceOpMap: []Item{
 				{
 					scKey:       testInstanceScPrefix,
@@ -944,6 +949,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				Location: testRegion,
 				Name:     testInstanceName,
 			},
+			cleanup: true,
 			initInstanceOpMap: []Item{
 				{
 					scKey:       testInstanceScPrefix,
@@ -968,10 +974,10 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
 			manager := NewMultishareOpsManager(cloudProvider)
 
-			runRequest := func(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance) <-chan Response {
+			runRequest := func(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance, cleanup bool) <-chan Response {
 				responseChannel := make(chan Response)
 				go func() {
-					status, err := manager.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, instance)
+					status, err := manager.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, instance, cleanup)
 					responseChannel <- Response{
 						verified: status,
 						err:      err,
@@ -985,7 +991,7 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 				manager.cache.AddInstanceOp(v.scKey, v.instanceKey, v.op)
 			}
 
-			respChannel := runRequest(context.Background(), tc.scKey, tc.instance)
+			respChannel := runRequest(context.Background(), tc.scKey, tc.instance, tc.cleanup)
 
 			// Inject mock response
 			if tc.signalGetOp {
