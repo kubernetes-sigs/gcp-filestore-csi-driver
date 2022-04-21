@@ -177,8 +177,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	// Check if the instance already exists
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
-	if err != nil && !file.IsNotFoundErr(err) {
-		return nil, status.Error(codes.Internal, err.Error())
+	if err != nil {
+		if file.IsUserError(err) {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if !file.IsNotFoundErr(err) {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
 	}
 
 	if filer != nil {
@@ -239,6 +244,8 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			glog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr)
 			if file.IsUserError(createErr) {
 				return nil, status.Error(codes.InvalidArgument, createErr.Error())
+			} else if file.IsTooManyRequestError(createErr) {
+				return nil, status.Error(codes.ResourceExhausted, createErr.Error())
 			} else {
 				return nil, status.Error(codes.Internal, createErr.Error())
 			}
@@ -743,7 +750,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		glog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
-		if file.IsUserError(err) {
+		if file.IsNotFoundErr(err) {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		} else {
 			return nil, status.Error(codes.Internal, err.Error())

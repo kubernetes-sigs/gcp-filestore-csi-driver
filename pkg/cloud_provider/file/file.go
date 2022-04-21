@@ -29,7 +29,6 @@ import (
 	"github.com/golang/glog"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
-	"google.golang.org/genproto/googleapis/rpc/code"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -215,17 +214,20 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
+		glog.Errorf("CreateInstance operation failed for instance %s: %v", obj.Name, err)
+		return nil, err
 	}
 
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		return nil, err
 	}
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+		glog.Errorf("failed to get instance after creation: %v", err)
+		return nil, err
 	}
 	return instance, nil
 }
@@ -266,17 +268,20 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
+		glog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
+		return nil, err
 	}
 
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		return nil, err
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+		glog.Errorf("failed to get instance after creation: %v", err)
+		return nil, err
 	}
 	return serviceInstance, nil
 }
@@ -477,7 +482,8 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	glog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupUri)
 	opbackup, err := manager.backupService.Create(locationURI(obj.Project, region), backupobj).BackupId(backupName).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("Create Backup operation failed: %v", err)
+		glog.Errorf("Create Backup operation failed: %v", err)
+		return nil, err
 	}
 
 	glog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
@@ -586,21 +592,26 @@ func IsNotFoundErr(err error) bool {
 	return false
 }
 
-// This function returns true if the error is a googleapi error caused by users, such as
-// Error 429: Quota limit exceeded, Error 403: Permission Denied, Error 400: Bad Request,
-// Error 404: Not found.
+// IsUserError returns true if the error is a googleapi.Error with
+// Error 403: Permission Denied, Error 400: Bad Request
 func IsUserError(err error) bool {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
-		return false
+	userErrors := map[int]bool{
+		http.StatusForbidden:  true,
+		http.StatusBadRequest: true,
 	}
-	userErrors := map[code.Code]bool{
-		code.Code_RESOURCE_EXHAUSTED: true,
-		code.Code_PERMISSION_DENIED:  true,
-		code.Code_INVALID_ARGUMENT:   true,
-		code.Code_NOT_FOUND:          true,
+	if apiErr, ok := err.(*googleapi.Error); ok && userErrors[apiErr.Code] {
+		return true
 	}
-	return userErrors[code.Code(apiErr.Code)]
+	return false
+}
+
+// IsTooManyRequestError returns true if the error is a googleapi.Error with
+// Error 429: Status Too Many Requests.
+func IsTooManyRequestError(err error) bool {
+	if apierr, ok := err.(*googleapi.Error); ok && apierr.Code == http.StatusTooManyRequests {
+		return true
+	}
+	return false
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
