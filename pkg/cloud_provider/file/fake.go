@@ -398,6 +398,11 @@ func (manager *fakeServiceManager) ListShares(ctx context.Context, filter *ListF
 	return s, nil
 }
 
+func (manager *fakeServiceManager) ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error) {
+	// TODO
+	return nil, nil
+}
+
 func NewFakeBlockingServiceForMultishare(unblocker chan chan Signal) (Service, error) {
 	return &fakeBlockingServiceManager{
 		fakeServiceManager: &fakeServiceManager{

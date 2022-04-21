@@ -126,6 +126,7 @@ type Service interface {
 	WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error
 	GetOp(ctx context.Context, op string) (*filev1beta1multishare.Operation, error)
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
+	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 }
 
 type gcfsServiceManager struct {
@@ -805,11 +806,60 @@ func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev
 }
 
 func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
-	return &Share{}, nil
+	sobj, err := manager.multishareInstancesSharesService.Get(instanceURI(obj.Parent.Project, obj.Parent.Location, obj.Parent.Name)).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+	project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
+	if err != nil {
+		return nil, err
+	}
+	return &Share{
+		Name: shareName,
+		Parent: &MultishareInstance{
+			Name:     instanceName,
+			Project:  project,
+			Location: location,
+		},
+		MountPointName: sobj.MountName,
+		CapacityBytes:  sobj.CapacityGb * util.Gb,
+	}, nil
 }
 
 func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
-	return nil, nil
+	lCall := manager.multishareInstancesSharesService.List(instanceURI(filter.Project, filter.Location, filter.InstanceName)).Context(ctx)
+	nextPageToken := "pageToken"
+	var shares []*Share
+
+	for nextPageToken != "" {
+		resp, err := lCall.Do()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, sobj := range resp.Shares {
+			project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
+			if err != nil {
+				klog.Errorf("Failed to parse share url :%s", sobj.Name)
+				continue
+			}
+
+			s := &Share{
+				Name: shareName,
+				Parent: &MultishareInstance{
+					Name:     instanceName,
+					Project:  project,
+					Location: location,
+				},
+				MountPointName: sobj.MountName,
+				CapacityBytes:  sobj.CapacityGb * util.Gb,
+			}
+			shares = append(shares, s)
+		}
+		nextPageToken = resp.NextPageToken
+		lCall.PageToken(nextPageToken)
+	}
+	return shares, nil
 }
 
 func ParseShare(s *Share) (string, string, string, string, error) {
@@ -921,4 +971,23 @@ func shareURI(project, location, instanceName, shareName string) string {
 
 func createFilestoreEndpointUrlBasePath(endpoint string) string {
 	return "https://" + endpoint + "/"
+}
+
+func (manager *gcfsServiceManager) ListOps(ctx context.Context, filter *ListFilter) ([]*filev1beta1multishare.Operation, error) {
+	lCall := manager.multishareOperationsServices.List(locationURI(filter.Project, filter.Location)).Context(ctx)
+	nextPageToken := "pageToken"
+	var activeOperations []*filev1beta1multishare.Operation
+
+	for nextPageToken != "" {
+		operations, err := lCall.Do()
+		if err != nil {
+			return nil, err
+		}
+
+		activeOperations = append(activeOperations, operations.Operations...)
+
+		nextPageToken = operations.NextPageToken
+		lCall.PageToken(nextPageToken)
+	}
+	return activeOperations, nil
 }
