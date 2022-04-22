@@ -28,6 +28,7 @@ const (
 	testRegion       = "us-central1"
 	testInstanceName = "testInstance"
 	testShareName    = "testShare"
+	testProject      = "test-project"
 )
 
 func TestRoundBytesToGb(t *testing.T) {
@@ -315,49 +316,6 @@ func TestConvertVolToShareName(t *testing.T) {
 
 }
 
-func TestParseInstanceHandle(t *testing.T) {
-	tests := []struct {
-		name           string
-		instanceHandle string
-		expectErr      bool
-		project        string
-		location       string
-		instancename   string
-	}{
-		{
-			name:           "invalid handle",
-			instanceHandle: "a/b/c/d",
-			expectErr:      true,
-		},
-		{
-			name:      "empty handle",
-			expectErr: true,
-		},
-		{
-			name:           "valid handle",
-			instanceHandle: testProject + "/" + testRegion + "/" + testInstanceName,
-			project:        testProject,
-			location:       testRegion,
-			instancename:   testInstanceName,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			p, l, n, err := ParseInstanceHandle(tc.instanceHandle)
-			if !tc.expectErr && err != nil {
-				t.Error("unexpected error")
-			}
-			if tc.expectErr && err == nil {
-				t.Error("expected error, got none")
-			}
-			if p != tc.project || l != tc.location || n != tc.instancename {
-				t.Errorf("mismatch")
-			}
-		})
-	}
-
-}
-
 func TestParseInstanceURI(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -399,50 +357,6 @@ func TestParseInstanceURI(t *testing.T) {
 				t.Error("expected error, got none")
 			}
 			if p != tc.project || l != tc.location || n != tc.instancename {
-				t.Errorf("mismatch")
-			}
-		})
-	}
-}
-
-func TestParseShareHandle(t *testing.T) {
-	tests := []struct {
-		name         string
-		sharehandle  string
-		expectErr    bool
-		project      string
-		location     string
-		instancename string
-		sharename    string
-	}{
-		{
-			name:        "invalid handle",
-			sharehandle: "a/b/c/d/e",
-			expectErr:   true,
-		},
-		{
-			name:      "empty handle",
-			expectErr: true,
-		},
-		{
-			name:         "valid handle",
-			sharehandle:  testProject + "/" + testRegion + "/" + testInstanceName + "/" + testShareName,
-			project:      testProject,
-			location:     testRegion,
-			instancename: testInstanceName,
-			sharename:    testShareName,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			p, l, n, s, err := ParseShareHandle(tc.sharehandle)
-			if !tc.expectErr && err != nil {
-				t.Error("unexpected error")
-			}
-			if tc.expectErr && err == nil {
-				t.Error("expected error, got none")
-			}
-			if p != tc.project || l != tc.location || n != tc.instancename || s != tc.sharename {
 				t.Errorf("mismatch")
 			}
 		})

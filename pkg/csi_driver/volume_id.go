@@ -78,12 +78,13 @@ func parseMultishareVolId(volId string) (string, string, string, string, string,
 		return "", "", "", "", "", fmt.Errorf("invalid volume id %v", volId)
 	}
 
-	prefix := tokens[0]
-	project := tokens[1]
-	location := tokens[2]
-	instanceName := tokens[3]
-	shareName := tokens[4]
-	if project == "" || location == "" || instanceName == "" || shareName == "" {
+	mode := tokens[0]
+	prefix := tokens[1]
+	project := tokens[2]
+	location := tokens[3]
+	instanceName := tokens[4]
+	shareName := tokens[5]
+	if mode != modeMultishare || project == "" || location == "" || instanceName == "" || shareName == "" {
 		return "", "", "", "", "", fmt.Errorf("invalid volume id %v", volId)
 	}
 	return prefix, project, location, instanceName, shareName, nil

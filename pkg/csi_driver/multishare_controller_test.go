@@ -17,11 +17,16 @@ limitations under the License.
 package driver
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
+	"k8s.io/apimachinery/pkg/util/uuid"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -33,6 +38,9 @@ const (
 	testPVCName              = "testPVC"
 	testPVCNamespace         = "testNamespace"
 	testPVName               = "testPV"
+	instanceUriFmt           = "projects/%s/locations/%s/instances/%s"
+	shareUriFmt              = "projects/%s/locations/%s/instances/%s/shares/%s"
+	multishareVolIdFmt       = modeMultishare + "/%s/%s/%s/%s/%s"
 )
 
 func initTestMultishareController(t *testing.T) *MultishareController {
@@ -579,4 +587,471 @@ func TestGenerateInstanceDescFromEcfsDesc(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMultishareCreateVolume(t *testing.T) {
+	testVolName := "pvc-" + string(uuid.NewUUID())
+	testShareName := util.ConvertVolToShareName(testVolName)
+	testInstanceName1 := "fs-" + string(uuid.NewUUID())
+	testInstanceName2 := "fs-" + string(uuid.NewUUID())
+	type OpItem struct {
+		id     string
+		target string
+		verb   string
+		done   bool
+	}
+	tests := []struct {
+		name              string
+		prefix            string
+		ops               []OpItem
+		initInstances     []*file.MultishareInstance
+		initShares        []*file.Share
+		req               *csi.CreateVolumeRequest
+		resp              *csi.CreateVolumeResponse
+		errorExpected     bool
+		checkOnlyVolidFmt bool // for auto generated instance, the instance name is not known
+	}{
+		{
+			name: "no initial instances, create instance and share, success response",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			checkOnlyVolidFmt: true,
+		},
+		{
+			name: "1 initial ready 1Tib instances with 0 shares, 1 busy instance, create 100Gib share and use the ready instance, success response",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+				{
+					Name:     testInstanceName2,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(instanceUriFmt, testProject, testRegion, testInstanceName2),
+					verb:   "create",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+				},
+			},
+		},
+		{
+			name: "share op in progress found, return retry error to client",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(shareUriFmt, testProject, testRegion, testInstanceName1, testShareName),
+					verb:   "create",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "share already exists, return success",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+					State: "READY",
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Name:     testInstanceName1,
+						Location: "us-central1",
+						Project:  "test-project",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+						State: "READY",
+					},
+					CapacityBytes:  100 * util.Gb,
+					MountPointName: testShareName,
+					State:          "READY",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+				},
+			},
+		},
+		// TODO: Add test cases for instance resize
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v1beta1ops []*filev1beta1multishare.Operation
+			for _, item := range tc.ops {
+				var meta filev1beta1multishare.OperationMetadata
+				meta.Target = item.target
+				meta.Verb = item.verb
+				bytes, _ := json.Marshal(meta)
+				v1beta1ops = append(v1beta1ops, &filev1beta1multishare.Operation{
+					Name:     item.id,
+					Done:     item.done,
+					Metadata: bytes,
+				})
+			}
+
+			s, err := file.NewFakeServiceForMultishare(tc.initInstances, tc.initShares, v1beta1ops)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
+			resp, err := mcs.CreateVolume(context.Background(), tc.req)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error not found")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+			if tc.checkOnlyVolidFmt {
+				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
+					t.Errorf("unexpected vol id %s", resp.Volume.VolumeId)
+				}
+			} else {
+				if tc.resp != nil && resp == nil {
+					t.Errorf("mismatch in response")
+				}
+				if tc.resp == nil && resp != nil {
+					t.Errorf("mismatch in response")
+				}
+				if !reflect.DeepEqual(resp, tc.resp) {
+					t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+				}
+			}
+		})
+	}
+}
+
+func TestMultishareDeleteVolume(t *testing.T) {
+	testVolName := "pvc-" + string(uuid.NewUUID())
+	testShareName := util.ConvertVolToShareName(testVolName)
+	testInstanceName1 := "fs-" + string(uuid.NewUUID())
+	testVolId := fmt.Sprintf("%s/%s/%s/%s/%s/%s", modeMultishare, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName)
+	type OpItem struct {
+		id     string
+		target string
+		verb   string
+		done   bool
+	}
+	tests := []struct {
+		name          string
+		ops           []OpItem
+		initInstance  []*file.MultishareInstance
+		initShares    []*file.Share
+		req           *csi.DeleteVolumeRequest
+		resp          *csi.DeleteVolumeResponse
+		errorExpected bool
+	}{
+		{
+			name: "share not found, instance ready, instance deleted, succes response",
+			req: &csi.DeleteVolumeRequest{
+				VolumeId: testVolId,
+			},
+			resp: &csi.DeleteVolumeResponse{},
+		},
+		{
+			name: "share not found, instance not ready (instance op in progress), error response",
+			req: &csi.DeleteVolumeRequest{
+				VolumeId: testVolId,
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(instanceUriFmt, testProject, testRegion, testInstanceName1),
+					verb:   "update",
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "share not found, instance not ready (share op in progress for the instance), error response",
+			req: &csi.DeleteVolumeRequest{
+				VolumeId: testVolId,
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(shareUriFmt, testProject, testRegion, testInstanceName1, testShareName),
+					verb:   "update",
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "share not found, instance ready with 0 shares, instance deleted, success response",
+			req: &csi.DeleteVolumeRequest{
+				VolumeId: testVolId,
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			resp: &csi.DeleteVolumeResponse{},
+		},
+		{
+			name: "share found, share deleted, instance ready with 0 shares, instance deleted, success response",
+			req: &csi.DeleteVolumeRequest{
+				VolumeId: testVolId,
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+				},
+			},
+			resp: &csi.DeleteVolumeResponse{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v1beta1ops []*filev1beta1multishare.Operation
+			for _, item := range tc.ops {
+				var meta filev1beta1multishare.OperationMetadata
+				meta.Target = item.target
+				meta.Verb = item.verb
+				bytes, _ := json.Marshal(meta)
+				v1beta1ops = append(v1beta1ops, &filev1beta1multishare.Operation{
+					Name:     item.id,
+					Done:     item.done,
+					Metadata: bytes,
+				})
+			}
+
+			s, err := file.NewFakeServiceForMultishare(tc.initInstance, tc.initShares, v1beta1ops)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
+			resp, err := mcs.DeleteVolume(context.Background(), tc.req)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error not found")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+			if tc.resp != nil && resp == nil {
+				t.Errorf("mismatch in response")
+			}
+			if tc.resp == nil && resp != nil {
+				t.Errorf("mismatch in response")
+			}
+			if !reflect.DeepEqual(resp, tc.resp) {
+				t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+			}
+		})
+	}
+
 }
