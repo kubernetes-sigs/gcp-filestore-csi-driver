@@ -42,15 +42,37 @@ type fakeServiceManager struct {
 	backups                   map[string]*BackupInfo
 	createdMultishareInstance map[string]*MultishareInstance
 	createdMultishares        map[string]*Share
+	multishareops             []*filev1beta1multishare.Operation
 }
 
 var _ Service = &fakeServiceManager{}
 
 func NewFakeService() (Service, error) {
 	return &fakeServiceManager{
-		createdInstances: map[string]*ServiceInstance{},
-		backups:          map[string]*BackupInfo{},
+		createdInstances:          map[string]*ServiceInstance{},
+		backups:                   map[string]*BackupInfo{},
+		createdMultishareInstance: make(map[string]*MultishareInstance),
+		createdMultishares:        make(map[string]*Share),
 	}, nil
+}
+
+func NewFakeServiceForMultishare(instances []*MultishareInstance, shares []*Share, ops []*filev1beta1multishare.Operation) (Service, error) {
+	s := &fakeServiceManager{
+		createdInstances:          map[string]*ServiceInstance{},
+		backups:                   map[string]*BackupInfo{},
+		createdMultishareInstance: make(map[string]*MultishareInstance),
+		createdMultishares:        make(map[string]*Share),
+		multishareops:             make([]*filev1beta1multishare.Operation, 0),
+	}
+
+	for _, instance := range instances {
+		s.createdMultishareInstance[instance.Name] = instance
+	}
+	for _, share := range shares {
+		s.createdMultishares[share.Name] = share
+	}
+	s.multishareops = append(s.multishareops, ops...)
+	return s, nil
 }
 
 func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
@@ -250,13 +272,24 @@ func (m *fakeBlockingServiceManager) HasOperations(ctx context.Context, obj *Ser
 func (manager *fakeServiceManager) GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error) {
 	instance, ok := manager.createdMultishareInstance[obj.Name]
 	if !ok {
-		return nil, fmt.Errorf("notFound")
+		return nil, &googleapi.Error{
+			Code: int(code.Code_NOT_FOUND),
+			Errors: []googleapi.ErrorItem{
+				{
+					Reason: "notFound",
+				},
+			},
+		}
 	}
 	return instance, nil
 }
 
 func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
-	return nil, nil
+	var ilist []*MultishareInstance
+	for _, v := range manager.createdMultishareInstance {
+		ilist = append(ilist, v)
+	}
+	return ilist, nil
 }
 
 func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
@@ -268,17 +301,16 @@ func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 		CapacityBytes: obj.CapacityBytes,
 		Network: Network{
 			Name:            obj.Network.Name,
-			Ip:              "1.1.1.1",
+			Ip:              obj.Network.Ip,
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
 		Labels: obj.Labels,
 		State:  "READY",
 	}
-	manager.createdMultishareInstance[instance.Name] = instance
 	manager.createdMultishareInstance[obj.Name] = instance
 	meta := &filev1beta1multishare.OperationMetadata{
 		Target: fmt.Sprintf(instanceURIFmt, instance.Project, instance.Location, instance.Name),
-		Verb:   "CREATE",
+		Verb:   "create",
 	}
 	metaBytes, _ := json.Marshal(meta)
 	op := &filev1beta1multishare.Operation{
@@ -296,7 +328,17 @@ type Signal struct {
 }
 
 func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
-	return nil, nil
+	delete(manager.createdMultishareInstance, obj.Name)
+	meta := &filev1beta1multishare.OperationMetadata{
+		Target: fmt.Sprintf(instanceURIFmt, obj.Project, obj.Location, obj.Name),
+		Verb:   "create",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1multishare.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+	return op, nil
 }
 
 func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
@@ -316,23 +358,25 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 		CapacityBytes: obj.CapacityBytes,
 		Network: Network{
 			Name:            obj.Parent.Network.Name,
-			Ip:              "1.1.1.1",
+			Ip:              obj.Parent.Network.Ip,
 			ReservedIpRange: obj.Parent.Network.ReservedIpRange,
 		},
 		Labels: obj.Parent.Labels,
 		State:  "READY",
 	}
 	share := &Share{
-		Name:          obj.Name,
-		Parent:        parent,
-		CapacityBytes: obj.CapacityBytes,
-		Labels:        obj.Labels,
+		Name:           obj.Name,
+		Parent:         parent,
+		CapacityBytes:  obj.CapacityBytes,
+		Labels:         obj.Labels,
+		MountPointName: obj.Name,
+		State:          "READY",
 	}
 	manager.createdMultishares[share.Name] = share
 
 	meta := &filev1beta1.OperationMetadata{
 		Target: fmt.Sprintf(shareURIFmt, share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name),
-		Verb:   "CREATE",
+		Verb:   "create",
 	}
 	metaBytes, _ := json.Marshal(meta)
 	op := &filev1beta1multishare.Operation{
@@ -388,19 +432,19 @@ func (manager *fakeServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 }
 
 func (manager *fakeServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
-	var s []*Share
+	var slist []*Share
 	for _, v := range manager.createdMultishares {
-		if v.Parent.Project == filter.Project && v.Parent.Location == filter.Location && v.Parent.Name == filter.InstanceName {
-			s = append(s, v)
-		}
+		slist = append(slist, v)
 	}
+	return slist, nil
+}
 
-	return s, nil
+func (manager *fakeServiceManager) AddMultishareOps(ops []*filev1beta1multishare.Operation) {
+	manager.multishareops = append(manager.multishareops, ops...)
 }
 
 func (manager *fakeServiceManager) ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error) {
-	// TODO
-	return nil, nil
+	return manager.multishareops, nil
 }
 
 func NewFakeBlockingServiceForMultishare(unblocker chan chan Signal) (Service, error) {
@@ -421,14 +465,7 @@ func (manager *fakeBlockingServiceManager) GetMultishareInstance(ctx context.Con
 		return nil, fmt.Errorf("mock error")
 	}
 	if val.ReportNotFoundError {
-		return nil, &googleapi.Error{
-			Code: int(code.Code_NOT_FOUND),
-			Errors: []googleapi.ErrorItem{
-				{
-					Reason: "notFound",
-				},
-			},
-		}
+		return nil, notFoundError()
 	}
 	return manager.fakeServiceManager.GetMultishareInstance(ctx, instance)
 }

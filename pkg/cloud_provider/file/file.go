@@ -66,6 +66,10 @@ type MultishareInstance struct {
 	Description        string
 }
 
+func (i *MultishareInstance) String() string {
+	return fmt.Sprintf("%s/%s/%s", i.Project, i.Location, i.Name)
+}
+
 type ListFilter struct {
 	Project      string
 	Location     string
@@ -153,6 +157,11 @@ const (
 )
 
 var _ Service = &gcfsServiceManager{}
+
+var (
+	instanceUriRegex = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)$`)
+	shareUriRegex    = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)/shares/([^/]+)$`)
+)
 
 func NewGCFSService(version string, client *http.Client, endpoint string) (Service, error) {
 	ctx := context.Background()
@@ -674,7 +683,6 @@ func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done b
 
 // Multishare functions defined here
 func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error) {
-	// TODO: do not silence not found error.
 	instanceUri := instanceURI(obj.Project, obj.Location, obj.Name)
 	instance, err := manager.multishareInstancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
@@ -682,12 +690,7 @@ func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, ob
 		return nil, err
 	}
 
-	if instance != nil {
-		glog.V(4).Infof("GetInstance call fetched instance %+v", instance)
-		return cloudInstanceToMultishareInstance(instance)
-	}
-
-	return nil, nil
+	return cloudInstanceToMultishareInstance(instance)
 }
 
 func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
@@ -702,6 +705,10 @@ func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, 
 		}
 
 		for _, activeInstance := range instances.Instances {
+			if !activeInstance.MultiShareEnabled {
+				continue
+			}
+
 			instance, err := cloudInstanceToMultishareInstance(activeInstance)
 			if err != nil {
 				return nil, err
@@ -733,22 +740,21 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 		Description: instance.Description,
 	}
 
-	klog.V(4).Infof("Creating instance %q: project %q, location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v", instance.Name, instance.Project, instance.Location, targetinstance.Tier, targetinstance.CapacityGb, targetinstance.Networks[0].Network, targetinstance.Networks[0].ReservedIpRange, targetinstance.Networks[0].ConnectMode, targetinstance.KmsKeyName, targetinstance.Labels)
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
 	}
-
+	klog.Infof("Started create instance op %s, for instance %q project %q, location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v", op.Name, instance.Name, instance.Project, instance.Location, targetinstance.Tier, targetinstance.CapacityGb, targetinstance.Networks[0].Network, targetinstance.Networks[0].ReservedIpRange, targetinstance.Networks[0].ConnectMode, targetinstance.KmsKeyName, targetinstance.Labels)
 	return op, nil
 }
 
 func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.Context, instance *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	uri := instanceURI(instance.Project, instance.Location, instance.Name)
-	klog.V(4).Infof("Starting DeleteInstance cloud operation for instance %s", uri)
 	op, err := manager.multishareInstancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("DeleteInstance operation failed: %v", err)
 	}
+	klog.Infof("Started Delete Instance op %s for instance uri %s", op.Name, uri)
 	return op, nil
 }
 
@@ -762,23 +768,24 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 	targetshare := &filev1beta1multishare.Share{
 		CapacityGb: util.BytesToGb(share.CapacityBytes),
 		Labels:     share.Labels,
-		// TODO: check about mount_name
+		MountName:  share.MountPointName,
 	}
 
-	klog.V(4).Infof("Creating share %q: for instance %q, with capacity(GB) %v, Labels %v", share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("CreateShare operation failed: %v", err)
 	}
+	klog.Infof("Started Create Share op %s for share %q instance uri %q, with capacity(GB) %v, Labels %v", op.Name, share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	return op, nil
 }
 
 func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, share *Share) (*filev1beta1multishare.Operation, error) {
-	shareuri := shareURI(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
-	op, err := manager.multishareInstancesSharesService.Delete(shareuri).Context(ctx).Do()
+	uri := shareURI(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
+	op, err := manager.multishareInstancesSharesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
 		return nil, fmt.Errorf("DeleteShare operation failed: %v", err)
 	}
+	klog.Infof("Started Delete Share op %s for share uri %q ", op.Name, uri)
 	return op, nil
 }
 
@@ -806,34 +813,39 @@ func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev
 }
 
 func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
-	sobj, err := manager.multishareInstancesSharesService.Get(instanceURI(obj.Parent.Project, obj.Parent.Location, obj.Parent.Name)).Context(ctx).Do()
+	sobj, err := manager.multishareInstancesSharesService.Get(shareURI(obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name)).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
-	project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
+
+	_, _, _, shareName, err := util.ParseShareURI(sobj.Name)
 	if err != nil {
 		return nil, err
 	}
+	instance, err := manager.GetMultishareInstance(ctx, obj.Parent)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Share{
-		Name: shareName,
-		Parent: &MultishareInstance{
-			Name:     instanceName,
-			Project:  project,
-			Location: location,
-		},
+		Name:           shareName,
+		Parent:         instance,
 		MountPointName: sobj.MountName,
 		CapacityBytes:  sobj.CapacityGb * util.Gb,
+		State:          sobj.State,
 	}, nil
 }
 
 func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
-	lCall := manager.multishareInstancesSharesService.List(instanceURI(filter.Project, filter.Location, filter.InstanceName)).Context(ctx)
+	uri := instanceURI(filter.Project, filter.Location, filter.InstanceName)
+	lCall := manager.multishareInstancesSharesService.List(uri).Context(ctx)
 	nextPageToken := "pageToken"
 	var shares []*Share
 
 	for nextPageToken != "" {
 		resp, err := lCall.Do()
 		if err != nil {
+			klog.Errorf("list share error: %v", err)
 			return nil, err
 		}
 
@@ -940,6 +952,9 @@ func CompareShares(a, b *Share) error {
 }
 
 func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance) (*MultishareInstance, error) {
+	if instance == nil {
+		return nil, fmt.Errorf("nil instance")
+	}
 	project, location, name, err := getInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
@@ -990,4 +1005,36 @@ func (manager *gcfsServiceManager) ListOps(ctx context.Context, filter *ListFilt
 		lCall.PageToken(nextPageToken)
 	}
 	return activeOperations, nil
+}
+
+func IsInstanceTarget(target string) bool {
+	return instanceUriRegex.MatchString(target)
+}
+
+func IsShareTarget(target string) bool {
+	return shareUriRegex.MatchString(target)
+}
+
+func GenerateMultishareInstanceURI(m *MultishareInstance) (string, error) {
+	if m == nil {
+		return "", fmt.Errorf("Null instance")
+	}
+
+	if m.Project == "" || m.Location == "" || m.Name == "" {
+		return "", fmt.Errorf("Missing parent, project or location in instance")
+	}
+
+	return fmt.Sprintf(instanceURIFmt, m.Project, m.Location, m.Name), nil
+}
+
+func GenerateShareURI(s *Share) (string, error) {
+	if s == nil || s.Parent == nil {
+		return "", fmt.Errorf("Missing share parent instance")
+	}
+
+	if s.Parent.Project == "" || s.Parent.Location == "" || s.Parent.Name == "" || s.Name == "" {
+		return "", fmt.Errorf("Missing parent, project or location in share parent")
+	}
+
+	return fmt.Sprintf(shareURIFmt, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
 }

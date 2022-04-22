@@ -18,11 +18,14 @@ package driver
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"sync"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog"
@@ -31,7 +34,13 @@ import (
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
-// A workflow is defined as a sequence of steps to safely (by checking the storage class cache) initiate instance or share operations.
+type OpInfo struct {
+	Id     string
+	Type   util.OperationType
+	Target string
+}
+
+// A workflow is defined as a sequence of steps to safely initiate instance or share operations.
 type Workflow struct {
 	instance *file.MultishareInstance
 	share    *file.Share
@@ -39,23 +48,16 @@ type Workflow struct {
 	opName   string
 }
 
-// MultishareOpsManager manages storage class cache, manages the lifecycle of all instance and share operations.
+// MultishareOpsManager manages the lifecycle of all instance and share operations.
 type MultishareOpsManager struct {
-	sync.Mutex // Lock to perform thread safe operations on the cache.
-	cache      *util.StorageClassInfoCache
+	sync.Mutex // Lock to perform thread safe multishare operations.
 	cloud      *cloud.Cloud
 }
 
 func NewMultishareOpsManager(cloud *cloud.Cloud) *MultishareOpsManager {
 	return &MultishareOpsManager{
-		cache: util.NewStorageClassInfoCache(),
 		cloud: cloud,
 	}
-}
-
-func (m *MultishareOpsManager) Run() {
-	// TODO: Start periodic cache hydration
-	// TODO: Start periodic instance inspection for delete and shrink
 }
 
 // setupEligibleInstanceAndStartWorkflow returns a workflow object (to indicate an instance or share level workflow is started), or a share object (if existing share already found), or error.
@@ -70,41 +72,30 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// Check if there is already a share create op in progress.
-	lastShareCreateOpInfo, opStatus, err := m.checkAndUpdateShareCreateOp(ctx, instanceScPrefix, shareName)
+	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, status.Error(codes.Internal, err.Error())
 	}
-
-	if lastShareCreateOpInfo != nil {
-		switch opStatus {
-		case util.StatusRunning:
-			return nil, nil, status.Errorf(codes.Aborted, "Share create operation %q in progress", lastShareCreateOpInfo.OpName)
-		case util.StatusFailed:
-			return nil, nil, status.Errorf(codes.Internal, "Share create operation %q failed", lastShareCreateOpInfo.OpName)
-		case util.StatusSuccess:
-			share, err := m.validateShareExists(ctx, lastShareCreateOpInfo.InstanceHandle, shareName)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, share, nil
-		default:
-			return nil, nil, status.Errorf(codes.Internal, "unknown op status %d for op %v", opStatus, lastShareCreateOpInfo.OpName)
-		}
+	createShareOp := containsOpWithShareName(shareName, util.ShareCreate, ops)
+	if createShareOp != nil {
+		msg := fmt.Sprintf("Share create op %s in progress", createShareOp.Id)
+		klog.Infof(msg)
+		return nil, nil, status.Error(codes.Aborted, msg)
 	}
 
 	// Check if share already part of an existing instance.
-	share, err := m.checkInstanceListForShare(ctx, instanceScPrefix, shareName)
+	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: m.cloud.Project, Location: "-", InstanceName: "-"})
 	if err != nil {
 		return nil, nil, err
 	}
-
-	if share != nil {
-		return nil, share, nil
+	for _, s := range shares {
+		if s.Name == shareName {
+			return nil, s, nil
+		}
 	}
 
 	// No share or running share create op fouund. Proceed to eligible instance check.
-	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix)
+	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix, ops)
 	if err != nil {
 		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -112,6 +103,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	if len(eligible) > 0 {
 		// pick a random eligible instance
 		index := rand.Intn(len(eligible))
+		klog.V(5).Infof("For share %s, using instance %s as placeholder", shareName, eligible[index].String())
 		share, err := generateNewShare(shareName, eligible[index], req)
 		if err != nil {
 			return nil, nil, status.Error(codes.Internal, err.Error())
@@ -124,11 +116,11 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 		if needExpand {
 			eligible[index].CapacityBytes = targetBytes
-			w, err := m.startInstanceWorkflow(ctx, instanceScPrefix, &Workflow{instance: eligible[index], opType: util.InstanceExpand})
+			w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: eligible[index], opType: util.InstanceUpdate}, ops)
 			return w, nil, err
 		}
 
-		w, err := m.startShareCreateWorkflow(ctx, instanceScPrefix, share)
+		w, err := m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareCreate}, ops)
 		return w, nil, err
 	}
 
@@ -137,136 +129,89 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 		return nil, nil, status.Errorf(codes.Aborted, " %d non-ready instances detected. No ready instance found", numIneligible)
 	}
 
-	w, err := m.startInstanceWorkflow(ctx, instanceScPrefix, &Workflow{instance: instance, opType: util.InstanceCreate})
+	w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceCreate}, ops)
 	return w, nil, err
-}
-
-// checkAndUpdateShareCreateOp checks the share create op map, and evaluates the running status of the ops. If ops are detected as complete, they are removed as part of the check.
-func (m *MultishareOpsManager) checkAndUpdateShareCreateOp(ctx context.Context, instanceScPrefix, shareName string) (*util.ShareCreateOpInfo, util.OperationStatus, error) {
-	opInfo := m.cache.GetShareCreateOp(instanceScPrefix, shareName)
-	if opInfo == nil {
-		return nil, util.StatusUnknown, nil
-	}
-
-	op, err := m.cloud.File.GetOp(ctx, opInfo.OpName)
-	if err != nil && !file.IsNotFoundErr(err) {
-		return opInfo, util.StatusUnknown, status.Errorf(codes.Internal, "Failed to get operation %q", opInfo.OpName)
-	}
-
-	done, err := m.cloud.File.IsOpDone(op)
-	if err != nil {
-		// op completed with error.
-		// clear cache and return retry error to the caller.
-		m.cache.DeleteShareCreateOp(instanceScPrefix, shareName, opInfo.OpName)
-		return opInfo, util.StatusFailed, nil
-	}
-
-	if !done {
-		return opInfo, util.StatusRunning, nil
-	}
-
-	// Clear cache.
-	m.cache.DeleteShareCreateOp(instanceScPrefix, shareName, opInfo.OpName)
-	return opInfo, util.StatusSuccess, nil
-}
-
-// checkAndUpdateShareOp checks the share ops map, and evaluates the running status of the ops. If ops are detected as complete, they are removed as part of the check.
-func (m *MultishareOpsManager) checkAndUpdateShareOp(ctx context.Context, instanceScPrefix string, share *file.Share) (*util.OpInfo, util.OperationStatus, error) {
-	shareKey := util.CreateShareKey(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
-	opInfo := m.cache.GetShareOp(instanceScPrefix, shareKey)
-	if opInfo == nil {
-		return nil, util.StatusUnknown, nil
-	}
-
-	op, err := m.cloud.File.GetOp(ctx, opInfo.Name)
-	if err != nil && !file.IsNotFoundErr(err) {
-		return opInfo, util.StatusUnknown, status.Errorf(codes.Internal, "Failed to get operation %q", opInfo.Name)
-	}
-
-	done, err := m.cloud.File.IsOpDone(op)
-	if err != nil {
-		// op completed with error.
-		// clear cache and return retry error to the caller.
-		m.cache.DeleteShareOp(instanceScPrefix, shareKey, opInfo.Name)
-		return opInfo, util.StatusFailed, nil
-	}
-
-	if !done {
-		return opInfo, util.StatusRunning, nil
-	}
-
-	// Clear cache.
-	m.cache.DeleteShareOp(instanceScPrefix, shareKey, opInfo.Name)
-	return opInfo, util.StatusSuccess, nil
 }
 
 func (m *MultishareOpsManager) startShareCreateWorkflowSafe(ctx context.Context, instanceSCPrefix string, share *file.Share) (*Workflow, error) {
 	m.Lock()
 	defer m.Unlock()
-	return m.startShareCreateWorkflow(ctx, instanceSCPrefix, share)
+	ops, err := m.listMultishareResourceRunningOps(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareCreate}, ops)
 }
 
-func (m *MultishareOpsManager) startShareCreateWorkflow(ctx context.Context, instanceSCPrefix string, share *file.Share) (*Workflow, error) {
-	return m.startShareWorkflow(ctx, instanceSCPrefix, &Workflow{
-		share:  share,
-		opType: util.ShareCreate,
-	})
-}
-
-func (m *MultishareOpsManager) startInstanceWorkflow(ctx context.Context, instanceSCPrefix string, w *Workflow) (*Workflow, error) {
-	// This function has 3 distinct steps:
-	// 1. verify no instance ops running for the given instance.
-	// 2. verify no running share ops for the shares hosted on the given instance.
-	// 3. Start the instance op.
+func (m *MultishareOpsManager) startInstanceWorkflow(ctx context.Context, w *Workflow, ops []*OpInfo) (*Workflow, error) {
+	// This function has 2 steps:
+	// 1. verify no instance ops or share (belonging to the instance) ops running for the given instance.
+	// 2. Start the instance op.
 	if w.instance == nil {
 		return nil, status.Errorf(codes.Internal, "instance not found in workflow object")
 	}
 
-	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.instance)
+	err := m.verifyNoRunningInstanceOrShareOpsForInstance(w.instance, ops)
 	if err != nil {
-		return nil, status.Errorf(codes.Aborted, "Instance %q check error: %v", w.instance.Name, err)
+		return nil, err
 	}
-	if !instanceReady {
-		return nil, status.Errorf(codes.Aborted, "Instance %q not ready", w.instance.Name)
-	}
-
-	// Verify no ongoing share ops for the instance. Also clear finised ops from cache, while doing verification.
-	instanceReady, err = m.verifyNoRunningShareOpsForInstance(ctx, instanceSCPrefix, w.instance)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to check share ops for Instance %q, error: %v", w.instance.Name, err)
-	}
-	if !instanceReady {
-		return nil, status.Errorf(codes.Aborted, "Instance %q not ready", w.instance.Name)
-	}
-
 	switch w.opType {
 	case util.InstanceCreate:
 		op, err := m.cloud.File.StartCreateMultishareInstanceOp(ctx, w.instance)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
 		w.opName = op.Name
-	case util.InstanceExpand:
+	case util.InstanceUpdate:
 		op, err := m.cloud.File.StartResizeMultishareInstanceOp(ctx, w.instance)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
 		w.opName = op.Name
 	case util.InstanceDelete:
 		op, err := m.cloud.File.StartDeleteMultishareInstanceOp(ctx, w.instance)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
 		w.opName = op.Name
 	default:
-		return nil, status.Errorf(codes.Internal, "for instance workflow, unknown op type %v", w.opType)
+		return nil, status.Errorf(codes.Internal, "for instance workflow, unknown op type %s", w.opType.String())
 	}
 
-	m.cache.AddInstanceOp(instanceSCPrefix, util.CreateInstanceKey(w.instance.Project, w.instance.Location, w.instance.Name), util.OpInfo{Name: w.opName, Type: w.opType})
 	return w, nil
 }
 
-func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceSCPrefix string, w *Workflow) (*Workflow, error) {
+func (m *MultishareOpsManager) verifyNoRunningInstanceOps(instance *file.MultishareInstance, ops []*OpInfo) error {
+	instanceUri, err := file.GenerateMultishareInstanceURI(instance)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to parse instance handle, err: %v", err)
+	}
+
+	for _, op := range ops {
+		if op.Target == instanceUri {
+			return status.Errorf(codes.Aborted, "Found running op %s type %s for target resource %s", op.Id, op.Type.String(), op.Target)
+		}
+	}
+
+	return nil
+}
+
+func (m *MultishareOpsManager) verifyNoRunningShareOps(share *file.Share, ops []*OpInfo) error {
+	shareUri, err := file.GenerateShareURI(share)
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to parse share handle, err: %v", err)
+	}
+	for _, op := range ops {
+		if op.Target == shareUri {
+			return status.Errorf(codes.Aborted, "Found running op %s type %s for target resource %s", op.Id, op.Type.String(), op.Target)
+		}
+	}
+
+	return nil
+}
+
+func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, w *Workflow, ops []*OpInfo) (*Workflow, error) {
 	// This function has 3 distinct steps:
 	// 1. verify no instance ops running for the instance hosting the given share.
 	// 2. verify no running ops for the given share.
@@ -280,73 +225,33 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	}
 
 	// verify instance is ready.
-	instanceReady, err := m.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, w.share.Parent)
+	err := m.verifyNoRunningInstanceOps(w.share.Parent, ops)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Instance %q check error: %v", w.share.Parent.Name, err)
+		return nil, err
 	}
-	if !instanceReady {
-		return nil, status.Errorf(codes.Aborted, "Instance %q not ready", w.share.Parent.Name)
-	}
-
 	// Verify share is ready.
-	shareReady, err := m.verifyNoRunningShareOp(ctx, instanceSCPrefix, w.share)
+	err = m.verifyNoRunningShareOps(w.share, ops)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Share %q check error: %v", w.share.Name, err)
+		return nil, err
 	}
-	if !shareReady {
-		return nil, status.Errorf(codes.Aborted, "Share %q not ready", w.share.Name)
-	}
-
 	switch w.opType {
 	case util.ShareCreate:
-		// validate no entry in cache for the share
-		item := m.cache.GetShareCreateOp(instanceSCPrefix, w.share.Name)
-		if item != nil {
-			return nil, status.Errorf(codes.Aborted, "Share %q not ready, found op %q", w.share.Name, item.OpName)
-		}
-
 		op, err := m.cloud.File.StartCreateShareOp(ctx, w.share)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
-
-		// Start op and update cache
-		instanceHandle, err := file.GetMultishareInstanceHandle(w.share.Parent)
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		m.cache.AddShareCreateOp(instanceSCPrefix, w.share.Name, util.ShareCreateOpInfo{
-			InstanceHandle: instanceHandle,
-			OpName:         op.Name,
-		})
 		w.opName = op.Name
-	case util.ShareExpand:
-		// validate no entry in cache for the share
-		item := m.cache.GetShareOp(instanceSCPrefix, util.CreateShareKey(w.share.Parent.Project, w.share.Parent.Location, w.share.Parent.Name, w.share.Name))
-		if item != nil {
-			return nil, status.Errorf(codes.Aborted, "Share %q not ready, found op %q", w.share.Name, item.Name)
-		}
-
-		// Start op and update cache
+	case util.ShareUpdate:
 		op, err := m.cloud.File.StartResizeShareOp(ctx, w.share)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
-		m.cache.AddShareOp(instanceSCPrefix, util.CreateShareKey(w.share.Parent.Project, w.share.Parent.Location, w.share.Parent.Name, w.share.Name), util.OpInfo{Name: op.Name, Type: w.opType})
 		w.opName = op.Name
 	case util.ShareDelete:
-		// validate no entry in cache for the share
-		item := m.cache.GetShareOp(instanceSCPrefix, util.CreateShareKey(w.share.Parent.Project, w.share.Parent.Location, w.share.Parent.Name, w.share.Name))
-		if item != nil {
-			return nil, status.Errorf(codes.Aborted, "Share %q not ready, found op %q", w.share.Name, item.Name)
-		}
-
-		// Start op and update cache
 		op, err := m.cloud.File.StartDeleteShareOp(ctx, w.share)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
+			return nil, err
 		}
-		m.cache.AddShareOp(instanceSCPrefix, util.CreateShareKey(w.share.Parent.Project, w.share.Parent.Location, w.share.Parent.Name, w.share.Name), util.OpInfo{Name: op.Name, Type: w.opType})
 		w.opName = op.Name
 	default:
 		return nil, status.Errorf(codes.Internal, "for share workflow, unknown op type %v", w.opType)
@@ -354,202 +259,64 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, instanceS
 	return w, nil
 }
 
-func (m *MultishareOpsManager) verifyNoRunningInstanceOps(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance) (bool, error) {
-	opInfo := m.cache.GetInstanceOp(instanceSCPrefix, util.CreateInstanceKey(instance.Project, instance.Location, instance.Name))
-	if opInfo == nil {
-		return true, nil
-	}
-	if opInfo.Name == "" {
-		return true, nil
-	}
-
-	op, err := m.cloud.File.GetOp(ctx, opInfo.Name)
-	if err != nil && !file.IsNotFoundErr(err) {
-		return false, err
-	}
-
-	// This method returns error if op completed with error. Instance is still considered ready since op completed.
-	done, _ := m.cloud.File.IsOpDone(op)
-	if done {
-		m.cache.DeleteInstanceOp(instanceSCPrefix, util.CreateInstanceKey(instance.Project, instance.Location, instance.Name), opInfo.Name)
-	}
-	return done, nil
-}
-
-func (m *MultishareOpsManager) verifyNoRunningShareOp(ctx context.Context, instanceScPrefix string, share *file.Share) (bool, error) {
-	shareCreateOpInfo, shareCreateOpStatus, err := m.checkAndUpdateShareCreateOp(ctx, instanceScPrefix, share.Name)
+func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(instance *file.MultishareInstance, ops []*OpInfo) error {
+	instanceUri, err := file.GenerateMultishareInstanceURI(instance)
 	if err != nil {
-		return false, err
-	}
-	shareCreateopRunning := (shareCreateOpInfo != nil && shareCreateOpStatus == util.StatusRunning)
-
-	shareOpInfo, shareOpStatus, err := m.checkAndUpdateShareOp(ctx, instanceScPrefix, share)
-	if err != nil {
-		return false, err
+		return status.Errorf(codes.Internal, "failed to parse instance handle, err: %v", err)
 	}
 
-	shareOpRunning := (shareOpInfo != nil && shareOpStatus == util.StatusRunning)
-	return (!shareCreateopRunning && !shareOpRunning), nil
-}
-
-func (m *MultishareOpsManager) verifyNoRunningShareOpsForInstance(ctx context.Context, instanceScPrefix string, instance *file.MultishareInstance) (bool, error) {
-	targetInstanceHandle, err := file.GetMultishareInstanceHandle(instance)
-	if err != nil {
-		return false, err
-	}
-	for _, item := range m.cache.GetShareCreateMap(instanceScPrefix).Items() {
-		if item.OpInfo.InstanceHandle != targetInstanceHandle {
-			continue
-		}
-		shareCreateOpInfo, shareCreateOpStatus, err := m.checkAndUpdateShareCreateOp(ctx, instanceScPrefix, item.Key)
-		if err != nil {
-			return false, err
-		}
-		if shareCreateOpInfo != nil && shareCreateOpStatus == util.StatusRunning {
-			return false, nil
+	// Check for instance prefix in op target.
+	for _, op := range ops {
+		if op.Target == instanceUri || strings.Contains(op.Target, instanceUri+"/") {
+			return status.Errorf(codes.Aborted, "Found running op %s, type %s, for target resource %s", op.Id, op.Type.String(), op.Target)
 		}
 	}
-
-	for _, item := range m.cache.GetShareOpsMap(instanceScPrefix).Items() {
-		shareHandle := item.Key
-		if !containsInstancePrefix(string(shareHandle), instance.Project, instance.Location, instance.Name) {
-			continue
-		}
-
-		_, _, _, shareName, err := util.ParseShareHandle(string(item.Key))
-		if err != nil {
-			return false, err
-		}
-
-		opInfo, status, err := m.checkAndUpdateShareOp(ctx, instanceScPrefix, &file.Share{Parent: instance, Name: shareName})
-		if err != nil {
-			return false, err
-		}
-		if opInfo != nil && status == util.StatusRunning {
-			return false, nil
-		}
-	}
-
-	return true, nil
-}
-
-func (m *MultishareOpsManager) validateShareExists(ctx context.Context, instanceHandle, shareName string) (*file.Share, error) {
-	project, location, instanceName, err := util.ParseInstanceHandle(instanceHandle)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse instance handle %v", instanceHandle)
-	}
-
-	return m.cloud.File.GetShare(ctx, &file.Share{
-		Name: shareName,
-		Parent: &file.MultishareInstance{
-			Project:  project,
-			Location: location,
-			Name:     instanceName,
-		},
-	})
-}
-
-func (m *MultishareOpsManager) checkInstanceListForShare(ctx context.Context, instanceScPrefix string, targetShareName string) (*file.Share, error) {
-	for _, item := range m.cache.GetInstanceMap(instanceScPrefix).Items() {
-		project, location, instanceName, err := util.ParseInstanceHandle(string(item.Key))
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to parse instance key %q, err: %v", item.Key, err)
-		}
-
-		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, InstanceName: instanceName})
-		// TODO: verify a list on a non existent instance would return not found error. or we need to check GET instance before listing shares.
-		if err != nil && !file.IsNotFoundErr(err) {
-			return nil, status.Errorf(codes.Internal, "failed to list shares for Instance %q, err: %v", item.Key, err)
-		}
-
-		for _, share := range shares {
-			_, _, _, shareName, err := file.ParseShare(share)
-			if err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to parse share URI, err: %v", err)
-			}
-
-			if shareName == targetShareName {
-				return share, nil
-			}
-		}
-	}
-
-	return nil, nil
+	return nil
 }
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
-func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string) ([]*file.MultishareInstance, int, error) {
-	var readyInstanceKeys []util.InstanceKey
+func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string, ops []*OpInfo) ([]*file.MultishareInstance, int, error) {
+	instances, err := m.listInstanceForStorageClassPrefix(ctx, instanceScPrefix)
+	if err != nil {
+		return nil, 0, err
+	}
+	var readyEligibleInstances []*file.MultishareInstance
 	nonReadyInstanceCount := 0
-	items := m.cache.GetInstanceMap(instanceScPrefix).Items()
-	for _, item := range items {
-		instanceKey := item.Key
-		opInfo := item.OpInfo
-		project, location, instanceName, err := util.ParseInstanceHandle(string(instanceKey))
+	for _, instance := range instances {
+		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
 		if err != nil {
-			klog.Warningf("Failed to parse instance key %v", instanceKey)
-			continue
-		}
-		if opInfo.Name == "" {
-			readyInstanceKeys = append(readyInstanceKeys, instanceKey)
+			klog.Errorf("failed to check eligibility of instance %s", instance.Name)
 			continue
 		}
 
-		// check and clear completed op
-		ready, err := m.verifyNoRunningInstanceOps(ctx, instanceScPrefix, &file.MultishareInstance{
-			Project:  project,
-			Location: location,
-			Name:     instanceName,
-		})
-		if err != nil {
-			klog.Warningf("Failed to check instance ready for instance key %v, err:%v", instanceKey, err)
-		}
-
-		if !ready && opInfo.Type != util.InstanceDelete {
-			nonReadyInstanceCount = nonReadyInstanceCount + 1
-		}
-
-		if ready {
-			readyInstanceKeys = append(readyInstanceKeys, instanceKey)
-		}
-	}
-
-	var eligibleReadyInstances []*file.MultishareInstance
-	for _, instanceKey := range readyInstanceKeys {
-		project, location, instanceName, err := util.ParseInstanceHandle(string(instanceKey))
-		if err != nil {
-			klog.Warningf("Failed to parse instance key %v", instanceKey)
-			continue
-		}
-
-		instance, err := m.cloud.File.GetMultishareInstance(ctx, &file.MultishareInstance{
-			Project:  project,
-			Location: location,
-			Name:     instanceName,
-		})
-		if err != nil {
-			if file.IsNotFoundErr(err) {
-				klog.Infof("Instance %v not found, clear from map", instanceKey)
-				m.cache.DeleteInstance(instanceScPrefix, instanceKey)
-			} else {
-				klog.Warningf("Failed to GET for instance key %v, err:%v", instanceKey, err)
+		if op == nil {
+			shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
+			if err != nil {
+				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err)
+				continue
 			}
+			if len(shares) >= util.MaxSharesPerInstance {
+				continue
+			}
+
+			readyEligibleInstances = append(readyEligibleInstances, instance)
+			klog.Infof("Adding instance %s to eligible list", instance.String())
 			continue
 		}
 
-		shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: project, Location: location, InstanceName: instanceName})
-		// TODO: verify what is the behavior for 0 share instance? i.e. len(shares)=0, err = nil?
-		if err != nil {
-			klog.Warningf("failed to list shares for Instance %q, err: %v", instanceKey, err)
+		// instances whose delete is in progress should not be accounted as non-ready instances.
+		if op.Type == util.InstanceDelete {
 			continue
 		}
 
-		if len(shares) < util.MaxSharesPerInstance {
-			eligibleReadyInstances = append(eligibleReadyInstances, instance)
+		if instance.State == "DELETING" {
+			continue
 		}
+		nonReadyInstanceCount += 1
+		// TODO: If we see > 1 instances with 0 shares (these could be possibly leaked instances where the driver hit timeout during creation op was in progress), should we trigger delete op for such instances? Possibly yes. Given that instance create/delete and share create/delete is serialized, maybe yes.
 	}
 
-	return eligibleReadyInstances, nonReadyInstanceCount, nil
+	return readyEligibleInstances, nonReadyInstanceCount, nil
 }
 
 func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *file.Share) (bool, int64, error) {
@@ -573,34 +340,184 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 	var remainingBytes int64
 	remainingBytes = share.Parent.CapacityBytes - sumShareBytes
 	if remainingBytes < share.CapacityBytes {
-		return true, share.Parent.CapacityBytes + (share.CapacityBytes - remainingBytes), nil
+		return true, (share.CapacityBytes + sumShareBytes), nil
 	}
 	return false, 0, nil
-}
-
-func (m *MultishareOpsManager) startShareDeleteWorkflow(ctx context.Context, instanceScPrefix string, share *file.Share) (*Workflow, error) {
-	return m.startShareWorkflow(ctx, instanceScPrefix, &Workflow{
-		share:  share,
-		opType: util.ShareDelete,
-	})
 }
 
 func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Context, instanceScPrefix string, share *file.Share) (*Workflow, error) {
 	m.Lock()
 	defer m.Unlock()
 
-	// Check the status of the last known op (if any) for the given share in cache.
-	opInfo, opStatus, err := m.checkAndUpdateShareOp(ctx, instanceScPrefix, share)
+	ops, err := m.listMultishareResourceRunningOps(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// If we find a running delete share op, poll for that to complete.
+	deleteshareop, err := containsOpWithShareTarget(share, util.ShareDelete, ops)
 	if err != nil {
 		return nil, err
 	}
-	if opInfo != nil && opStatus == util.StatusRunning {
-		return nil, status.Errorf(codes.Aborted, "Share operation %q in progress", opInfo.Name)
+	if deleteshareop != nil {
+		return &Workflow{share: share, opName: deleteshareop.Id, opType: deleteshareop.Type}, nil
 	}
 
-	if opInfo.Type == util.ShareDelete && opStatus == util.StatusSuccess {
-		return nil, nil
+	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareDelete}, ops)
+}
+
+func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx context.Context, instance *file.MultishareInstance) (*Workflow, error) {
+	m.Lock()
+	defer m.Unlock()
+
+	ops, err := m.listMultishareResourceRunningOps(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	return m.startShareDeleteWorkflow(ctx, instanceScPrefix, share)
+	err = m.verifyNoRunningInstanceOrShareOpsForInstance(instance, ops)
+	if err != nil {
+		return nil, err
+	}
+
+	// At this point no new share create or delete would be attempted since the driver has the lock.
+	// 1. GET instance . if not found its a no-op return success.
+	// 2. evaluate 0 shares.
+	// 3. else evaluate instance size with share size sum.
+	instance, err = m.cloud.File.GetMultishareInstance(ctx, instance)
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			return nil, nil
+		}
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	// Check for delete
+	if len(shares) == 0 {
+		w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceDelete}, ops)
+		if err != nil {
+			if file.IsNotFoundErr(err) {
+				return nil, nil
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return w, err
+	}
+
+	// check for shrink
+	var totalShareCap int64
+	for _, share := range shares {
+		totalShareCap += share.CapacityBytes
+	}
+	if totalShareCap < instance.CapacityBytes && instance.CapacityBytes > util.MinMultishareInstanceSizeBytes {
+		instance.CapacityBytes = util.Max(totalShareCap, util.MinMultishareInstanceSizeBytes)
+		w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceUpdate}, ops)
+		if err != nil {
+			if file.IsNotFoundErr(err) {
+				return nil, nil
+			}
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		return w, err
+	}
+
+	return nil, nil
+}
+
+// listMultishareOps reports all running ops related to multishare instances and share resources. The op target is of the form "projects/<>/locations/<>/instances/<>" or "projects/<>/locations/<>/instances/<>/shares/<>"
+func (m *MultishareOpsManager) listMultishareResourceRunningOps(ctx context.Context) ([]*OpInfo, error) {
+	ops, err := m.cloud.File.ListOps(ctx, &file.ListFilter{Project: m.cloud.Project, Location: "-"})
+	if err != nil {
+		return nil, err
+	}
+
+	var finalops []*OpInfo
+	for _, op := range ops {
+		if op.Done {
+			continue
+		}
+
+		if op.Metadata == nil {
+			continue
+		}
+
+		var meta filev1beta1multishare.OperationMetadata
+		if err := json.Unmarshal(op.Metadata, &meta); err != nil {
+			klog.Errorf("Failed to parse metadata for op %s", op.Name)
+			continue
+		}
+
+		if file.IsInstanceTarget(meta.Target) {
+			finalops = append(finalops, &OpInfo{Id: op.Name, Target: meta.Target, Type: util.ConvertInstanceOpVerbToType(meta.Verb)})
+		} else if file.IsShareTarget(meta.Target) {
+			finalops = append(finalops, &OpInfo{Id: op.Name, Target: meta.Target, Type: util.ConvertShareOpVerbToType(meta.Verb)})
+		}
+		// TODO: Add other resource types if needed, when we support snapshot/backups.
+	}
+	return finalops, nil
+}
+
+// Whether there is any op with target that is the given share name
+func containsOpWithShareName(shareName string, opType util.OperationType, ops []*OpInfo) *OpInfo {
+	for _, op := range ops {
+		// share names are expected to be unique in the cluster
+		if op.Type == opType && strings.Contains(op.Target, shareName) {
+			return op
+		}
+	}
+
+	return nil
+}
+
+func containsOpWithShareTarget(share *file.Share, opType util.OperationType, ops []*OpInfo) (*OpInfo, error) {
+	shareUri, err := file.GenerateShareURI(share)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to parse share handle, err: %v", err)
+	}
+
+	for _, op := range ops {
+		// share names are expected to be unique in the cluster
+		if op.Type == opType && op.Target == shareUri {
+			return op, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func containsOpWithInstanceTargetPrefix(instance *file.MultishareInstance, ops []*OpInfo) (*OpInfo, error) {
+	instanceUri, err := file.GenerateMultishareInstanceURI(instance)
+	if err != nil {
+		return nil, err
+	}
+	for _, op := range ops {
+		// For share targets (e.g projects/<>/locations/<>/instances/<>/shares/<>), explicity check with a "/", to avoid false positives of instances with same prefix name.
+		if op.Target == instanceUri || strings.Contains(op.Target, instanceUri+"/") {
+			return op, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (m *MultishareOpsManager) listInstanceForStorageClassPrefix(ctx context.Context, prefix string) ([]*file.MultishareInstance, error) {
+	instances, err := m.cloud.File.ListMultishareInstances(ctx, &file.ListFilter{Project: m.cloud.Project, Location: "-"})
+	if err != nil {
+		return nil, err
+	}
+	var finalInstances []*file.MultishareInstance
+	for _, i := range instances {
+		if val, ok := i.Labels[util.ParamMultishareInstanceScLabelKey]; ok && val == prefix {
+			finalInstances = append(finalInstances, i)
+		}
+	}
+	return finalInstances, nil
 }

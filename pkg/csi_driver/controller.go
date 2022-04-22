@@ -26,6 +26,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
@@ -117,6 +118,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		response, err := s.config.multiShareController.CreateVolume(ctx, req)
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodCreateVolume, modeMultishare, duration)
+		klog.Infof("CreateVolume request %+v, response %+v error %v", req, response, err)
 		return response, err
 	}
 
@@ -289,7 +291,7 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 
 // DeleteVolume deletes a GCFS instance
 func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	glog.V(4).Infof("DeleteVolume called with request %+v", req)
+	glog.Infof("DeleteVolume called with request %+v", req)
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
@@ -303,6 +305,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		response, err := s.config.multiShareController.DeleteVolume(ctx, req)
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodDeleteVolume, modeMultishare, duration)
+		klog.Infof("CreateVolume request %+v, response %+v error %v", req, response, err)
 		return response, err
 	}
 

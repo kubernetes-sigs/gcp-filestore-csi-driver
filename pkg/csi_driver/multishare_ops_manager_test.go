@@ -17,10 +17,12 @@ limitations under the License.
 package driver
 
 import (
+	"encoding/json"
 	"fmt"
 	"testing"
 
 	"golang.org/x/net/context"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -38,11 +40,7 @@ var (
 
 type Item struct {
 	scKey          string
-	instanceKey    util.InstanceKey
-	shareKey       util.ShareKey
 	shareCreateKey string
-	op             util.OpInfo
-	createOp       util.ShareCreateOpInfo
 }
 
 func initCloudProviderWithBlockingFileService(t *testing.T, opUnblocker chan chan file.Signal) *cloud.Cloud {
@@ -67,1293 +65,12 @@ type MockOpStatus struct {
 
 type Response struct {
 	opStatus             util.OperationStatus
-	createOp             *util.ShareCreateOpInfo
-	shareOp              *util.OpInfo
 	verified             bool
 	readyInstances       []*file.MultishareInstance
 	numNonReadyInstances int
 	instanceNeedsExpand  bool
 	targetBytes          int64
 	err                  error
-}
-
-func TestCheckAndUpdateShareCreateOp(t *testing.T) {
-	tests := []struct {
-		name                      string
-		scKey                     string
-		shareName                 string
-		initShareCreateOpMap      []Item
-		signalGetOp               bool
-		signalIsOpDone            bool
-		getOpStatus               *MockOpStatus
-		isOpDoneStatus            *MockOpStatus
-		expectedShareCreateOpInfo *util.ShareCreateOpInfo
-		expectedOpStaus           util.OperationStatus
-		shareKeyExpectedInCache   bool
-	}{
-		{
-			name:            "tc1 - no share create op in cache, unknown op status",
-			scKey:           testInstanceScPrefix,
-			shareName:       testShareName,
-			expectedOpStaus: util.StatusUnknown,
-		},
-		{
-			name:      "tc2 - get share create op returns error, unknown op status, cache entry not cleared",
-			scKey:     testInstanceScPrefix,
-			shareName: testShareName,
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			signalGetOp: true,
-			getOpStatus: &MockOpStatus{
-				reportError: true,
-			},
-			expectedOpStaus: util.StatusUnknown,
-			expectedShareCreateOpInfo: &util.ShareCreateOpInfo{
-				InstanceHandle: testInstanceHandle,
-				OpName:         "op-1",
-			},
-			shareKeyExpectedInCache: true,
-		},
-		{
-			name:      "tc3 - IsOpDone returns error, return failed op status, cache entry cleared",
-			scKey:     testInstanceScPrefix,
-			shareName: testShareName,
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportError: true,
-			},
-			expectedOpStaus: util.StatusFailed,
-			expectedShareCreateOpInfo: &util.ShareCreateOpInfo{
-				InstanceHandle: testInstanceHandle,
-				OpName:         "op-1",
-			},
-		},
-		{
-			name:      "tc4 - IsOpDone false, return running op status, cache entry not cleared",
-			scKey:     testInstanceScPrefix,
-			shareName: testShareName,
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportRunning: true,
-			},
-			expectedOpStaus: util.StatusRunning,
-			expectedShareCreateOpInfo: &util.ShareCreateOpInfo{
-				InstanceHandle: testInstanceHandle,
-				OpName:         "op-1",
-			},
-			shareKeyExpectedInCache: true,
-		},
-		{
-			name:      "tc4 - IsOpDone true, return success op status, cache entry cleared",
-			scKey:     testInstanceScPrefix,
-			shareName: testShareName,
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			signalGetOp:     true,
-			signalIsOpDone:  true,
-			expectedOpStaus: util.StatusSuccess,
-			expectedShareCreateOpInfo: &util.ShareCreateOpInfo{
-				InstanceHandle: testInstanceHandle,
-				OpName:         "op-1",
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opUnblocker := make(chan chan file.Signal)
-			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
-			runRequest := func(ctx context.Context, instanceSCPrefix, shareName string) <-chan Response {
-				responseChannel := make(chan Response)
-				go func() {
-					op, status, err := manager.checkAndUpdateShareCreateOp(ctx, instanceSCPrefix, shareName)
-					responseChannel <- Response{
-						opStatus: status,
-						createOp: op,
-						err:      err,
-					}
-				}()
-				return responseChannel
-			}
-
-			// Pre-populate the cache.
-			for _, v := range tc.initShareCreateOpMap {
-				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
-				}
-				err := manager.cache.AddShareCreateOp(v.scKey, v.shareCreateKey, v.createOp)
-				if err != nil {
-					t.Errorf("failed to add share create op")
-				}
-			}
-
-			respChannel := runRequest(context.Background(), tc.scKey, tc.shareName)
-
-			// Inject mock response
-			if tc.signalGetOp {
-				s := file.Signal{}
-				if tc.getOpStatus != nil {
-					s.ReportError = tc.getOpStatus.reportError
-					s.ReportOpWithErrorStatus = tc.getOpStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.getOpStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalIsOpDone {
-				s := file.Signal{}
-				if tc.isOpDoneStatus != nil {
-					s.ReportError = tc.isOpDoneStatus.reportError
-					s.ReportOpWithErrorStatus = tc.isOpDoneStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.isOpDoneStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Verify response
-			response := <-respChannel
-			if response.opStatus != tc.expectedOpStaus {
-				t.Errorf("op status want %v, got %v", tc.expectedOpStaus, response.opStatus)
-			}
-			if tc.expectedShareCreateOpInfo == nil && response.createOp != nil {
-				t.Errorf("unexpected share create op found")
-			}
-
-			if tc.expectedShareCreateOpInfo != nil && response.createOp == nil {
-				t.Errorf("expected share create op not found")
-			}
-
-			if tc.expectedShareCreateOpInfo != nil && response.createOp != nil {
-				if tc.expectedShareCreateOpInfo.InstanceHandle != response.createOp.InstanceHandle {
-					t.Errorf("want %v, got %v", tc.expectedShareCreateOpInfo.InstanceHandle, response.createOp.InstanceHandle)
-				}
-				if tc.expectedShareCreateOpInfo.OpName != response.createOp.OpName {
-					t.Errorf("want %v, got %v", tc.expectedShareCreateOpInfo.OpName, response.createOp.OpName)
-				}
-			}
-
-			// Verify cache content
-			shareCreateOp := manager.cache.GetShareCreateOp(tc.scKey, tc.shareName)
-			if tc.shareKeyExpectedInCache && shareCreateOp == nil {
-				t.Errorf("expcted share key not found")
-			}
-			if !tc.shareKeyExpectedInCache && shareCreateOp != nil {
-				t.Errorf("unexpcted share key found")
-			}
-		})
-	}
-}
-
-func TestCheckAndUpdateShareOp(t *testing.T) {
-	testShare := &file.Share{
-		Name: testShareName,
-		Parent: &file.MultishareInstance{
-			Project:  testProject,
-			Location: testRegion,
-			Name:     testInstanceName,
-		},
-	}
-	tests := []struct {
-		name                    string
-		scKey                   string
-		shareKey                util.ShareKey
-		share                   *file.Share
-		initShareOpMap          []Item
-		signalGetOp             bool
-		signalIsOpDone          bool
-		getOpStatus             *MockOpStatus
-		isOpDoneStatus          *MockOpStatus
-		expectedShareOpInfo     *util.OpInfo
-		expectedOpStaus         util.OperationStatus
-		shareKeyExpectedInCache bool
-	}{
-		{
-			name:            "tc1 - no share op in cache, unknown op status",
-			scKey:           testInstanceScPrefix,
-			share:           testShare,
-			expectedOpStaus: util.StatusUnknown,
-		},
-		{
-			name:     "tc2 - get share op returns error, unknown op status, cache entry not cleared",
-			scKey:    testInstanceScPrefix,
-			share:    testShare,
-			shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOp: true,
-			getOpStatus: &MockOpStatus{
-				reportError: true,
-			},
-			expectedOpStaus: util.StatusUnknown,
-			expectedShareOpInfo: &util.OpInfo{
-				Name: "op-1",
-				Type: util.ShareDelete,
-			},
-			shareKeyExpectedInCache: true,
-		},
-		{
-			name:     "tc3 - IsOpDone returns error, return failed op status, cache entry cleared",
-			scKey:    testInstanceScPrefix,
-			share:    testShare,
-			shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportError: true,
-			},
-			expectedOpStaus: util.StatusFailed,
-			expectedShareOpInfo: &util.OpInfo{
-				Name: "op-1",
-				Type: util.ShareDelete,
-			},
-		},
-		{
-			name:     "tc4 - IsOpDone false, return running op status, cache entry not cleared",
-			scKey:    testInstanceScPrefix,
-			share:    testShare,
-			shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportRunning: true,
-			},
-			expectedOpStaus: util.StatusRunning,
-			expectedShareOpInfo: &util.OpInfo{
-				Name: "op-1",
-				Type: util.ShareDelete,
-			},
-			shareKeyExpectedInCache: true,
-		},
-		{
-			name:     "tc4 - IsOpDone true, return success op status, cache entry cleared",
-			scKey:    testInstanceScPrefix,
-			share:    testShare,
-			shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOp:     true,
-			signalIsOpDone:  true,
-			expectedOpStaus: util.StatusSuccess,
-			expectedShareOpInfo: &util.OpInfo{
-				Name: "op-1",
-				Type: util.ShareDelete,
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opUnblocker := make(chan chan file.Signal)
-			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
-			runRequest := func(ctx context.Context, instanceSCPrefix string, share *file.Share) <-chan Response {
-				responseChannel := make(chan Response)
-				go func() {
-					op, status, err := manager.checkAndUpdateShareOp(ctx, instanceSCPrefix, share)
-					responseChannel <- Response{
-						opStatus: status,
-						shareOp:  op,
-						err:      err,
-					}
-				}()
-				return responseChannel
-			}
-
-			// Pre-populate the cache.
-			for _, v := range tc.initShareOpMap {
-				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
-				}
-				err := manager.cache.AddShareOp(v.scKey, v.shareKey, v.op)
-				if err != nil {
-					t.Errorf("failed to add share op to map")
-				}
-			}
-
-			respChannel := runRequest(context.Background(), tc.scKey, tc.share)
-
-			// Inject mock response
-			if tc.signalGetOp {
-				s := file.Signal{}
-				if tc.getOpStatus != nil {
-					s.ReportError = tc.getOpStatus.reportError
-					s.ReportOpWithErrorStatus = tc.getOpStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.getOpStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalIsOpDone {
-				s := file.Signal{}
-				if tc.isOpDoneStatus != nil {
-					s.ReportError = tc.isOpDoneStatus.reportError
-					s.ReportOpWithErrorStatus = tc.isOpDoneStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.isOpDoneStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Verify response
-			response := <-respChannel
-			if response.opStatus != tc.expectedOpStaus {
-				t.Errorf("op status want %v, got %v", tc.expectedOpStaus, response.opStatus)
-			}
-			if tc.expectedShareOpInfo == nil && response.shareOp != nil {
-				t.Errorf("unexpected share create op found")
-			}
-
-			if tc.expectedShareOpInfo != nil && response.shareOp == nil {
-				t.Errorf("expected share create op not found")
-			}
-
-			if tc.expectedShareOpInfo != nil && response.shareOp != nil {
-				if tc.expectedShareOpInfo.Name != response.shareOp.Name {
-					t.Errorf("want %v, got %v", tc.expectedShareOpInfo.Name, response.shareOp.Name)
-				}
-				if tc.expectedShareOpInfo.Type != response.shareOp.Type {
-					t.Errorf("want %v, got %v", tc.expectedShareOpInfo.Type, response.shareOp.Type)
-				}
-			}
-
-			// Verify cache content
-			shareOp := manager.cache.GetShareOp(tc.scKey, tc.shareKey)
-			if tc.shareKeyExpectedInCache && shareOp == nil {
-				t.Errorf("expcted share key not found")
-			}
-			if !tc.shareKeyExpectedInCache && shareOp != nil {
-				t.Errorf("unexpcted share key found")
-			}
-		})
-	}
-}
-
-func TestVerifyNoRunningInstanceOps(t *testing.T) {
-	tests := []struct {
-		name                       string
-		scKey                      string
-		instanceKey                util.InstanceKey
-		instance                   *file.MultishareInstance
-		initInstanceOpMap          []Item
-		signalGetOp                bool
-		signalIsOpDone             bool
-		getOpStatus                *MockOpStatus
-		isOpDoneStatus             *MockOpStatus
-		errorExpected              bool
-		expectedVerificationStaus  bool
-		instanceKeyExpectedInCache bool
-		emptyOpExpected            bool
-	}{
-		{
-			name:        "tc1 - no instance op in cache, verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			expectedVerificationStaus: true,
-		},
-		{
-			name:        "tc2 - get instance op returns empty op, verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			initInstanceOpMap: []Item{
-				{
-					scKey:       testInstanceScPrefix,
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op:          util.OpInfo{},
-				},
-			},
-			instanceKeyExpectedInCache: true,
-			emptyOpExpected:            true,
-			expectedVerificationStaus:  true,
-		},
-
-		{
-			name:        "tc3 - get instance op returns error, status not verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			initInstanceOpMap: []Item{
-				{
-					scKey:       testInstanceScPrefix,
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-			},
-			signalGetOp: true,
-			getOpStatus: &MockOpStatus{
-				reportError: true,
-			},
-			errorExpected:              true,
-			instanceKeyExpectedInCache: true,
-		},
-		{
-			name:        "tc4 - IsOpDone returns error for completeed op, status verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			initInstanceOpMap: []Item{
-				{
-					scKey:       testInstanceScPrefix,
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportError: true,
-			},
-			instanceKeyExpectedInCache: true,
-			expectedVerificationStaus:  true,
-		},
-		{
-			name:        "tc5 - IsOpDone returns false, status not verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			initInstanceOpMap: []Item{
-				{
-					scKey:       testInstanceScPrefix,
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportRunning: true,
-			},
-			instanceKeyExpectedInCache: true,
-			expectedVerificationStaus:  false,
-		},
-		{
-			name:        "tc5 - IsOpDone true, status verified",
-			scKey:       testInstanceScPrefix,
-			instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-			instance: &file.MultishareInstance{
-				Project:  testProject,
-				Location: testRegion,
-				Name:     testInstanceName,
-			},
-			initInstanceOpMap: []Item{
-				{
-					scKey:       testInstanceScPrefix,
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-			},
-			signalGetOp:    true,
-			signalIsOpDone: true,
-			isOpDoneStatus: &MockOpStatus{
-				reportRunning: true,
-			},
-			instanceKeyExpectedInCache: true,
-			expectedVerificationStaus:  false,
-		}}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opUnblocker := make(chan chan file.Signal)
-			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
-			runRequest := func(ctx context.Context, instanceSCPrefix string, instance *file.MultishareInstance) <-chan Response {
-				responseChannel := make(chan Response)
-				go func() {
-					status, err := manager.verifyNoRunningInstanceOps(ctx, instanceSCPrefix, instance)
-					responseChannel <- Response{
-						verified: status,
-						err:      err,
-					}
-				}()
-				return responseChannel
-			}
-
-			// Pre-populate the cache.
-			for _, v := range tc.initInstanceOpMap {
-				manager.cache.AddInstanceOp(v.scKey, v.instanceKey, v.op)
-			}
-
-			respChannel := runRequest(context.Background(), tc.scKey, tc.instance)
-
-			// Inject mock response
-			if tc.signalGetOp {
-				s := file.Signal{}
-				if tc.getOpStatus != nil {
-					s.ReportError = tc.getOpStatus.reportError
-					s.ReportOpWithErrorStatus = tc.getOpStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.getOpStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalIsOpDone {
-				s := file.Signal{}
-				if tc.isOpDoneStatus != nil {
-					s.ReportError = tc.isOpDoneStatus.reportError
-					s.ReportOpWithErrorStatus = tc.isOpDoneStatus.reportOpWithErrorStatus
-					s.ReportRunning = tc.isOpDoneStatus.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Verify response
-			response := <-respChannel
-			if response.verified != tc.expectedVerificationStaus {
-				t.Errorf("verify status want %v, got %v", tc.expectedVerificationStaus, response.verified)
-			}
-
-			if tc.errorExpected && response.err == nil {
-				t.Errorf("expected error not found")
-			}
-			if !tc.errorExpected && response.err != nil {
-				t.Errorf("unexpected error found")
-			}
-
-			// Verify cache content
-			instanceOp := manager.cache.GetInstanceOp(tc.scKey, tc.instanceKey)
-			if tc.instanceKeyExpectedInCache && instanceOp == nil {
-				t.Errorf("expcted instance key not found")
-			}
-			if !tc.instanceKeyExpectedInCache && instanceOp != nil {
-				t.Errorf("unexpcted instance key found")
-			}
-			if tc.emptyOpExpected && instanceOp.Name != "" {
-				t.Errorf("expcted empty op")
-			}
-		})
-	}
-}
-
-func TestVerifyNoRunningShareOp(t *testing.T) {
-	tests := []struct {
-		name                         string
-		scKey                        string
-		share                        *file.Share
-		initShareCreateOpMap         []Item
-		initShareOpMap               []Item
-		signalGetOpForShareCreate    bool
-		signalIsOpDoneForShareCreate bool
-		getOpStatusforShareCreate    *MockOpStatus
-		isOpDoneStatusForShareCreate *MockOpStatus
-		signalGetOpForShareOp        bool
-		signalIsOpDoneForShareOp     bool
-		getOpStatusforShareOp        *MockOpStatus
-		isOpDoneStatusForShareOp     *MockOpStatus
-
-		errorExpected             bool
-		expectedVerificationStaus bool
-	}{
-		{
-			name:  "tc1 - no share create op in cache, no share op in cache",
-			scKey: testInstanceScPrefix,
-			share: &file.Share{
-				Name: testShareName,
-				Parent: &file.MultishareInstance{
-					Project:  testProject,
-					Location: testLocation,
-					Name:     testInstanceName,
-				},
-			},
-			expectedVerificationStaus: true,
-		},
-		{
-			name:  "tc2 - check for share create op returns error, status not verified",
-			scKey: testInstanceScPrefix,
-			share: &file.Share{
-				Name: testShareName,
-				Parent: &file.MultishareInstance{
-					Project:  testProject,
-					Location: testLocation,
-					Name:     testInstanceName,
-				},
-			},
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			signalGetOpForShareCreate: true,
-			getOpStatusforShareCreate: &MockOpStatus{
-				reportError: true,
-			},
-			expectedVerificationStaus: false,
-			errorExpected:             true,
-		},
-		{
-			name:  "tc3 - check for share create op returns a stale op status complete in isOpDone, check for share op returns error in get op, status not verified",
-			scKey: testInstanceScPrefix,
-			share: &file.Share{
-				Name: testShareName,
-				Parent: &file.MultishareInstance{
-					Project:  testProject,
-					Location: testRegion,
-					Name:     testInstanceName,
-				},
-			},
-			initShareCreateOpMap: []Item{
-				{
-					scKey:          testInstanceScPrefix,
-					shareCreateKey: testShareName,
-					createOp: util.ShareCreateOpInfo{
-						InstanceHandle: testInstanceHandle,
-						OpName:         "op-1",
-					},
-				},
-			},
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOpForShareCreate:    true,
-			signalIsOpDoneForShareCreate: true,
-			signalGetOpForShareOp:        true,
-			getOpStatusforShareOp: &MockOpStatus{
-				reportError: true,
-			},
-			expectedVerificationStaus: false,
-			errorExpected:             true,
-		},
-		{
-			name:  "tc4 - check for share create op returns nil, check for share op returns op fialed, status verified",
-			scKey: testInstanceScPrefix,
-			share: &file.Share{
-				Name: testShareName,
-				Parent: &file.MultishareInstance{
-					Project:  testProject,
-					Location: testRegion,
-					Name:     testInstanceName,
-				},
-			},
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOpForShareOp:    true,
-			signalIsOpDoneForShareOp: true,
-			isOpDoneStatusForShareOp: &MockOpStatus{
-				reportError: true,
-			},
-			expectedVerificationStaus: true,
-			errorExpected:             false,
-		},
-		{
-			name:  "tc4 - check for share create op returns nil, check for share op returns op success, status verified",
-			scKey: testInstanceScPrefix,
-			share: &file.Share{
-				Name: testShareName,
-				Parent: &file.MultishareInstance{
-					Project:  testProject,
-					Location: testRegion,
-					Name:     testInstanceName,
-				},
-			},
-			initShareOpMap: []Item{
-				{
-					scKey:    testInstanceScPrefix,
-					shareKey: util.CreateShareKey(testProject, testRegion, testInstanceName, testShareName),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.ShareDelete,
-					},
-				},
-			},
-			signalGetOpForShareOp:     true,
-			signalIsOpDoneForShareOp:  true,
-			expectedVerificationStaus: true,
-			errorExpected:             false,
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opUnblocker := make(chan chan file.Signal)
-			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
-			runRequest := func(ctx context.Context, instanceSCPrefix string, share *file.Share) <-chan Response {
-				responseChannel := make(chan Response)
-				go func() {
-					status, err := manager.verifyNoRunningShareOp(ctx, instanceSCPrefix, share)
-					responseChannel <- Response{
-						verified: status,
-						err:      err,
-					}
-				}()
-				return responseChannel
-			}
-			// Pre-populate the share create op map
-			for _, v := range tc.initShareCreateOpMap {
-				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
-				}
-				manager.cache.AddShareCreateOp(v.scKey, v.shareCreateKey, v.createOp)
-			}
-
-			// Pre-populate the share op map
-			for _, v := range tc.initShareOpMap {
-				if _, ok := manager.cache.ScInfoMap[v.scKey]; !ok {
-					manager.cache.ScInfoMap[v.scKey] = util.StorageClassInfo{
-						InstanceMap:    make(util.InstanceMap),
-						ShareCreateMap: make(util.ShareCreateMap),
-						ShareOpsMap:    make(util.ShareOpsMap),
-					}
-				}
-				manager.cache.AddShareOp(v.scKey, v.shareKey, v.op)
-			}
-
-			respChannel := runRequest(context.Background(), tc.scKey, tc.share)
-
-			// Inject mock response
-			if tc.signalGetOpForShareCreate {
-				s := file.Signal{}
-				if tc.getOpStatusforShareCreate != nil {
-					s.ReportError = tc.getOpStatusforShareCreate.reportError
-					s.ReportOpWithErrorStatus = tc.getOpStatusforShareCreate.reportOpWithErrorStatus
-					s.ReportRunning = tc.getOpStatusforShareCreate.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalIsOpDoneForShareCreate {
-				s := file.Signal{}
-				if tc.isOpDoneStatusForShareCreate != nil {
-					s.ReportError = tc.isOpDoneStatusForShareCreate.reportError
-					s.ReportOpWithErrorStatus = tc.isOpDoneStatusForShareCreate.reportOpWithErrorStatus
-					s.ReportRunning = tc.isOpDoneStatusForShareCreate.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalGetOpForShareOp {
-				s := file.Signal{}
-				if tc.getOpStatusforShareOp != nil {
-					s.ReportError = tc.getOpStatusforShareOp.reportError
-					s.ReportOpWithErrorStatus = tc.getOpStatusforShareOp.reportOpWithErrorStatus
-					s.ReportRunning = tc.getOpStatusforShareOp.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response
-			if tc.signalIsOpDoneForShareOp {
-				s := file.Signal{}
-				if tc.isOpDoneStatusForShareOp != nil {
-					s.ReportError = tc.isOpDoneStatusForShareOp.reportError
-					s.ReportOpWithErrorStatus = tc.isOpDoneStatusForShareOp.reportOpWithErrorStatus
-					s.ReportRunning = tc.isOpDoneStatusForShareOp.reportRunning
-				}
-				execute := <-opUnblocker
-				execute <- s
-			}
-			// Verify response
-			response := <-respChannel
-			if response.verified != tc.expectedVerificationStaus {
-				t.Errorf("op status want %v, got %v", tc.expectedVerificationStaus, response.verified)
-			}
-			if response.err != nil && !tc.errorExpected {
-				t.Errorf("got unexpected error")
-			}
-			if response.err == nil && tc.errorExpected {
-				t.Errorf("expected error")
-			}
-		})
-	}
-}
-
-func TestRunEligibleInstanceCheck(t *testing.T) {
-	tests := []struct {
-		name                              string
-		scKey                             string
-		initInstance                      []file.MultishareInstance
-		initShares                        []file.Share
-		initInstanceOpMap                 []Item
-		numSignalGetOpForInstance         int
-		numsignalIsOpDoneForInstance      int
-		isOpDoneStatusForInstance         []MockOpStatus
-		numSignalGetInstance              int
-		reportErrorForGetInstance         []bool
-		reportNotFoundErrorForGetInstance []bool
-		expectedNumReadyInstances         int
-		expectedNumNonReadyInstances      int
-		expectedError                     bool
-	}{
-		{
-			name:  "tc1-empty instance map",
-			scKey: testInstanceScPrefix,
-		},
-		{
-			name:  "single instance in map, failed to parse handle",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.InstanceKey("blah"),
-					op:          util.OpInfo{},
-				},
-			},
-		},
-		{
-			name:  "tc2-single ready instance in map, GET failed",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op:          util.OpInfo{},
-				},
-			},
-			numSignalGetInstance:              1,
-			reportErrorForGetInstance:         []bool{false},
-			reportNotFoundErrorForGetInstance: []bool{false},
-		},
-		{
-			name:  "tc3-single ready instance with 0 shares in map, GET success",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName),
-					op:          util.OpInfo{},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName,
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetInstance:              1,
-			reportErrorForGetInstance:         []bool{false},
-			reportNotFoundErrorForGetInstance: []bool{false},
-			expectedNumReadyInstances:         1,
-		},
-		{
-			name:  "tc4-two ready instance (no op in map) with 0 shares in map, GET success",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"1"),
-					op:          util.OpInfo{},
-				},
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"2"),
-					op:          util.OpInfo{},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName + "1",
-					Project:  testProject,
-					Location: testRegion,
-				},
-				{
-					Name:     testInstanceName + "2",
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetInstance:              2,
-			reportErrorForGetInstance:         []bool{false, false},
-			reportNotFoundErrorForGetInstance: []bool{false, false},
-			expectedNumReadyInstances:         2,
-		},
-		{
-			name:  "tc5-two ready instance (op in map, that is complete) with 0 shares in map, GET success",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"1"),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"2"),
-					op: util.OpInfo{
-						Name: "op-2",
-						Type: util.InstanceCreate,
-					},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName + "1",
-					Project:  testProject,
-					Location: testRegion,
-				},
-				{
-					Name:     testInstanceName + "2",
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetOpForInstance:    2,
-			numsignalIsOpDoneForInstance: 2,
-			isOpDoneStatusForInstance: []MockOpStatus{
-				{
-					reportRunning:           false,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-				{
-					reportRunning:           false,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-			},
-			numSignalGetInstance:              2,
-			reportErrorForGetInstance:         []bool{false, false},
-			reportNotFoundErrorForGetInstance: []bool{false, false},
-			expectedNumReadyInstances:         2,
-		},
-		{
-			name:  "tc6-two instance (delete op in map, that is complete) with 0 shares in map",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"1"),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceDelete,
-					},
-				},
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"2"),
-					op: util.OpInfo{
-						Name: "op-2",
-						Type: util.InstanceDelete,
-					},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName + "1",
-					Project:  testProject,
-					Location: testRegion,
-				},
-				{
-					Name:     testInstanceName + "2",
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetOpForInstance:    2,
-			numsignalIsOpDoneForInstance: 2,
-			isOpDoneStatusForInstance: []MockOpStatus{
-				{
-					reportRunning:           false,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-				{
-					reportRunning:           false,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-			},
-			numSignalGetInstance:              2,
-			reportErrorForGetInstance:         []bool{false, false},
-			reportNotFoundErrorForGetInstance: []bool{true, true},
-		},
-		{
-			name:  "tc7-two instance (one ready, one not ready) with 0 shares in map",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"1"),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceCreate,
-					},
-				},
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"2"),
-					op: util.OpInfo{
-						Name: "op-2",
-						Type: util.InstanceExpand,
-					},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName + "1",
-					Project:  testProject,
-					Location: testRegion,
-				},
-				{
-					Name:     testInstanceName + "2",
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetOpForInstance:    2,
-			numsignalIsOpDoneForInstance: 2,
-			isOpDoneStatusForInstance: []MockOpStatus{
-				{
-					reportRunning:           false,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-				{
-					reportRunning:           true,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-			},
-			numSignalGetInstance:              1,
-			reportErrorForGetInstance:         []bool{false},
-			reportNotFoundErrorForGetInstance: []bool{false},
-			expectedNumNonReadyInstances:      1,
-			expectedNumReadyInstances:         1,
-		},
-		{
-			name:  "tc8-one instance (delete op in progress) with 0 shares in map",
-			scKey: testInstanceScPrefix,
-			initInstanceOpMap: []Item{
-				{
-					instanceKey: util.CreateInstanceKey(testProject, testRegion, testInstanceName+"1"),
-					op: util.OpInfo{
-						Name: "op-1",
-						Type: util.InstanceDelete,
-					},
-				},
-			},
-			initInstance: []file.MultishareInstance{
-				{
-					Name:     testInstanceName + "1",
-					Project:  testProject,
-					Location: testRegion,
-				},
-			},
-			numSignalGetOpForInstance:    1,
-			numsignalIsOpDoneForInstance: 1,
-			isOpDoneStatusForInstance: []MockOpStatus{
-				{
-					reportRunning:           true,
-					reportNotFoundError:     false,
-					reportOpWithErrorStatus: false,
-				},
-			},
-		},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			opUnblocker := make(chan chan file.Signal, 1)
-			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
-			runRequest := func(ctx context.Context, instanceSCPrefix string) <-chan Response {
-				responseChannel := make(chan Response)
-				go func() {
-					ready, numNonReady, err := manager.runEligibleInstanceCheck(ctx, instanceSCPrefix)
-					responseChannel <- Response{
-						readyInstances:       ready,
-						numNonReadyInstances: numNonReady,
-						err:                  err,
-					}
-				}()
-				return responseChannel
-			}
-			// Prepopulate known instances and shares
-			for _, instance := range tc.initInstance {
-				manager.cloud.File.StartCreateMultishareInstanceOp(context.Background(), &instance)
-			}
-			for _, share := range tc.initShares {
-				manager.cloud.File.StartCreateShareOp(context.Background(), &share)
-			}
-			for _, item := range tc.initInstanceOpMap {
-				manager.cache.AddInstanceOp(tc.scKey, item.instanceKey, item.op)
-			}
-
-			respChannel := runRequest(context.Background(), tc.scKey)
-			// Inject mock response for GetOp
-			for i := 0; i < tc.numSignalGetOpForInstance; i++ {
-				s := file.Signal{}
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			// Inject mock response for IsOpDone
-			for i := 0; i < tc.numsignalIsOpDoneForInstance; i++ {
-				s := file.Signal{}
-				s.ReportError = tc.isOpDoneStatusForInstance[i].reportError
-				s.ReportOpWithErrorStatus = tc.isOpDoneStatusForInstance[i].reportOpWithErrorStatus
-				s.ReportRunning = tc.isOpDoneStatusForInstance[i].reportRunning
-				execute := <-opUnblocker
-				execute <- s
-			}
-
-			for i := 0; i < tc.numSignalGetInstance; i++ {
-				s := file.Signal{}
-				s.ReportError = tc.reportErrorForGetInstance[i]
-				s.ReportNotFoundError = tc.reportNotFoundErrorForGetInstance[i]
-				execute := <-opUnblocker
-				execute <- s
-			}
-			// Verify response
-			response := <-respChannel
-			if response.numNonReadyInstances != tc.expectedNumNonReadyInstances {
-				t.Errorf("want %v, got %v", tc.expectedNumNonReadyInstances, response.numNonReadyInstances)
-			}
-			if len(response.readyInstances) != tc.expectedNumReadyInstances {
-				t.Errorf("unexpected instance %v", response.readyInstances)
-			}
-			if !tc.expectedError && response.err != nil {
-				t.Errorf("unexpected error")
-			}
-			if tc.expectedError && response.err == nil {
-				t.Errorf("expecteded error")
-			}
-		})
-	}
 }
 
 func TestInstanceNeedsExpand(t *testing.T) {
@@ -1726,6 +443,1106 @@ func TestInstanceNeedsExpand(t *testing.T) {
 			}
 			if tc.targetBytes != response.targetBytes {
 				t.Errorf("want %v, got %v", tc.targetBytes, response.targetBytes)
+			}
+		})
+	}
+}
+
+func TestListInstanceForStorageClassPrefix(t *testing.T) {
+	found := func(inputList []*file.MultishareInstance, i *file.MultishareInstance) bool {
+		for _, f := range inputList {
+			if f.Project == i.Project && f.Location == i.Location && f.Name == i.Name {
+				return true
+			}
+		}
+		return false
+	}
+
+	tests := []struct {
+		name             string
+		initInstanceList []*file.MultishareInstance
+		prefix           string
+		expectedList     []*file.MultishareInstance
+	}{
+		{
+			name:   "empty init inistance list",
+			prefix: "testprefix",
+		},
+		{
+			name:   "non-empty init inistance list",
+			prefix: "testprefix",
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+		},
+		{
+			name:   "non-empty init inistance list, 1 instance match",
+			prefix: "testprefix-1",
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix-1",
+					},
+				},
+				{
+					Name:     "test-instance-2",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix-2",
+					},
+				},
+			},
+			expectedList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix-1",
+					},
+				},
+			},
+		},
+		{
+			name:   "non-empty init inistance list, 2 instances match",
+			prefix: "testprefix",
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "test-instance-2",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "test-instance-3",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix-3",
+					},
+				},
+			},
+			expectedList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "test-instance-2",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cloudProvider, err := cloud.NewFakeCloud()
+			if err != nil {
+				t.Fatalf("failed to initialize Provider: %v", err)
+			}
+
+			for _, i := range tc.initInstanceList {
+				cloudProvider.File.StartCreateMultishareInstanceOp(context.Background(), i)
+			}
+
+			manager := NewMultishareOpsManager(cloudProvider)
+			filteredList, err := manager.listInstanceForStorageClassPrefix(context.Background(), tc.prefix)
+			for _, fi := range filteredList {
+				if !found(tc.expectedList, fi) {
+					t.Errorf("Failed to find instance")
+				}
+			}
+		})
+	}
+}
+
+func TestContainsOpWithInstanceTargetPrefix(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputInstance *file.MultishareInstance
+		inputOps      []*OpInfo
+		opExpected    bool
+		errorExpected bool
+	}{
+		{
+			name: "empty ops list",
+			inputInstance: &file.MultishareInstance{
+				Name:     "test-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+		},
+		{
+			name: "invalid instance, missing location",
+			inputInstance: &file.MultishareInstance{
+				Name:    "test-instance",
+				Project: "test-project",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance, missing project",
+			inputInstance: &file.MultishareInstance{
+				Name:     "test-instance",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance, missing name",
+			inputInstance: &file.MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "valid instance, no running instance prefixed op",
+			inputInstance: &file.MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+				Name:     "test-instance",
+			},
+			inputOps: []*OpInfo{
+				{
+					Id:     "op1",
+					Type:   util.InstanceCreate,
+					Target: "projects/test-project/locations/us-central1/instances/test-instance1",
+				},
+			},
+		},
+		{
+			name: "valid instance, running instance op",
+			inputInstance: &file.MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+				Name:     "test-instance",
+			},
+			inputOps: []*OpInfo{
+				{
+					Id:     "op1",
+					Type:   util.InstanceCreate,
+					Target: "projects/test-project/locations/us-central1/instances/test-instance",
+				},
+			},
+			opExpected: true,
+		},
+		{
+			name: "valid instance, running share op",
+			inputInstance: &file.MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+				Name:     "test-instance",
+			},
+			inputOps: []*OpInfo{
+				{
+					Id:     "op1",
+					Type:   util.InstanceCreate,
+					Target: "projects/test-project/locations/us-central1/instances/test-instance/shares/test-share",
+				},
+			},
+			opExpected: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			op, err := containsOpWithInstanceTargetPrefix(tc.inputInstance, tc.inputOps)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error, found none")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+
+			if tc.opExpected && op == nil {
+				t.Errorf("expected op, found none")
+			}
+			if !tc.opExpected && op != nil {
+				t.Errorf("unexpected op")
+			}
+		})
+	}
+}
+
+func TestContainsOpWithShareName(t *testing.T) {
+	tests := []struct {
+		name       string
+		shareName  string
+		opType     util.OperationType
+		inputops   []*OpInfo
+		opExpected bool
+	}{
+		{
+			name:      "empty input ops",
+			shareName: "test-share",
+		},
+		{
+			name:      "share not found in input ops",
+			shareName: "test-share",
+			inputops: []*OpInfo{
+				{
+					Id:     "op1",
+					Type:   util.InstanceCreate,
+					Target: "projects/test-project/locations/us-central1/instances/test-instance",
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			op := containsOpWithShareName(tc.shareName, tc.opType, tc.inputops)
+			if tc.opExpected && op == nil {
+				t.Errorf("expected op, found none")
+			}
+			if !tc.opExpected && op != nil {
+				t.Errorf("unexpected op")
+			}
+		})
+	}
+}
+
+func TestListMultishareResourceRunningOps(t *testing.T) {
+	found := func(inputList []*OpInfo, i *OpInfo) bool {
+		for _, f := range inputList {
+			if i.Id == f.Id && i.Target == f.Target && i.Type == f.Type {
+				return true
+			}
+		}
+		return false
+	}
+
+	type OpItem struct {
+		id     string
+		target string
+		verb   string
+		done   bool
+	}
+	tests := []struct {
+		name        string
+		initOps     []*OpItem
+		expectedOps []*OpInfo
+	}{
+		{
+			name: "filter out done ops",
+			initOps: []*OpItem{
+				{
+					id:     "op1",
+					target: "projects/test-project/locations/us-central1/instances/test-instance",
+					verb:   "create",
+					done:   true,
+				},
+				{
+					id:     "op2",
+					target: "projects/test-project/locations/us-central1/instances/test-instance",
+					verb:   "update",
+				},
+			},
+			expectedOps: []*OpInfo{
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance",
+					Type:   util.InstanceUpdate,
+				},
+			},
+		},
+		{
+			name: "filter out done ops",
+			initOps: []*OpItem{
+				{
+					id:     "op1",
+					target: "projects/test-project/locations/us-central1/instances/test-instance",
+					verb:   "create",
+					done:   true,
+				},
+				{
+					id:     "op2",
+					target: "projects/test-project/locations/us-central1/instances/test-instance",
+					verb:   "update",
+				},
+			},
+			expectedOps: []*OpInfo{
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance",
+					Type:   util.InstanceUpdate,
+				},
+			},
+		},
+		{
+			name: "skip resources other than instance and shares",
+			initOps: []*OpItem{
+				{
+					id:     "op1",
+					target: "projects/test-project/locations/us-central1/instances/test-instance-1",
+					verb:   "create",
+				},
+				{
+					id:     "op2",
+					target: "projects/test-project/locations/us-central1/instances/test-instance-2",
+					verb:   "update",
+				},
+				{
+					id:     "op3",
+					target: "projects/test-project/locations/us-central1/backups/test-backup",
+					verb:   "create",
+				},
+				{
+					id:     "op4",
+					target: "projects/test-project/locations/us-central1/snapshots/test-snapshot",
+					verb:   "create",
+				},
+			},
+			expectedOps: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1",
+					Type:   util.InstanceCreate,
+				},
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-2",
+					Type:   util.InstanceUpdate,
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v1beta1ops []*filev1beta1multishare.Operation
+			for _, item := range tc.initOps {
+				var meta filev1beta1multishare.OperationMetadata
+				meta.Target = item.target
+				meta.Verb = item.verb
+				bytes, _ := json.Marshal(meta)
+				v1beta1ops = append(v1beta1ops, &filev1beta1multishare.Operation{
+					Name:     item.id,
+					Done:     item.done,
+					Metadata: bytes,
+				})
+			}
+
+			s, err := file.NewFakeServiceForMultishare(nil, nil, v1beta1ops)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			manager := NewMultishareOpsManager(cloudProvider)
+			ops, err := manager.listMultishareResourceRunningOps(context.Background())
+			if err != nil {
+				t.Fatalf("failed to initialize GCFS service: %v", err)
+			}
+			for _, o := range ops {
+				if !found(tc.expectedOps, o) {
+					t.Errorf("unexpected op")
+				}
+			}
+		})
+	}
+}
+
+func TestVerifyNoRunningInstanceOps(t *testing.T) {
+	tests := []struct {
+		name          string
+		ops           []*OpInfo
+		instance      *file.MultishareInstance
+		errorExpected bool
+	}{
+		{
+			name: "no error",
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1",
+				},
+			},
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-2",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+		},
+		{
+			name: "invalid instance case1",
+			instance: &file.MultishareInstance{
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance case2",
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-2",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance case3",
+			instance: &file.MultishareInstance{
+				Name:    "test-instance-2",
+				Project: "test-project",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "error found running op",
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-1",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1",
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "no running op match",
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-1",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-12",
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := file.NewFakeServiceForMultishare(nil, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			manager := NewMultishareOpsManager(cloudProvider)
+			err = manager.verifyNoRunningInstanceOps(tc.instance, tc.ops)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error, found none")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+		})
+	}
+}
+
+func TestVerifyNoRunningInstanceOrShareOpsForInstance(t *testing.T) {
+	tests := []struct {
+		name          string
+		ops           []*OpInfo
+		instance      *file.MultishareInstance
+		errorExpected bool
+	}{
+		{
+			name: "no error, no matching instance",
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-12",
+				},
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-12/shares/share-1",
+				},
+			},
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-1",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+		},
+		{
+			name: "invalid instance case1",
+			instance: &file.MultishareInstance{
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance case2",
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-2",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid instance case3",
+			instance: &file.MultishareInstance{
+				Name:    "test-instance-2",
+				Project: "test-project",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "error, matching instance op",
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1",
+				},
+			},
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-1",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "error, matching share op with instance prefix",
+			ops: []*OpInfo{
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1/shares/share-1",
+				},
+			},
+			instance: &file.MultishareInstance{
+				Name:     "test-instance-1",
+				Project:  "test-project",
+				Location: "us-central1",
+			},
+			errorExpected: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := file.NewFakeServiceForMultishare(nil, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			manager := NewMultishareOpsManager(cloudProvider)
+			err = manager.verifyNoRunningInstanceOrShareOpsForInstance(tc.instance, tc.ops)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error, found none")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+		})
+	}
+}
+
+func TestVerifyNoRunningShareOps(t *testing.T) {
+	tests := []struct {
+		name          string
+		ops           []*OpInfo
+		share         *file.Share
+		errorExpected bool
+	}{
+		{
+			name: "no error, no matching op",
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-12",
+				},
+				{
+					Id:     "op2",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-12/shares/share-1",
+				},
+			},
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+				},
+				Name: "share-1",
+			},
+		},
+		{
+			name: "invalid share case1",
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Name:     "test-instance-1",
+					Location: "us-central1",
+				},
+				Name: "share-1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid share case2",
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Name:    "test-instance-1",
+					Project: "test-project",
+				},
+				Name: "share-1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid share case3",
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Project:  "test-project",
+					Location: "us-central1",
+				},
+				Name: "share-1",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "invalid share case3",
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "error, found matching share op",
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/test-instance-1/shares/share-1",
+				},
+			},
+			share: &file.Share{
+				Parent: &file.MultishareInstance{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+				},
+				Name: "share-1",
+			},
+			errorExpected: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := file.NewFakeServiceForMultishare(nil, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			manager := NewMultishareOpsManager(cloudProvider)
+			err = manager.verifyNoRunningShareOps(tc.share, tc.ops)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error, found none")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+		})
+	}
+}
+
+func TestRunEligibleInstanceCheck(t *testing.T) {
+	found := func(inputList []*file.MultishareInstance, i *file.MultishareInstance) bool {
+		for _, f := range inputList {
+			if f.Project == i.Project && f.Location == i.Location && f.Name == i.Name {
+				return true
+			}
+		}
+		return false
+	}
+	tests := []struct {
+		name                  string
+		prefix                string
+		ops                   []*OpInfo
+		initInstances         []*file.MultishareInstance
+		initShares            []*file.Share
+		expectedNonReadyCount int
+		expectedReadyInstance []*file.MultishareInstance
+	}{
+		{
+			name: "no instances",
+		},
+		{
+			name:   "all ready instances",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "test-instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedReadyInstance: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "test-instance-2",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+		},
+		{
+			name:   "non-ready instances (instance update)",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1",
+					Type:   util.InstanceUpdate,
+				},
+			},
+		},
+		{
+			name:   "non-ready instances (share create)",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1/shares/share-1",
+					Type:   util.ShareCreate,
+				},
+			},
+		},
+		{
+			name:   "non-ready instances (share update)",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1/shares/share-1",
+					Type:   util.ShareUpdate,
+				},
+			},
+		},
+		{
+			name:   "non-ready instances (share delete)",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1/shares/share-1",
+					Type:   util.ShareDelete,
+				},
+			},
+		},
+		{
+			name:   "non-ready instances 0, instance delete not counted as ready",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1",
+					Type:   util.InstanceDelete,
+				},
+			},
+		},
+		{
+			name:   "non-ready instances (share delete), ready instance",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+				{
+					Name:     "instance-2",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedReadyInstance: []*file.MultishareInstance{
+				{
+					Name:     "instance-2",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1/shares/share-1",
+					Type:   util.ShareDelete,
+				},
+			},
+		},
+		{
+			name:   "no ready instance, no non-ready instance, instance with 10 shares not eligible",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: "share-1",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-2",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-3",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-4",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-5",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-6",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-7",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-8",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-9",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+				{
+					Name: "share-10",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  "test-project",
+						Location: "us-central1",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: "testprefix",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := file.NewFakeServiceForMultishare(tc.initInstances, tc.initShares, nil)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			manager := NewMultishareOpsManager(cloudProvider)
+			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.prefix, tc.ops)
+			if err != nil {
+				t.Errorf("unexpected error")
+			}
+			if nonReady != tc.expectedNonReadyCount {
+				t.Errorf("got %d, want %d", nonReady, tc.expectedNonReadyCount)
+			}
+			for _, r := range ready {
+				if !found(tc.expectedReadyInstance, r) {
+					t.Errorf("expected instance not ready")
+				}
 			}
 		})
 	}

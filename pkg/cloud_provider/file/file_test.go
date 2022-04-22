@@ -197,3 +197,226 @@ func TestGetInstanceNameFromURI(t *testing.T) {
 		}
 	}
 }
+
+func TestIsMultishareInstanceTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		inputuri string
+		match    bool
+	}{
+		{
+			name:     "empty",
+			inputuri: "",
+		},
+		{
+			name:     "invalid case 1",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance/shares/test-share",
+		},
+		{
+			name:     "invalid case 2",
+			inputuri: "projectstest-project/locations/us-central1/instances/test-instance/shares/test-share",
+		},
+		{
+			name:     "invalid case 3",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance/",
+		},
+		{
+			name:     "valid case 1",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance",
+			match:    true,
+		},
+		{
+			name:     "valid case 2",
+			inputuri: "projects/test-project/locations/us-central1-c/instances/test-instance",
+			match:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if IsInstanceTarget(tc.inputuri) != tc.match {
+				t.Errorf("unecpected error")
+			}
+		})
+	}
+}
+
+func TestIsMultishareShareTarget(t *testing.T) {
+	tests := []struct {
+		name     string
+		inputuri string
+		match    bool
+	}{
+		{
+			name:     "empty",
+			inputuri: "",
+		},
+		{
+			name:     "invalid case 1",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance",
+		},
+		{
+			name:     "invalid case 2",
+			inputuri: "projectstest-project/locations/us-central1/instances/test-instance",
+		},
+		{
+			name:     "invalid case 3",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance/shares/test-share/",
+		},
+		{
+			name:     "valid case 1",
+			inputuri: "projects/test-project/locations/us-central1/instances/test-instance/shares/test-share",
+			match:    true,
+		},
+		{
+			name:     "valid case 2",
+			inputuri: "projects/test-project/locations/us-central1-c/instances/test-instance/shares/test-share",
+			match:    true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if IsShareTarget(tc.inputuri) != tc.match {
+				t.Errorf("unecpected error")
+			}
+		})
+	}
+}
+
+func TestGenerateMultishareInstanceURI(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         *MultishareInstance
+		expectedUri   string
+		errorExpected bool
+	}{
+		{
+			name:          "nil instance",
+			errorExpected: true,
+		},
+		{
+			name: "empty project",
+			input: &MultishareInstance{
+				Location: "us-central1",
+				Name:     "test",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "empty location",
+			input: &MultishareInstance{
+				Project: "test-project",
+				Name:    "test",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "empty name",
+			input: &MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "valid input",
+			input: &MultishareInstance{
+				Location: "us-central1",
+				Project:  "test-project",
+				Name:     "test-instance",
+			},
+			expectedUri: "projects/test-project/locations/us-central1/instances/test-instance",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, err := GenerateMultishareInstanceURI(tc.input)
+			if err != nil && !tc.errorExpected {
+				t.Errorf("unexpected error")
+			}
+			if err == nil && tc.errorExpected {
+				t.Errorf("expected error got nil")
+			}
+			if tc.expectedUri != uri {
+				t.Errorf("got %s, want %s", uri, tc.expectedUri)
+			}
+		})
+	}
+}
+
+func TestGenerateShareURI(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         *Share
+		expectedUri   string
+		errorExpected bool
+	}{
+		{
+			name:          "nil share",
+			errorExpected: true,
+		},
+		{
+			name:          "nil share parent",
+			errorExpected: true,
+			input: &Share{
+				Name: "test-share",
+			},
+		},
+		{
+			name: "empty project",
+			input: &Share{
+				Parent: &MultishareInstance{
+					Location: "us-central1",
+				},
+				Name: "test-share",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "empty location",
+			input: &Share{
+				Parent: &MultishareInstance{
+					Project: "test-project",
+				},
+				Name: "test-share",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "empty instance name",
+			input: &Share{
+				Parent: &MultishareInstance{
+					Project:  "test-project",
+					Location: "us-central1",
+				},
+				Name: "test-share",
+			},
+			errorExpected: true,
+		},
+		{
+			name: "valid input",
+			input: &Share{
+				Parent: &MultishareInstance{
+					Location: "us-central1",
+					Project:  "test-project",
+					Name:     "test-instance",
+				},
+				Name: "test-share",
+			},
+			expectedUri: "projects/test-project/locations/us-central1/instances/test-instance/shares/test-share",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			uri, err := GenerateShareURI(tc.input)
+			if err != nil && !tc.errorExpected {
+				t.Errorf("unexpected error")
+			}
+			if err == nil && tc.errorExpected {
+				t.Errorf("expected error got nil")
+			}
+			if tc.expectedUri != uri {
+				t.Errorf("got %s, want %s", uri, tc.expectedUri)
+			}
+		})
+	}
+}

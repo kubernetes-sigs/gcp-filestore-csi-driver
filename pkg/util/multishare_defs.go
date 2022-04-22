@@ -17,9 +17,7 @@ limitations under the License.
 package util
 
 const (
-	InstanceHandleSplitLen     = 3
 	InstanceURISplitLen        = 6
-	ShareHandleSplitLen        = 4
 	ShareURISplitLen           = 8
 	MultishareCSIVolIdSplitLen = 6
 
@@ -36,13 +34,31 @@ type OperationType int
 const (
 	InstanceCreate OperationType = iota
 	InstanceDelete
-	InstanceExpand
-	InstanceShrink
+	InstanceUpdate
 	ShareCreate
 	ShareDelete
-	ShareExpand
+	ShareUpdate
 	UnknownOp
 )
+
+func (o OperationType) String() string {
+	switch o {
+	case InstanceCreate:
+		return "instance" + OpVerbCreate
+	case InstanceDelete:
+		return "instance" + OpVerbDelete
+	case InstanceUpdate:
+		return "instance" + OpVerbUpdate
+	case ShareCreate:
+		return "share" + OpVerbCreate
+	case ShareDelete:
+		return "share" + OpVerbDelete
+	case ShareUpdate:
+		return "share" + OpVerbUpdate
+	default:
+		return "unknown"
+	}
+}
 
 type OperationStatus int
 
@@ -52,3 +68,35 @@ const (
 	StatusFailed
 	StatusUnknown
 )
+
+const (
+	OpVerbCreate = "create"
+	OpVerbDelete = "delete"
+	OpVerbUpdate = "update"
+)
+
+func ConvertInstanceOpVerbToType(v string) OperationType {
+	switch v {
+	case OpVerbCreate:
+		return InstanceCreate
+	case OpVerbDelete:
+		return InstanceDelete
+	case OpVerbUpdate:
+		return InstanceUpdate
+	default:
+		return UnknownOp
+	}
+}
+
+func ConvertShareOpVerbToType(v string) OperationType {
+	switch v {
+	case OpVerbCreate:
+		return ShareCreate
+	case OpVerbDelete:
+		return ShareDelete
+	case OpVerbUpdate:
+		return ShareUpdate
+	default:
+		return UnknownOp
+	}
+}
