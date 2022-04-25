@@ -26,7 +26,9 @@ if [ "${DEPLOY_VERSION}" != dev ]; then
   if ! kubectl get secret gcp-filestore-csi-driver-sa --namespace=$GCFS_NS; then
     kubectl create secret generic gcp-filestore-csi-driver-sa --from-file="$GCFS_SA_FILE" --namespace=$GCFS_NS
   fi
-else
+fi
+
+if [ "${DEPLOY_VERSION}" == multishare ]; then
   $mydir/webhook-example/create-cert.sh --namespace ${GCFS_NS} --service fs-validation
   webhook_config="$mydir/overlays/${DEPLOY_VERSION}/mutation-configuration.yaml"
   cat $mydir/mutation-webhook-configuration-template | $mydir/webhook-example/patch-ca-bundle.sh > $webhook_config
