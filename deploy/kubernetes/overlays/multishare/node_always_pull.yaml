@@ -1,0 +1,11 @@
+kind: DaemonSet
+apiVersion: apps/v1
+metadata:
+  name: gcp-filestore-csi-node
+spec:
+  template:
+    spec:
+      containers:
+        - name: gcp-filestore-driver
+          imagePullPolicy: Always
+
