@@ -309,7 +309,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 			continue
 		}
 
-		if instance.State == "DELETING" {
+		if instance.State == "DELETING" || instance.State == "ERROR" {
 			continue
 		}
 		nonReadyInstanceCount += 1
