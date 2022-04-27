@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-server
+spec:
+  containers:
+   - name: web-server
+     image: nginx
+     volumeMounts:
+       - mountPath: /usr/share/nginx/html
+         name: mypvc
+  volumes:
+   - name: mypvc
+     persistentVolumeClaim:
+       claimName: test-pvc-multishare
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-pvc-multishare
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: csi-filestore-multishare
+  resources:
+    requests:
+      storage: 100Gi
