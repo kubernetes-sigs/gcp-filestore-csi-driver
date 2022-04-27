@@ -118,7 +118,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		response, err := s.config.multiShareController.CreateVolume(ctx, req)
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodCreateVolume, modeMultishare, duration)
-		klog.Infof("CreateVolume request %+v, response %+v error %v", req, response, err)
+		klog.Infof("CreateVolume response %+v error %v, for request %+v", response, err, req)
 		return response, err
 	}
 
@@ -305,7 +305,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		response, err := s.config.multiShareController.DeleteVolume(ctx, req)
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodDeleteVolume, modeMultishare, duration)
-		klog.Infof("CreateVolume request %+v, response %+v error %v", req, response, err)
+		klog.Infof("Deletevolume response %+v error %v, for request: %+v", response, err, req)
 		return response, err
 	}
 
