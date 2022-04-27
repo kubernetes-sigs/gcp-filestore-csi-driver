@@ -33,6 +33,7 @@ spec:
             - "--http-endpoint=:22021"
             - "--leader-election-namespace=$(FILESTORECSI_NAMESPACE)"
             - "--leader-election"
+            - "--retry-interval-max=60s"
           env:
             - name: FILESTORECSI_NAMESPACE
               valueFrom:
