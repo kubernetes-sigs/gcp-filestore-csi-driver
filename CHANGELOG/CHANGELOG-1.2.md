@@ -9,7 +9,7 @@
 - Multishare create/delete volume based on APIs ([#254](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/254), [@saikat-royc](https://github.com/saikat-royc))
 - New 'multishare' overlay ([#255](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/255), [@leiyiz](https://github.com/leiyiz))
 - Add storageclass webhook into cloudbuild ([#233](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/233), [@leiyiz](https://github.com/leiyiz))
-
+- Implement cloudprovider code for resize multishare instance ([#263](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/263), [@saikat-royc](https://github.com/saikat-royc))
 ### Documentation
 
 ### Bug or Regression
