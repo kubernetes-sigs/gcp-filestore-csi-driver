@@ -153,7 +153,8 @@ const (
 	backupURIFmt    = locationURIFmt + "/backups/%s"
 	shareURIFmt     = instanceURIFmt + "/shares/%s"
 	// Patch update masks
-	fileShareUpdateMask = "file_shares"
+	fileShareUpdateMask                  = "file_shares"
+	multishareInstanceCapacityUpdateMask = "capacity_gb"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -759,8 +760,30 @@ func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.C
 }
 
 func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
-	// TODO
-	return nil, nil
+	instanceuri := instanceURI(obj.Project, obj.Location, obj.Name)
+	targetinstance := &filev1beta1multishare.Instance{
+		MultiShareEnabled: true,
+		Tier:              obj.Tier,
+		Networks: []*filev1beta1multishare.NetworkConfig{
+			{
+				Network:         obj.Network.Name,
+				Modes:           []string{"MODE_IPV4"},
+				ReservedIpRange: obj.Network.ReservedIpRange,
+				ConnectMode:     obj.Network.ConnectMode,
+			},
+		},
+		CapacityGb:  util.BytesToGb(obj.CapacityBytes),
+		KmsKeyName:  obj.KmsKeyName,
+		Labels:      obj.Labels,
+		Description: obj.Description,
+	}
+	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareInstanceCapacityUpdateMask).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("Patch operation failed: %v for instance %+v", err, targetinstance)
+	}
+
+	klog.Infof("Started instance update operation %s for instance %+v", op.Name, targetinstance)
+	return op, nil
 }
 
 func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share *Share) (*filev1beta1multishare.Operation, error) {
