@@ -557,6 +557,79 @@ func TestNodeGetInfo(t *testing.T) {
 func TestNodeGetCapabilities(t *testing.T) {
 }
 
+func TestNodeGetVolumeStats(t *testing.T) {
+	testEnv := initTestNodeServer(t)
+	ns := testEnv.ns
+
+	// Setup mount target path
+	tempDir, err := ioutil.TempDir("", "ngvs")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+	targetPath := filepath.Join(tempDir, "mount")
+	stagingPath := filepath.Join(tempDir, "staging")
+
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:          testVolumeID,
+		TargetPath:        targetPath,
+		StagingTargetPath: stagingPath,
+		Readonly:          false,
+		VolumeCapability:  testVolumeCapability,
+		VolumeContext:     testVolumeAttributes,
+	}
+	_, err = ns.NodePublishVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Failed to set up test by publishing default vol: %v", err)
+	}
+
+	testCases := []struct {
+		name       string
+		volumeID   string
+		volumePath string
+		expectErr  bool
+	}{
+		{
+			name:       "normal",
+			volumeID:   testVolumeID,
+			volumePath: targetPath,
+		},
+		{
+			name:       "no vol id",
+			volumePath: targetPath,
+			expectErr:  true,
+		},
+		{
+			name:      "no vol path",
+			volumeID:  testVolumeID,
+			expectErr: true,
+		},
+		{
+			name:       "bad vol path",
+			volumeID:   testVolumeID,
+			volumePath: "/mnt/fake",
+			expectErr:  true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &csi.NodeGetVolumeStatsRequest{
+				VolumeId:   tc.volumeID,
+				VolumePath: tc.volumePath,
+			}
+			_, err := ns.NodeGetVolumeStats(context.Background(), req)
+			if err != nil && !tc.expectErr {
+				t.Fatalf("Got unexpected err: %v", err)
+			}
+			if err == nil && tc.expectErr {
+				t.Fatal("Did not get error but expected one")
+			}
+		})
+	}
+
+}
+
 func validateMountPoint(t *testing.T, name string, fm *mount.FakeMounter, e *mount.MountPoint) {
 	if e == nil {
 		if len(fm.MountPoints) != 0 {
