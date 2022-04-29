@@ -25,6 +25,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	"golang.org/x/net/context"
+	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	mount "k8s.io/mount-utils"
@@ -177,6 +178,46 @@ func (s *nodeServer) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCa
 	return &csi.NodeGetCapabilitiesResponse{
 		Capabilities: s.driver.nscap,
 	}, nil
+}
+
+func (s *nodeServer) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {
+	if len(req.VolumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume ID was empty")
+	}
+	if len(req.VolumePath) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "NodeGetVolumeStats volume path was empty")
+	}
+
+	_, err := os.Lstat(req.VolumePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, status.Errorf(codes.NotFound, "path %s does not exist", req.VolumePath)
+		}
+		return nil, status.Errorf(codes.Internal, "unknown error when stat on %s: %v", req.VolumePath, err)
+	}
+
+	available, capacity, used, inodesFree, inodes, inodesUsed, err := getFSStat(req.VolumePath)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to get fs info on path %s: %v", req.VolumePath, err)
+	}
+
+	return &csi.NodeGetVolumeStatsResponse{
+		Usage: []*csi.VolumeUsage{
+			{
+				Unit:      csi.VolumeUsage_BYTES,
+				Available: available,
+				Total:     capacity,
+				Used:      used,
+			},
+			{
+				Unit:      csi.VolumeUsage_INODES,
+				Available: inodesFree,
+				Total:     inodes,
+				Used:      inodesUsed,
+			},
+		},
+	}, nil
+
 }
 
 func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolumeRequest) (*csi.NodeStageVolumeResponse, error) {
@@ -388,4 +429,24 @@ func validateMultishareVolumeAttributes(attr map[string]string) error {
 		return fmt.Errorf("invalid IP address %v in volume attributes", instanceip)
 	}
 	return nil
+}
+
+func getFSStat(path string) (available, capacity, used, inodesFree, inodes, inodesUsed int64, err error) {
+	statfs := &unix.Statfs_t{}
+	err = unix.Statfs(path, statfs)
+	if err != nil {
+		err = fmt.Errorf("failed to get fs info on path %s: %v", path, err)
+		return
+	}
+
+	// Available is blocks available * fragment size
+	available = int64(statfs.Bavail) * int64(statfs.Bsize)
+	// Capacity is total block count * fragment size
+	capacity = int64(statfs.Blocks) * int64(statfs.Bsize)
+	// Usage is block being used * fragment size (aka block size).
+	used = (int64(statfs.Blocks) - int64(statfs.Bfree)) * int64(statfs.Bsize)
+	inodes = int64(statfs.Files)
+	inodesFree = int64(statfs.Ffree)
+	inodesUsed = inodes - inodesFree
+	return
 }
