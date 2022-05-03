@@ -32,11 +32,13 @@ const (
 	// configurable timeouts for the k8s e2e testsuites.
 	podStartTimeout                 = "600s"
 	claimProvisionTimeout           = "600s"
+	pvDeleteTimeout                 = "600s"
 	enterpriseClaimProvisionTimeout = "1800s"
 
 	// These are keys for the configurable timeout map.
 	podStartTimeoutKey       = "PodStart"
 	claimProvisionTimeoutKey = "ClaimProvision"
+	pvDeleteTimeoutKey       = "PVDelete"
 )
 
 // generateDriverConfigFile loads a testdriver config template and creates a file
@@ -113,6 +115,7 @@ func generateDriverConfigFile(testParams *testParameters, storageClassFile strin
 	timeouts := map[string]string{
 		claimProvisionTimeoutKey: claimProvisionTimeout,
 		podStartTimeoutKey:       podStartTimeout,
+		pvDeleteTimeoutKey:       pvDeleteTimeout,
 	}
 	if strings.Contains(storageClassFile, enterpriseTier) {
 		timeouts[claimProvisionTimeoutKey] = enterpriseClaimProvisionTimeout
