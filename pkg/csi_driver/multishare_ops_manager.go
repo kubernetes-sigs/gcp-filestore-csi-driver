@@ -336,11 +336,13 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 	for _, s := range shares {
 		sumShareBytes = sumShareBytes + s.CapacityBytes
 	}
-	// TODO: Check if we need to align the increment to step size.
+
 	var remainingBytes int64
 	remainingBytes = share.Parent.CapacityBytes - sumShareBytes
 	if remainingBytes < share.CapacityBytes {
-		return true, (share.CapacityBytes + sumShareBytes), nil
+		alignBytes := util.AlignBytes(share.CapacityBytes+sumShareBytes, util.GbToBytes(share.Parent.CapacityStepSizeGb))
+		targetBytes := util.Min(alignBytes, util.MaxMultishareInstanceSizeBytes)
+		return true, targetBytes, nil
 	}
 	return false, 0, nil
 }
@@ -418,7 +420,13 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 		totalShareCap += share.CapacityBytes
 	}
 	if totalShareCap < instance.CapacityBytes && instance.CapacityBytes > util.MinMultishareInstanceSizeBytes {
-		instance.CapacityBytes = util.Max(totalShareCap, util.MinMultishareInstanceSizeBytes)
+		targetShrinkSizeBytes := util.AlignBytes(totalShareCap, util.GbToBytes(instance.CapacityStepSizeGb))
+		targetShrinkSizeBytes = util.Max(targetShrinkSizeBytes, util.MinMultishareInstanceSizeBytes)
+		if instance.CapacityBytes == targetShrinkSizeBytes {
+			return nil, nil
+		}
+
+		instance.CapacityBytes = targetShrinkSizeBytes
 		w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceUpdate}, ops)
 		if err != nil {
 			if file.IsNotFoundErr(err) {

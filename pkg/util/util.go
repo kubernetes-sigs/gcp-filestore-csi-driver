@@ -264,3 +264,11 @@ func GetMultishareOpsTimeoutConfig(opType OperationType) (time.Duration, time.Du
 		return 0, 0, fmt.Errorf("unknown op type %v", opType)
 	}
 }
+
+// Aligns to the next higher multiple of step size. No-op if step size is 0, or already aligned.
+func AlignBytes(currBytes int64, stepBytes int64) int64 {
+	if stepBytes == 0 {
+		return currBytes
+	}
+	return ((currBytes + stepBytes - 1) / stepBytes) * stepBytes
+}
