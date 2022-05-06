@@ -407,3 +407,63 @@ func TestParseShareURI(t *testing.T) {
 	}
 
 }
+
+func TestAlignBytes(t *testing.T) {
+	tests := []struct {
+		name        string
+		inputBytes  int64
+		stepBytes   int64
+		targetBytes int64
+	}{
+		{
+			name:        "0 step",
+			inputBytes:  100 * Gb,
+			targetBytes: 100 * Gb,
+		},
+		{
+			name:        "input less than step size",
+			stepBytes:   256 * Gb,
+			inputBytes:  100,
+			targetBytes: 256 * Gb,
+		},
+		{
+			name:        "aligned input test case 1",
+			stepBytes:   256 * Gb,
+			inputBytes:  2 * 256 * Gb,
+			targetBytes: 2 * 256 * Gb,
+		},
+		{
+			name:        "aligned input test case 2",
+			stepBytes:   256 * Gb,
+			inputBytes:  1 * Tb,
+			targetBytes: 1 * Tb,
+		},
+		{
+			name:        "aligned input test case 3",
+			stepBytes:   256 * Gb,
+			inputBytes:  10 * Tb,
+			targetBytes: 10 * Tb,
+		},
+		{
+			name:        "misaligned input test case 1",
+			stepBytes:   256 * Gb,
+			inputBytes:  256*Gb + 1,
+			targetBytes: 256 * 2 * Gb,
+		},
+		{
+			name:        "misaligned input test case 2",
+			stepBytes:   256 * Gb,
+			inputBytes:  1*Tb + 1,
+			targetBytes: 1*Tb + 256*Gb,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := AlignBytes(tc.inputBytes, tc.stepBytes)
+			if got != tc.targetBytes {
+				t.Errorf("got %d bytes, expected %d bytes", got, tc.targetBytes)
+			}
+		})
+	}
+
+}
