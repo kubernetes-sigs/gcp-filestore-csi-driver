@@ -22,6 +22,7 @@ const (
 	MultishareCSIVolIdSplitLen = 6
 
 	MinMultishareInstanceSizeBytes    int64 = 1 * Tb
+	MaxMultishareInstanceSizeBytes    int64 = 10 * Tb
 	MaxShareSizeBytes                 int64 = 1 * Tb
 	MinShareSizeBytes                 int64 = 100 * Gb
 	MaxSharesPerInstance                    = 10
