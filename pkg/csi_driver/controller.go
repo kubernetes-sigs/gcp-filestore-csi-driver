@@ -523,6 +523,18 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
 	}
 
+	if isMultishareVolId(volumeID) {
+		if s.config.multiShareController == nil {
+			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
+		}
+		start := time.Now()
+		response, err := s.config.multiShareController.ControllerExpandVolume(ctx, req)
+		duration := time.Since(start)
+		s.config.metricsManager.RecordOperationMetrics(err, methodExpandVolume, modeMultishare, duration)
+		klog.Infof("ControllerExpandVolume response %+v error %v, for request: %+v", response, err, req)
+		return response, err
+	}
+
 	reqBytes, err := getRequestCapacity(req.GetCapacityRange())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

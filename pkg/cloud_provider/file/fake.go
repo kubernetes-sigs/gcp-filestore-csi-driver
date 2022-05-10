@@ -342,7 +342,17 @@ func (manager *fakeServiceManager) StartDeleteMultishareInstanceOp(ctx context.C
 }
 
 func (manager *fakeServiceManager) StartResizeMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
-	return nil, nil
+	manager.createdMultishareInstance[obj.Name].CapacityBytes = obj.CapacityBytes
+	meta := &filev1beta1multishare.OperationMetadata{
+		Target: fmt.Sprintf(instanceURIFmt, obj.Project, obj.Location, obj.Name),
+		Verb:   "update",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1multishare.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+	return op, nil
 }
 
 func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
@@ -404,7 +414,18 @@ func (manager *fakeServiceManager) StartDeleteShareOp(ctx context.Context, obj *
 }
 
 func (manager *fakeServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
-	return nil, nil
+	manager.createdMultishares[obj.Name].CapacityBytes = obj.CapacityBytes
+	meta := &filev1beta1multishare.OperationMetadata{
+		Target: fmt.Sprintf(shareURIFmt, obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name),
+		Verb:   "update",
+	}
+	metaBytes, _ := json.Marshal(meta)
+	op := &filev1beta1multishare.Operation{
+		Name:     "operation-" + uuid.New().String(),
+		Metadata: metaBytes,
+	}
+
+	return op, nil
 }
 
 func (manager *fakeServiceManager) WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error {
