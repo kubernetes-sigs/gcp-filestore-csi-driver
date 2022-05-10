@@ -835,7 +835,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to fake service: %v", err)
 			}
-			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
 			resp, err := mcs.CreateVolume(context.Background(), tc.req)
@@ -1032,7 +1032,7 @@ func TestMultishareDeleteVolume(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to fake service: %v", err)
 			}
-			cloudProvider, err := cloud.NewFakeCloud()
+			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
 			resp, err := mcs.DeleteVolume(context.Background(), tc.req)
@@ -1054,4 +1054,385 @@ func TestMultishareDeleteVolume(t *testing.T) {
 		})
 	}
 
+}
+
+func TestMultishareControllerExpandVolume(t *testing.T) {
+	testVolName := "pvc-" + string(uuid.NewUUID())
+	testShareName := util.ConvertVolToShareName(testVolName)
+	testInstanceName1 := "fs-" + string(uuid.NewUUID())
+	testVolId := fmt.Sprintf("%s/%s/%s/%s/%s/%s", modeMultishare, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName)
+	baseCap := 100 * util.Gb
+	mediumCap := 200 * util.Gb
+	largeCap := 500 * util.Gb
+	type OpItem struct {
+		id     string
+		target string
+		verb   string
+		done   bool
+	}
+	tests := []struct {
+		name          string
+		ops           []OpItem
+		initInstance  []*file.MultishareInstance
+		initShares    []*file.Share
+		req           *csi.ControllerExpandVolumeRequest
+		resp          *csi.ControllerExpandVolumeResponse
+		errorExpected bool
+	}{
+		{
+			name: "share not found, error respond",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(mediumCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "share already larger than request, succeed",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(mediumCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+					CapacityBytes:  int64(largeCap),
+				},
+			},
+			resp: &csi.ControllerExpandVolumeResponse{
+				CapacityBytes:         int64(largeCap),
+				NodeExpansionRequired: false,
+			},
+		},
+		{
+			name: "share found, instance op ongoing, error",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(mediumCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+					CapacityBytes:  int64(baseCap),
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(instanceUriFmt, testProject, testRegion, testInstanceName1),
+					verb:   "update",
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "share found, instance needs expansion",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(largeCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+					CapacityBytes:  int64(baseCap),
+				},
+				{
+					Name: testShareName + "1",
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName + "1",
+					CapacityBytes:  int64(mediumCap),
+				},
+				{
+					Name: testShareName + "2",
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName + "2",
+					CapacityBytes:  int64(largeCap),
+				},
+			},
+			resp: &csi.ControllerExpandVolumeResponse{
+				CapacityBytes:         int64(largeCap),
+				NodeExpansionRequired: false,
+			},
+		},
+		{
+			name: "share found, instance does not need expansion",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(largeCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+					CapacityBytes:  int64(baseCap),
+				},
+			},
+			resp: &csi.ControllerExpandVolumeResponse{
+				CapacityBytes:         int64(largeCap),
+				NodeExpansionRequired: false,
+			},
+		},
+		{
+			name: "shareOp on other shares ongoing for instance",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: int64(mediumCap)},
+			},
+			initInstance: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: testRegion,
+					Project:  testProject,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName,
+					CapacityBytes:  int64(baseCap),
+				},
+				{
+					Name: testShareName + "1",
+					Parent: &file.MultishareInstance{
+						Project:  testProject,
+						Location: testRegion,
+						Name:     testInstanceName1,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+					},
+					MountPointName: testShareName + "1",
+					CapacityBytes:  int64(mediumCap),
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(shareUriFmt, testProject, testRegion, testInstanceName1, testShareName+"1"),
+					verb:   "update",
+				},
+			},
+			errorExpected: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v1beta1ops []*filev1beta1multishare.Operation
+			for _, item := range tc.ops {
+				var meta filev1beta1multishare.OperationMetadata
+				meta.Target = item.target
+				meta.Verb = item.verb
+				bytes, _ := json.Marshal(meta)
+				v1beta1ops = append(v1beta1ops, &filev1beta1multishare.Operation{
+					Name:     item.id,
+					Done:     item.done,
+					Metadata: bytes,
+				})
+			}
+
+			s, err := file.NewFakeServiceForMultishare(tc.initInstance, tc.initShares, v1beta1ops)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, _ := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
+			resp, err := mcs.ControllerExpandVolume(context.Background(), tc.req)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error not found")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+			if tc.resp != nil && resp == nil {
+				t.Errorf("mismatch in response")
+			}
+			if tc.resp == nil && resp != nil {
+				t.Errorf("mismatch in response")
+			}
+			if !reflect.DeepEqual(resp, tc.resp) {
+				t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+			}
+		})
+	}
 }
