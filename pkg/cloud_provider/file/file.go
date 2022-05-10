@@ -153,8 +153,8 @@ const (
 	backupURIFmt    = locationURIFmt + "/backups/%s"
 	shareURIFmt     = instanceURIFmt + "/shares/%s"
 	// Patch update masks
-	fileShareUpdateMask                  = "file_shares"
-	multishareInstanceCapacityUpdateMask = "capacity_gb"
+	fileShareUpdateMask          = "file_shares"
+	multishareCapacityUpdateMask = "capacity_gb"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -340,7 +340,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 
 func CompareInstances(a, b *ServiceInstance) error {
 	mismatches := []string{}
-	if strings.ToLower(a.Tier) != strings.ToLower(b.Tier) {
+	if !strings.EqualFold(a.Tier, b.Tier) {
 		mismatches = append(mismatches, "tier")
 	}
 	if a.Volume.Name != b.Volume.Name {
@@ -451,7 +451,7 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	)
 	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("Patch operation failed: %v", err)
+		return nil, fmt.Errorf("patch operation failed: %v", err)
 	}
 
 	glog.V(4).Infof("For instance %s, waiting for patch op %v to complete", instanceuri, op.Name)
@@ -508,7 +508,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		return nil, err
 	}
 	if backupObj.State != "READY" {
-		return nil, fmt.Errorf("Backup %v for source %v is not ready, current state: %v", backupUri, backupSource, backupObj.State)
+		return nil, fmt.Errorf("backup %v for source %v is not ready, current state: %v", backupUri, backupSource, backupObj.State)
 	}
 	glog.Infof("Successfully created backup %+v for source instance %v", backupObj, backupSource)
 	return backupObj, nil
@@ -517,13 +517,13 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId string) error {
 	opbackup, err := manager.backupService.Delete(backupId).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("For backup Id %s, delete backup operation %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %v", backupId, opbackup.Name, err)
 	}
 
 	glog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return fmt.Errorf("Delete backup: %v, op %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("delete backup: %v, op %s failed: %v", backupId, opbackup.Name, err)
 	}
 
 	glog.Infof("Backup %v successfully deleted", backupId)
@@ -646,7 +646,7 @@ func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *Servi
 	for {
 		resp, err := manager.operationsService.List(locationURI(obj.Project, obj.Location)).PageToken(nextToken).Context(ctx).Do()
 		if err != nil {
-			return false, fmt.Errorf("List operations for instance %q, token %q failed: %v", uri, nextToken, err)
+			return false, fmt.Errorf("list operations for instance %q, token %q failed: %v", uri, nextToken, err)
 		}
 
 		filteredOps, err := ApplyFilter(resp.Operations, uri, operationType, done)
@@ -777,9 +777,9 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 		Labels:      obj.Labels,
 		Description: obj.Description,
 	}
-	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareInstanceCapacityUpdateMask).Context(ctx).Do()
+	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("Patch operation failed: %v for instance %+v", err, targetinstance)
+		return nil, fmt.Errorf("patch operation failed: %v for instance %+v", err, targetinstance)
 	}
 
 	klog.Infof("Started instance update operation %s for instance %+v", op.Name, targetinstance)
@@ -812,9 +812,19 @@ func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, share
 	return op, nil
 }
 
-func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, obj *Share) (*filev1beta1multishare.Operation, error) {
-	// TODO
-	return nil, nil
+func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, share *Share) (*filev1beta1multishare.Operation, error) {
+	uri := shareURI(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
+	targetShare := &filev1beta1multishare.Share{
+		CapacityGb: util.BytesToGb(share.CapacityBytes),
+		Labels:     share.Labels,
+		MountName:  share.MountPointName,
+	}
+	op, err := manager.multishareInstancesSharesService.Patch(uri, targetShare).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
+	if err != nil {
+		return nil, fmt.Errorf("ResizeShare operation failed: %v", err)
+	}
+	klog.Infof("Started Resize Share op %s for share uri %q ", op.Name, uri)
+	return op, nil
 }
 
 func (manager *gcfsServiceManager) WaitForOpWithOpts(ctx context.Context, op string, opts PollOpts) error {
@@ -899,11 +909,11 @@ func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListF
 
 func ParseShare(s *Share) (string, string, string, string, error) {
 	if s == nil || s.Parent == nil {
-		return "", "", "", "", fmt.Errorf("Missing parent object for share %s", s.Name)
+		return "", "", "", "", fmt.Errorf("missing parent object for share %s", s.Name)
 	}
 
 	if s.Parent.Project == "" || s.Parent.Location == "" || s.Parent.Name == "" || s.Name == "" {
-		return "", "", "", "", fmt.Errorf("Missing identifier in share")
+		return "", "", "", "", fmt.Errorf("missing identifier in share")
 	}
 
 	return s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name, nil
@@ -934,7 +944,7 @@ func CompareMultishareInstances(a, b *MultishareInstance) error {
 		mismatches = append(mismatches, "name")
 	}
 
-	if strings.ToLower(a.Tier) != strings.ToLower(b.Tier) {
+	if !strings.EqualFold(a.Tier, b.Tier) {
 		mismatches = append(mismatches, "tier")
 	}
 
@@ -1040,11 +1050,11 @@ func IsShareTarget(target string) bool {
 
 func GenerateMultishareInstanceURI(m *MultishareInstance) (string, error) {
 	if m == nil {
-		return "", fmt.Errorf("Null instance")
+		return "", fmt.Errorf("nil instance")
 	}
 
 	if m.Project == "" || m.Location == "" || m.Name == "" {
-		return "", fmt.Errorf("Missing parent, project or location in instance")
+		return "", fmt.Errorf("missing parent, project or location in instance")
 	}
 
 	return fmt.Sprintf(instanceURIFmt, m.Project, m.Location, m.Name), nil
@@ -1052,11 +1062,11 @@ func GenerateMultishareInstanceURI(m *MultishareInstance) (string, error) {
 
 func GenerateShareURI(s *Share) (string, error) {
 	if s == nil || s.Parent == nil {
-		return "", fmt.Errorf("Missing share parent instance")
+		return "", fmt.Errorf("missing share parent instance")
 	}
 
 	if s.Parent.Project == "" || s.Parent.Location == "" || s.Parent.Name == "" || s.Name == "" {
-		return "", fmt.Errorf("Missing parent, project or location in share parent")
+		return "", fmt.Errorf("missing parent, project or location in share parent")
 	}
 
 	return fmt.Sprintf(shareURIFmt, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil

@@ -410,10 +410,10 @@ func TestInstanceNeedsExpand(t *testing.T) {
 			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
 			manager := NewMultishareOpsManager(cloudProvider)
 
-			runRequest := func(ctx context.Context, share *file.Share) <-chan Response {
+			runRequest := func(ctx context.Context, share *file.Share, capNeeded int64) <-chan Response {
 				responseChannel := make(chan Response)
 				go func() {
-					needsExpand, targetBytes, err := manager.instanceNeedsExpand(context.Background(), share)
+					needsExpand, targetBytes, err := manager.instanceNeedsExpand(context.Background(), share, capNeeded)
 					responseChannel <- Response{
 						instanceNeedsExpand: needsExpand,
 						targetBytes:         targetBytes,
@@ -430,7 +430,7 @@ func TestInstanceNeedsExpand(t *testing.T) {
 				manager.cloud.File.StartCreateShareOp(context.Background(), &share)
 			}
 
-			respChannel := runRequest(context.Background(), tc.targetShareToAccomodate)
+			respChannel := runRequest(context.Background(), tc.targetShareToAccomodate, tc.targetShareToAccomodate.CapacityBytes)
 			response := <-respChannel
 			if tc.expectError && response.err == nil {
 				t.Errorf("expected error")

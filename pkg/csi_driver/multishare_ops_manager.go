@@ -109,7 +109,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 			return nil, nil, status.Error(codes.Internal, err.Error())
 		}
 
-		needExpand, targetBytes, err := m.instanceNeedsExpand(ctx, share)
+		needExpand, targetBytes, err := m.instanceNeedsExpand(ctx, share, share.CapacityBytes)
 		if err != nil {
 			return nil, nil, status.Error(codes.Internal, err.Error())
 		}
@@ -133,7 +133,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	return w, nil, err
 }
 
-func (m *MultishareOpsManager) startShareCreateWorkflowSafe(ctx context.Context, instanceSCPrefix string, share *file.Share) (*Workflow, error) {
+func (m *MultishareOpsManager) startShareCreateWorkflowSafe(ctx context.Context, share *file.Share) (*Workflow, error) {
 	m.Lock()
 	defer m.Unlock()
 	ops, err := m.listMultishareResourceRunningOps(ctx)
@@ -319,12 +319,12 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	return readyEligibleInstances, nonReadyInstanceCount, nil
 }
 
-func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *file.Share) (bool, int64, error) {
+func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *file.Share, capacityNeeded int64) (bool, int64, error) {
 	if share == nil {
 		return false, 0, fmt.Errorf("empty share")
 	}
 	if share.Parent == nil {
-		return false, 0, fmt.Errorf("Parent missing from share %q", share.Name)
+		return false, 0, fmt.Errorf("parent missing from share %q", share.Name)
 	}
 
 	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: share.Parent.Project, Location: share.Parent.Location, InstanceName: share.Parent.Name})
@@ -337,17 +337,71 @@ func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *f
 		sumShareBytes = sumShareBytes + s.CapacityBytes
 	}
 
-	var remainingBytes int64
-	remainingBytes = share.Parent.CapacityBytes - sumShareBytes
-	if remainingBytes < share.CapacityBytes {
-		alignBytes := util.AlignBytes(share.CapacityBytes+sumShareBytes, util.GbToBytes(share.Parent.CapacityStepSizeGb))
+	remainingBytes := share.Parent.CapacityBytes - sumShareBytes
+	if remainingBytes < capacityNeeded {
+		alignBytes := util.AlignBytes(capacityNeeded+sumShareBytes, util.GbToBytes(share.Parent.CapacityStepSizeGb))
 		targetBytes := util.Min(alignBytes, util.MaxMultishareInstanceSizeBytes)
 		return true, targetBytes, nil
 	}
 	return false, 0, nil
 }
 
-func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Context, instanceScPrefix string, share *file.Share) (*Workflow, error) {
+func (m *MultishareOpsManager) checkAndStartInstanceOrShareExpandWorkflow(ctx context.Context, share *file.Share, reqBytes int64) (*Workflow, error) {
+	m.Lock()
+	defer m.Unlock()
+
+	ops, err := m.listMultishareResourceRunningOps(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	expandShareOp, err := containsOpWithShareTarget(share, util.ShareUpdate, ops)
+	if err != nil {
+		return nil, err
+	}
+	if expandShareOp != nil {
+		return &Workflow{share: share, opName: expandShareOp.Id, opType: expandShareOp.Type}, nil
+	}
+
+	// no existing share Expansion, proceed to instance check
+	err = m.verifyNoRunningInstanceOrShareOpsForInstance(share.Parent, ops)
+	if err != nil {
+		klog.Infof("Instance %v has running share or instnace Op, aborting volume expansion.", share.Parent.Name)
+		return nil, status.Error(codes.Aborted, err.Error())
+	}
+
+	instance, err := m.cloud.File.GetMultishareInstance(ctx, share.Parent)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	needExpand, targetBytes, err := m.instanceNeedsExpand(ctx, share, reqBytes-share.CapacityBytes)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if needExpand {
+		instance.CapacityBytes = targetBytes
+		workflow, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceUpdate}, ops)
+		return workflow, err
+	}
+
+	share.CapacityBytes = reqBytes
+	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareUpdate}, ops)
+}
+
+func (m *MultishareOpsManager) startShareExpandWorkflowSafe(ctx context.Context, share *file.Share, reqBytes int64) (*Workflow, error) {
+	m.Lock()
+	defer m.Unlock()
+	ops, err := m.listMultishareResourceRunningOps(ctx)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+
+	share.CapacityBytes = reqBytes
+	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareUpdate}, ops)
+}
+
+func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Context, share *file.Share) (*Workflow, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -357,12 +411,12 @@ func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Cont
 	}
 
 	// If we find a running delete share op, poll for that to complete.
-	deleteshareop, err := containsOpWithShareTarget(share, util.ShareDelete, ops)
+	deleteShareOp, err := containsOpWithShareTarget(share, util.ShareDelete, ops)
 	if err != nil {
 		return nil, err
 	}
-	if deleteshareop != nil {
-		return &Workflow{share: share, opName: deleteshareop.Id, opType: deleteshareop.Type}, nil
+	if deleteShareOp != nil {
+		return &Workflow{share: share, opName: deleteShareOp.Id, opType: deleteShareOp.Type}, nil
 	}
 
 	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareDelete}, ops)
