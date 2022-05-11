@@ -29,7 +29,8 @@ import (
 )
 
 const (
-	Gb = 1024 * 1024 * 1024
+	Mb = 1024 * 1024
+	Gb = 1024 * Mb
 	Tb = 1024 * Gb
 
 	// VolumeSnapshot parameters
@@ -60,6 +61,10 @@ func BytesToGb(bytes int64) int64 {
 
 func GbToBytes(gbs int64) int64 {
 	return gbs * Gb
+}
+
+func MbToBytes(mbs int64) int64 {
+	return mbs * Mb
 }
 
 func Min(a, b int64) int64 {

@@ -206,6 +206,36 @@ func (c *CsiClient) ControllerExpandVolumeWithLimit(volumeID string, sizeBytes, 
 	return err
 }
 
+func (c *CsiClient) NodeGetVolumeStats(volumeID, volumePath string) (available, capacity, used, inodesFree, inodes, inodesUsed int64, err error) {
+	resp, err := c.nodeClient.NodeGetVolumeStats(context.Background(), &csipb.NodeGetVolumeStatsRequest{
+		VolumeId:   volumeID,
+		VolumePath: volumePath,
+	})
+	if err != nil {
+		return
+	}
+	for _, usage := range resp.Usage {
+		if usage == nil {
+			continue
+		}
+		unit := usage.GetUnit()
+		switch unit {
+		case csipb.VolumeUsage_BYTES:
+			available = usage.GetAvailable()
+			capacity = usage.GetTotal()
+			used = usage.GetUsed()
+		case csipb.VolumeUsage_INODES:
+			inodesFree = usage.GetAvailable()
+			inodes = usage.GetTotal()
+			inodesUsed = usage.GetUsed()
+		default:
+			err = fmt.Errorf("unknown key %s in usage", unit.String())
+			return
+		}
+	}
+	return
+}
+
 func (c *CsiClient) CreateSnapshot(snapshotName, sourceVolumeId string) (string, error) {
 	csr := &csipb.CreateSnapshotRequest{
 		Name:           snapshotName,

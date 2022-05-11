@@ -439,8 +439,8 @@ func getFSStat(path string) (available, capacity, used, inodesFree, inodes, inod
 		return
 	}
 
-	// Available is blocks available * fragment size
-	available = int64(statfs.Bavail) * int64(statfs.Bsize)
+	// Available is blocks available * fragment size to root user
+	available = int64(statfs.Bfree) * int64(statfs.Bsize)
 	// Capacity is total block count * fragment size
 	capacity = int64(statfs.Blocks) * int64(statfs.Bsize)
 	// Usage is block being used * fragment size (aka block size).
