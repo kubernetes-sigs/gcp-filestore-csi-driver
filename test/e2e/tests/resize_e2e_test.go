@@ -41,7 +41,7 @@ const (
 	defaultTier          = "STANDARD"
 	defaultNetwork       = "default"
 	minVolumeSize  int64 = 1 * util.Tb
-	defaultEpsilon int64 = 70 * util.Gb // when a 1T instance was created, the actual size is 1007G, and only 956G is available to non-root users, so there will be ~70 Gb of space unavailable
+	defaultEpsilon int64 = 20 * util.Gb // when a 1T instance was created, the actual size is 1007G, so there will be ~20 Gb of space unavailable
 )
 
 var _ = Describe("Google Cloud Filestore CSI Driver", func() {
