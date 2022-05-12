@@ -72,7 +72,7 @@ func SetupInstance(instanceProject, instanceZone, instanceName, instanceServiceA
 }
 
 // SetupNewDriverAndClient gets the driver binary, runs it on the provided instance and connects
-// a CSI client to it through SHH tunnelling. It returns a TestContext with both a handle to the instance
+// a CSI client to it through SSH tunnelling. It returns a TestContext with both a handle to the instance
 // that the driver is on and the CSI Client object to make CSI calls to the remote driver.
 func SetupNewDriverAndClient(instance *InstanceInfo, config *ClientConfig) (*TestContext, error) {
 	archivePath, err := CreateDriverArchive(archiveName, config.PkgPath, config.BinPath)
