@@ -141,6 +141,15 @@ func WriteFile(instance *remote.InstanceInfo, filePath, fileContents string) err
 	return nil
 }
 
+// generate a random file with given size in MiB
+func GenerateRandomFile(instance *remote.InstanceInfo, filePath string, size int64) error {
+	output, err := instance.SSHNoSudo("dd", "if=/dev/urandom", fmt.Sprintf("of=%s/file", filePath), "bs=1MiB", fmt.Sprintf("count=%d", size))
+	if err != nil {
+		return fmt.Errorf("failed to write test file %s. Output: %v, errror: %v", filePath, output, err)
+	}
+	return nil
+}
+
 func ReadFile(instance *remote.InstanceInfo, filePath string) (string, error) {
 	output, err := instance.SSHNoSudo("cat", filePath)
 	if err != nil {

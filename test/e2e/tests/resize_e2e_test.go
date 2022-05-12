@@ -16,8 +16,10 @@ package tests
 
 import (
 	"fmt"
+	"math/rand"
 	"path/filepath"
 	"strings"
+	"time"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"k8s.io/apimachinery/pkg/util/uuid"
@@ -39,6 +41,7 @@ const (
 	defaultTier          = "STANDARD"
 	defaultNetwork       = "default"
 	minVolumeSize  int64 = 1 * util.Tb
+	defaultEpsilon int64 = 20 * util.Gb // when a 1T instance was created, the actual size is 1007G, so there will be ~20 Gb of space unavailable
 )
 
 var _ = Describe("Google Cloud Filestore CSI Driver", func() {
@@ -51,7 +54,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 
 		validateDisk(diskInfo)
 
-		writeAndReadDisk(diskInfo)
+		writeAndReadDisk(diskInfo, testContext)
 
 		offlineResizeDisk(diskInfo)
 
@@ -59,7 +62,7 @@ var _ = Describe("Google Cloud Filestore CSI Driver", func() {
 	})
 })
 
-func writeAndReadDisk(di *DiskInfo) {
+func writeAndReadDisk(di *DiskInfo, tc *remote.TestContext) {
 	var err error
 	instance := di.TestCtx.Instance
 	volName := di.Name
@@ -97,6 +100,8 @@ func writeAndReadDisk(di *DiskInfo) {
 	}()
 
 	validateRead(secondPublishDir, testFileName, "test", instance)
+
+	validateVolumeStats(publishDir, di.Volume.VolumeId, instance, tc)
 }
 
 func onlineResizeDisk(di *DiskInfo) {
@@ -288,6 +293,23 @@ func validateRead(publishDir, testFileName, testFileContents string, instance *r
 	Expect(strings.TrimSpace(string(readContents))).To(Equal(testFileContents))
 }
 
+func validateVolumeStats(publishDir, volID string, instance *remote.InstanceInfo, tc *remote.TestContext) {
+	// generate a random file between 1 Mb to 100 Mb for usage verification
+	rand.Seed(time.Now().UnixNano())
+	fileSize := 1 + rand.Int63n(100)
+	err := testutils.GenerateRandomFile(instance, publishDir, fileSize)
+	Expect(err).To(BeNil(), "Failed to generate file")
+
+	available, capacity, used, inodesFree, inodes, inodesUsed, err := tc.Client.NodeGetVolumeStats(volID, publishDir)
+	Expect(err).To(BeNil(), "Failed to get node volume stats: %v", err)
+	Expect(equalWithinEpsilon(available, minVolumeSize, defaultEpsilon)).To(BeTrue())
+	Expect(equalWithinEpsilon(capacity, minVolumeSize, defaultEpsilon)).To(BeTrue())
+	Expect(used).To(Equal(util.MbToBytes(fileSize)))
+	Expect(inodesFree == 0).To(BeFalse())
+	Expect(inodes == 0).To(BeFalse())
+	Expect(inodesUsed == 0).To(BeFalse())
+}
+
 func validateDisk(di *DiskInfo) {
 	inst, err := getDisk(di)
 	Expect(err).To(BeNil(), "Could not get disk from cloud directly")
@@ -305,4 +327,11 @@ func validateDisk(di *DiskInfo) {
 			Expect(instV).To(Equal(v), "Expected custom label value does not match expected value")
 		}
 	}
+}
+
+func equalWithinEpsilon(a, b, epsiolon int64) bool {
+	if a > b {
+		return a-b < epsiolon
+	}
+	return b-a < epsiolon
 }
