@@ -4,4 +4,3 @@ namespace:
   gcp-filestore-csi-driver
 resources:
 - node.yaml
-- psp.yaml

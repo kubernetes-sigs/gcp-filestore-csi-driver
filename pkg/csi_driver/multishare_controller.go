@@ -291,7 +291,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 			return nil, err
 		}
 	case util.ShareUpdate:
-		return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share)
+		return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
 	default:
 		return nil, status.Errorf(codes.Internal, "Controller Expand Volume failed, unknown workflow %v detected", workflow.opType)
 	}
@@ -301,13 +301,16 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 		return nil, status.Errorf(codes.Internal, "wait on share expansion op %q failed with error: %v", workflow.opName, err)
 	}
 
-	return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share)
+	return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
 }
 
-func (m *MultishareController) getShareAndGenerateCSIControllerExpandVolumeResponse(ctx context.Context, share *file.Share) (*csi.ControllerExpandVolumeResponse, error) {
+func (m *MultishareController) getShareAndGenerateCSIControllerExpandVolumeResponse(ctx context.Context, share *file.Share, reqBytes int64) (*csi.ControllerExpandVolumeResponse, error) {
 	share, err := m.cloud.File.GetShare(ctx, share)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	if share.CapacityBytes < reqBytes {
+		return nil, status.Errorf(codes.Aborted, "expand volume operation succeeded but share capacity [%d]bytes smaller than requested [%d]bytes", share.CapacityBytes, reqBytes)
 	}
 	return &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         share.CapacityBytes,

@@ -4,7 +4,7 @@ metadata:
   name: imagetag-csi-provisioner-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-provisioner
-  newTag: "v2.2.2"
+  newTag: "v3.1.0"
 ---
 
 apiVersion: builtin
