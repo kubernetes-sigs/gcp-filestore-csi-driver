@@ -149,18 +149,6 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: gcp-filestore-csi-controller-deploy
-rules:
-  - apiGroups: ["policy"]
-    resources: ["podsecuritypolicies"]
-    verbs: ["use"]
-    resourceNames:
-      - gcp-filestore-csi-controller-psp
----
-
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
@@ -173,18 +161,6 @@ subjects:
   - kind: ServiceAccount
     name: gcp-filestore-csi-controller-sa
     namespace: gcp-filestore-csi-driver
----
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: gcp-filestore-csi-node-deploy
-rules:
-  - apiGroups: ['policy']
-    resources: ['podsecuritypolicies']
-    verbs:     ['use']
-    resourceNames:
-    - gcp-filestore-csi-node-psp
 ---
 
 apiVersion: rbac.authorization.k8s.io/v1
