@@ -695,7 +695,7 @@ func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, ob
 }
 
 func (manager *gcfsServiceManager) ListMultishareInstances(ctx context.Context, filter *ListFilter) ([]*MultishareInstance, error) {
-	lCall := manager.multishareInstancesService.List(locationURI(filter.Project, "-")).Context(ctx)
+	lCall := manager.multishareInstancesService.List(locationURI(filter.Project, filter.Location)).Context(ctx)
 	nextPageToken := "pageToken"
 	var activeInstances []*MultishareInstance
 
@@ -856,43 +856,60 @@ func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 		MountPointName: sobj.MountName,
 		CapacityBytes:  sobj.CapacityGb * util.Gb,
 		State:          sobj.State,
+		Labels:         sobj.Labels,
 	}, nil
 }
 
 func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
-	uri := instanceURI(filter.Project, filter.Location, filter.InstanceName)
-	lCall := manager.multishareInstancesSharesService.List(uri).Context(ctx)
-	nextPageToken := "pageToken"
-	var shares []*Share
-
-	for nextPageToken != "" {
-		resp, err := lCall.Do()
+	instances := make([]*MultishareInstance, 0, 1)
+	if filter.InstanceName != "-" {
+		instances = append(instances, &MultishareInstance{Name: filter.InstanceName, Location: filter.Location})
+	} else {
+		existingInstances, err := manager.ListMultishareInstances(ctx, filter)
 		if err != nil {
-			klog.Errorf("list share error: %v", err)
 			return nil, err
 		}
+		instances = append(instances, existingInstances...)
+	}
 
-		for _, sobj := range resp.Shares {
-			project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
+	var shares []*Share
+
+	for _, instance := range instances {
+		uri := instanceURI(filter.Project, instance.Location, instance.Name)
+		lCall := manager.multishareInstancesSharesService.List(uri).Context(ctx)
+		nextPageToken := "pageToken"
+
+		for nextPageToken != "" {
+			resp, err := lCall.Do()
 			if err != nil {
-				klog.Errorf("Failed to parse share url :%s", sobj.Name)
-				continue
+				klog.Errorf("list share error: %v", err)
+				return nil, err
 			}
 
-			s := &Share{
-				Name: shareName,
-				Parent: &MultishareInstance{
-					Name:     instanceName,
-					Project:  project,
-					Location: location,
-				},
-				MountPointName: sobj.MountName,
-				CapacityBytes:  sobj.CapacityGb * util.Gb,
+			for _, sobj := range resp.Shares {
+				project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
+				if err != nil {
+					klog.Errorf("Failed to parse share url :%s", sobj.Name)
+					continue
+				}
+
+				s := &Share{
+					Name: shareName,
+					Parent: &MultishareInstance{
+						Name:     instanceName,
+						Project:  project,
+						Location: location,
+					},
+					MountPointName: sobj.MountName,
+					CapacityBytes:  sobj.CapacityGb * util.Gb,
+					Labels:         sobj.Labels,
+					State:          sobj.State,
+				}
+				shares = append(shares, s)
 			}
-			shares = append(shares, s)
+			nextPageToken = resp.NextPageToken
+			lCall.PageToken(nextPageToken)
 		}
-		nextPageToken = resp.NextPageToken
-		lCall.PageToken(nextPageToken)
 	}
 	return shares, nil
 }
