@@ -36,6 +36,7 @@ const (
 
 	methodCreateVolume         = "CreateVolume"
 	methodDeleteVolume         = "DeleteVolume"
+	methodExpandVolume         = "ExpandVolume"
 	ecfsDataPlaneVersionFormat = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
 )
 
@@ -92,22 +93,18 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 
 	if share != nil {
-		return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, share)
+		return m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, share)
 	}
 
-	timeout, pollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
-	}
 	// lock released. poll for op.
-	err = m.cloud.File.WaitForOpWithOpts(ctx, workflow.opName, file.PollOpts{Timeout: timeout, Interval: pollInterval})
+	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "Create Volume failed, operation %q poll error: %v", workflow.opName, err)
 	}
 
 	klog.Infof("Poll for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
 	if workflow.opType == util.ShareCreate {
-		return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, workflow.share)
+		return m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, workflow.share)
 	}
 
 	var shareCreateWorkflow *Workflow
@@ -118,7 +115,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		if err != nil {
 			return nil, err
 		}
-		shareCreateWorkflow, err = m.opsManager.startShareCreateWorkflowSafe(ctx, instanceScPrefix, newShare)
+		shareCreateWorkflow, err = m.opsManager.startShareCreateWorkflowSafe(ctx, newShare)
 		if err != nil {
 			return nil, err
 		}
@@ -127,18 +124,14 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 
 	// lock released. poll for share create op.
-	shareCreatetimeout, shareCreatePollInterval, err := util.GetMultishareOpsTimeoutConfig(shareCreateWorkflow.opType)
+	err = m.waitOnWorkflow(ctx, shareCreateWorkflow)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Errorf(codes.Internal, "%s operation %q poll error: %v", shareCreateWorkflow.opType.String(), shareCreateWorkflow.opName, err)
 	}
-	err = m.cloud.File.WaitForOpWithOpts(ctx, shareCreateWorkflow.opName, file.PollOpts{Timeout: shareCreatetimeout, Interval: shareCreatePollInterval})
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "operation %q poll error: %v", workflow.opName, err)
-	}
-	return m.getShareAndGenerateCSIResponse(ctx, instanceScPrefix, newShare)
+	return m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare)
 }
 
-func (m *MultishareController) getShareAndGenerateCSIResponse(ctx context.Context, instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx context.Context, instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
 	share, err := m.cloud.File.GetShare(ctx, s)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
@@ -151,7 +144,7 @@ func (m *MultishareController) getShareAndGenerateCSIResponse(ctx context.Contex
 }
 
 func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	prefix, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
+	_, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -183,20 +176,16 @@ func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.Delete
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	workflow, err := m.opsManager.checkAndStartShareDeleteWorkflow(ctx, prefix, share)
+	workflow, err := m.opsManager.checkAndStartShareDeleteWorkflow(ctx, share)
 	if err != nil {
 		return nil, err
 	}
 
 	// Poll for share delete to complete
 	if workflow != nil {
-		shareDeletetimeout, shareDeletePollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
+		err = m.waitOnWorkflow(ctx, workflow)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, err.Error())
-		}
-		err = m.cloud.File.WaitForOpWithOpts(ctx, workflow.opName, file.PollOpts{Timeout: shareDeletetimeout, Interval: shareDeletePollInterval})
-		if err != nil {
-			return nil, status.Errorf(codes.Internal, "operation %q poll error: %v", workflow.opName, err)
+			return nil, status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
 		}
 	}
 
@@ -228,30 +217,121 @@ func (m *MultishareController) startAndWaitForInstanceDeleteOrShrink(ctx context
 	if workflow == nil {
 		return nil
 	}
-	instanceOpTimeout, instanceOpPollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
+	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		return status.Errorf(codes.Internal, err.Error())
-	}
-	err = m.cloud.File.WaitForOpWithOpts(ctx, workflow.opName, file.PollOpts{Timeout: instanceOpTimeout, Interval: instanceOpPollInterval})
-	if err != nil {
-		return status.Errorf(codes.Internal, "operation %q poll error: %v", workflow.opName, err)
+		return status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
 	}
 	return nil
 }
 
-func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
 	// Handle higher level csi params validation, try locks
 	// Initiate share workflow by calling Multishare OpsManager functions
 	// Prepare and return csi response
-	// TODO
-	return nil, status.Error(codes.Unimplemented, "ControllerExpandVolume unsupported for multi share instances")
+
+	volumeId := req.GetVolumeId()
+	if len(volumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
+	}
+
+	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	_, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	klog.Infof("ControllerExpandVolume called for multishare with request %+v", req)
+	if acquired := m.volumeLocks.TryAcquire(volumeId); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeId)
+	}
+	defer m.volumeLocks.Release(volumeId)
+
+	share, err := m.cloud.File.GetShare(ctx, &file.Share{
+		Parent: &file.MultishareInstance{
+			Project:  project,
+			Location: location,
+			Name:     instanceName,
+		},
+		Name: shareName,
+	})
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	if share == nil || file.IsNotFoundErr(err) {
+		return nil, status.Errorf(codes.Internal, "Couldn't find share with name %q", volumeId)
+	}
+
+	if share.CapacityBytes >= reqBytes {
+		klog.Infof("Controller expand volume succeeded for volume %v, existing size(bytes): %v", volumeId, share.CapacityBytes)
+		return &csi.ControllerExpandVolumeResponse{
+			CapacityBytes:         share.CapacityBytes,
+			NodeExpansionRequired: false,
+		}, nil
+	}
+
+	workflow, err := m.opsManager.checkAndStartInstanceOrShareExpandWorkflow(ctx, share, reqBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	err = m.waitOnWorkflow(ctx, workflow)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "wait on %s operation %q failed with error: %v", workflow.opType.String(), workflow.opName, err)
+	}
+	klog.Infof("Wait for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
+
+	switch workflow.opType {
+	case util.InstanceUpdate:
+		workflow, err = m.opsManager.startShareExpandWorkflowSafe(ctx, share, reqBytes)
+		if err != nil {
+			return nil, err
+		}
+	case util.ShareUpdate:
+		return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
+	default:
+		return nil, status.Errorf(codes.Internal, "Controller Expand Volume failed, unknown workflow %v detected", workflow.opType)
+	}
+
+	err = m.waitOnWorkflow(ctx, workflow)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "wait on share expansion op %q failed with error: %v", workflow.opName, err)
+	}
+
+	return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
+}
+
+func (m *MultishareController) getShareAndGenerateCSIControllerExpandVolumeResponse(ctx context.Context, share *file.Share, reqBytes int64) (*csi.ControllerExpandVolumeResponse, error) {
+	share, err := m.cloud.File.GetShare(ctx, share)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, err.Error())
+	}
+	if share.CapacityBytes < reqBytes {
+		return nil, status.Errorf(codes.Aborted, "expand volume operation succeeded but share capacity [%d]bytes smaller than requested [%d]bytes", share.CapacityBytes, reqBytes)
+	}
+	return &csi.ControllerExpandVolumeResponse{
+		CapacityBytes:         share.CapacityBytes,
+		NodeExpansionRequired: false,
+	}, nil
+}
+
+func (m *MultishareController) waitOnWorkflow(ctx context.Context, workflow *Workflow) (err error) {
+	timeout, pollInterval, err := util.GetMultishareOpsTimeoutConfig(workflow.opType)
+	if err != nil {
+		return
+	}
+	err = m.cloud.File.WaitForOpWithOpts(ctx, workflow.opName, file.PollOpts{Timeout: timeout, Interval: pollInterval})
+	return
 }
 
 func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
 	params := req.GetParameters()
 	v, ok := params[paramMultishareInstanceScLabel]
 	if !ok {
-		return "", fmt.Errorf("Failed to find instance prefix key")
+		return "", fmt.Errorf("failed to find instance prefix key")
 	}
 
 	if v == "" {
