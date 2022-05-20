@@ -1,3 +1,31 @@
+# v1.2.1 - Changelog since v1.2.0
+
+## Changes by Kind
+
+### Feature
+- Multishare volume expansion ([#270](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/270), [@leiyiz](https://github.com/leiyiz))
+- List instances to list shares for multishare instance ([#271](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/271), [@leiyiz](https://github.com/leiyiz))
+
+### Bug or Regression
+
+- Align instance resize target bytes ([#269](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/269), [@saikat-royc](https://github.com/saikat-royc))
+
+### Uncategorized
+
+- Add test for NodeGetVolumeStats in resize e2e test. ([#268](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/268), [@tyuchn](https://github.com/tyuchn))
+- Expose volume metrics by implementing NodeGetVolumeStats for NodeServer. ([#266](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/266), [@tyuchn](https://github.com/tyuchn))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
 # v1.2.0 - Changelog since v1.1.4
 
 ## Changes by Kind
