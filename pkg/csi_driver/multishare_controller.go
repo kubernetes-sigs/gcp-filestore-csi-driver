@@ -42,12 +42,13 @@ const (
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareController struct {
-	driver          *GCFSDriver
-	fileService     file.Service
-	cloud           *cloud.Cloud
-	opsManager      *MultishareOpsManager
-	volumeLocks     *util.VolumeLocks
-	ecfsDescription string
+	controllerServer *controllerServer
+	driver           *GCFSDriver
+	fileService      file.Service
+	cloud            *cloud.Cloud
+	opsManager       *MultishareOpsManager
+	volumeLocks      *util.VolumeLocks
+	ecfsDescription  string
 }
 
 func NewMultishareController(driver *GCFSDriver, fileService file.Service, cloud *cloud.Cloud, volumeLock *util.VolumeLocks, ecfsDescription string) *MultishareController {
@@ -85,6 +86,33 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	instance, err := m.generateNewMultishareInstance(util.NewMultishareInstancePrefix+string(uuid.NewUUID()), req)
 	if err != nil {
 		return nil, err
+	}
+
+	param := req.GetParameters()
+	// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
+	// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
+	if instance.Network.ConnectMode == privateServiceAccess {
+		if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+			instance.Network.ReservedIpRange = reservedIPRange
+		}
+	} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
+		reservedIPRange, err := m.controllerServer.reserveIPRange(ctx, &file.ServiceInstance{
+			Project:  instance.Project,
+			Name:     instance.Name,
+			Location: instance.Location,
+			Tier:     instance.Tier,
+		}, reservedIPV4CIDR)
+
+		// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
+		// The ListInstances response will contain the reservedIPRange if the operation was started
+		// In case of abort, the CIDR IP is released and available for reservation
+		defer m.controllerServer.config.ipAllocator.ReleaseIPRange(reservedIPRange)
+		if err != nil {
+			return nil, err
+		}
+
+		// Adding the reserved IP range to the instance object
+		instance.Network.ReservedIpRange = reservedIPRange
 	}
 
 	workflow, share, err := m.opsManager.setupEligibleInstanceAndStartWorkflow(ctx, req, instance)

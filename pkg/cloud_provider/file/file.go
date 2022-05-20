@@ -166,6 +166,7 @@ var (
 
 func NewGCFSService(version string, client *http.Client, endpoint string) (Service, error) {
 	ctx := context.Background()
+
 	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
@@ -173,7 +174,7 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
 	basepath := createFilestoreEndpointUrlBasePath(endpoint)
-	glog.Infof("Using endpoint %s for multshare", createFilestoreEndpointUrlBasePath(endpoint))
+	glog.Infof("Using endpoint %q for multishare", basepath)
 	fileMultishareService, err := filev1beta1multishare.NewService(ctx, basepath, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
@@ -403,6 +404,10 @@ func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *Servi
 		}
 
 		for _, activeInstance := range instances.Instances {
+			if len(activeInstance.FileShares) == 0 {
+				// skip multi-share instances
+				continue
+			}
 			serviceInstance, err := cloudInstanceToServiceInstance(activeInstance)
 			if err != nil {
 				return nil, err
@@ -1035,7 +1040,11 @@ func shareURI(project, location, instanceName, shareName string) string {
 }
 
 func createFilestoreEndpointUrlBasePath(endpoint string) string {
-	return "https://" + endpoint + "/"
+	if endpoint != "" {
+		return "https://" + endpoint + "/"
+	} else {
+		return ""
+	}
 }
 
 func (manager *gcfsServiceManager) ListOps(ctx context.Context, filter *ListFilter) ([]*filev1beta1multishare.Operation, error) {
