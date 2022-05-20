@@ -4,7 +4,7 @@ metadata:
   name: imagetag-csi-provisioner-prow-rc
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-provisioner
-  newTag: "v2.2.2"
+  newTag: "v3.1.0"
 ---
 
 apiVersion: builtin
@@ -41,5 +41,5 @@ metadata:
 imageTag:
   name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
   newName: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
-  newTag: "v1.2.0-rc2"
+  newTag: "v1.2.1-rc1"
 ---
