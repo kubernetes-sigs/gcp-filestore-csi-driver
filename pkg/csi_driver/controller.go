@@ -101,11 +101,13 @@ type controllerServerConfig struct {
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
+	cs := &controllerServer{config: config}
 	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
 	if config.enableMultishare {
 		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks, config.ecfsDescription)
+		config.multiShareController.controllerServer = cs
 	}
-	return &controllerServer{config: config}
+	return cs
 }
 
 // CreateVolume creates a GCFS instance
@@ -281,9 +283,17 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 	if err != nil {
 		return nil, status.Error(codes.Aborted, err.Error())
 	}
+	multiShareInstances, err := s.config.fileService.ListMultishareInstances(ctx, &file.ListFilter{Project: filer.Project, Location: "-"})
+	if err != nil {
+		return nil, status.Error(codes.Aborted, err.Error())
+	}
+
 	// Initialize an empty reserved list. It will be populated with all the reservedIPRanges obtained from the cloud instances
 	cloudInstancesReservedIPRanges := make(map[string]bool)
 	for _, instance := range instances {
+		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+	}
+	for _, instance := range multiShareInstances {
 		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
 	}
 	return cloudInstancesReservedIPRanges, nil
