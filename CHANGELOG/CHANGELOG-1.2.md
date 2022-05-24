@@ -1,4 +1,14 @@
+
+# v1.2.2 - Changelog since v1.2.1
+
+## Changes by Kind
+
+### Feature
+- Support IP Reservation for Multishare Filestore instances([#275](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/275), [@leiyiz](https://github.com/leiyiz))
+
+
 # v1.2.1 - Changelog since v1.2.0
+
 
 ## Changes by Kind
 
