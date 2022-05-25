@@ -262,7 +262,7 @@ func clusterDownGKE(gceZone, gceRegion string) error {
 	return nil
 }
 
-func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, useStagingDriver bool) error {
+func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, useManagedDriver bool) error {
 	locationArg, locationVal, err := gkeLocationArgs(gceZone, gceRegion)
 	if err != nil {
 		return err
@@ -283,7 +283,7 @@ func clusterUpGKE(gceZone, gceRegion string, numNodes int, imageType string, use
 		}
 	}
 
-	if useStagingDriver {
+	if useManagedDriver {
 		accessToken, err := getAccessToken()
 		if err != nil {
 			return err
@@ -458,14 +458,14 @@ func isOpDone(op *container.Operation) (bool, error) {
 	return op.Status == "DONE", nil
 }
 
-func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) {
+func getGKEKubeTestArgs(gceZone, gceRegion string) ([]string, error) {
 	var locationArg, locationVal string
 	switch {
 	case len(gceZone) > 0:
-		locationArg = "--gcp-zone"
+		locationArg = "--zone"
 		locationVal = gceZone
 	case len(gceRegion) > 0:
-		locationArg = "--gcp-region"
+		locationArg = "--region"
 		locationVal = gceRegion
 	}
 
@@ -491,15 +491,10 @@ func getGKEKubeTestArgs(gceZone, gceRegion, imageType string) ([]string, error) 
 	args := []string{
 		"--up=false",
 		"--down=false",
-		"--provider=gke",
-		"--gcp-network=default",
-		"--check-version-skew=false",
-		"--deployment=gke",
-		fmt.Sprintf("--gcp-node-image=%s", imageType),
-		fmt.Sprintf("--cluster=%s", *gkeTestClusterName),
-		fmt.Sprintf("--gke-environment=%s", gkeEnv),
+		fmt.Sprintf("--cluster-name=%s", *gkeTestClusterName),
+		fmt.Sprintf("--environment=%s", gkeEnv),
 		fmt.Sprintf("%s=%s", locationArg, locationVal),
-		fmt.Sprintf("--gcp-project=%s", project),
+		fmt.Sprintf("--project=%s", project),
 	}
 
 	return args, nil
