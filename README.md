@@ -14,7 +14,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: GA
 
-Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.2.1`
+Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.2.2`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -40,6 +40,7 @@ The following table captures the compatibility matrix of the core filestore driv
 | v1.1.4 (GA)                             |  yes |  yes  |
 | v1.2.0 (GA)                             |  yes |  yes  |
 | v1.2.1 (GA)                             |  yes |  yes  |
+| v1.2.2 (GA)                             |  yes |  yes  |
 | master                                  |  yes |  yes  |
 
 The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar, csi driver object, rbacs, pod security policies etc) can be picked up from the master branch [overlays](deploy/kubernetes/overlays) directory. We structure the overlays directory per minor version of kubernetes because not all driver components can be used with all kubernetes versions. For example volume snapshots are supported 1.17+ kubernetes versions thus [stable-1-16](deploy/kubernetes/overlays/stable-1-16) driver manifests does not contain the snapshotter sidecar. Read more about overlays [here](docs/release/overlays.md).
