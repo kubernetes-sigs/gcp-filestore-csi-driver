@@ -60,7 +60,7 @@ var (
 
 	// Test flags
 	testFocus = flag.String("test-focus", "External.Storage", "test focus for Kubernetes e2e")
-	parallel  = flag.Int("parallel", 4, "the number of parallel tests setting for ginkgo parallelism")
+	parallel  = flag.Int("parallel", 3, "the number of parallel tests setting for ginkgo parallelism")
 
 	// SA for dev overlay
 	devOverlaySA = flag.String("dev-overlay-sa", "", "default SA that will be plumbed to the GCE instances")
