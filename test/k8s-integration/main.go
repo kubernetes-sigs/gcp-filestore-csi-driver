@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -55,10 +56,11 @@ var (
 	saFile            = flag.String("service-account-file", "", "path of service account file")
 	deployOverlayName = flag.String("deploy-overlay-name", "", "which kustomize overlay to deploy the driver with")
 	doDriverBuild     = flag.Bool("do-driver-build", true, "building the driver from source")
-	useStagingDriver  = flag.Bool("use-staging-driver", false, "use GKE managed Filestore CSI driver for the tests")
+	useManagedDriver  = flag.Bool("use-gke-driver", false, "use GKE managed Filestore CSI driver for the tests")
 
 	// Test flags
 	testFocus = flag.String("test-focus", "External.Storage", "test focus for Kubernetes e2e")
+	parallel  = flag.Int("parallel", 3, "the number of parallel tests setting for ginkgo parallelism")
 
 	// SA for dev overlay
 	devOverlaySA = flag.String("dev-overlay-sa", "", "default SA that will be plumbed to the GCE instances")
@@ -94,6 +96,7 @@ type testParameters struct {
 	cloudProviderArgs  []string
 	imageType          string
 	nodeVersion        string
+	parallel           int
 }
 
 func init() {
@@ -109,7 +112,7 @@ func main() {
 		ensureVariable(stagingImage, true, "staging-image is a required flag, please specify the name of image to stage to")
 	}
 
-	if *useStagingDriver {
+	if *useManagedDriver {
 		ensureVariableVal(deploymentStrat, "gke", "'deployment-strategy' must be GKE for using managed driver")
 		ensureFlag(doDriverBuild, false, "'do-driver-build' must be false when using GKE managed driver")
 		ensureFlag(teardownDriver, false, "'teardown-driver' must be false when using GKE managed driver")
@@ -117,7 +120,7 @@ func main() {
 		ensureVariable(deployOverlayName, false, "'deploy-overlay-name' must not be set when using GKE managed driver")
 	}
 
-	if !*useStagingDriver {
+	if !*useManagedDriver {
 		ensureVariable(deployOverlayName, true, "deploy-overlay-name is a required flag")
 		if *deployOverlayName != "dev" {
 			ensureVariable(saFile, true, "service-account-file is a required flag")
@@ -186,11 +189,12 @@ func handle() error {
 		stagingVersion:     string(uuid.NewUUID()),
 		deploymentStrategy: *deploymentStrat,
 		imageType:          *imageType,
+		parallel:           *parallel,
 	}
 
 	goPath, ok := os.LookupEnv("GOPATH")
 	if !ok {
-		return fmt.Errorf("Could not find env variable GOPATH")
+		return fmt.Errorf("could not find env variable GOPATH")
 	}
 	testParams.goPath = goPath
 	testParams.pkgDir = filepath.Join(goPath, "src", "sigs.k8s.io", "gcp-filestore-csi-driver")
@@ -243,11 +247,8 @@ func handle() error {
 
 	// Create temporary directories for kubernetes builds
 	k8sParentDir := generateUniqueTmpDir()
-	k8sDir := filepath.Join(k8sParentDir, "kubernetes")
-	testParams.testParentDir = generateUniqueTmpDir()
-	testParams.testDir = filepath.Join(testParams.testParentDir, "kubernetes")
+	testParams.testDir = filepath.Join(k8sParentDir, "kubernetes")
 	defer removeDir(k8sParentDir)
-	defer removeDir(testParams.testParentDir)
 
 	// If kube version is set, then download and build Kubernetes for cluster creation
 	// Otherwise, a prebuild local K8s dir is being used
@@ -256,45 +257,21 @@ func handle() error {
 		if err != nil {
 			return fmt.Errorf("failed to download Kubernetes source: %v", err)
 		}
-		err = buildKubernetes(k8sDir, "quick-release")
+		err = buildKubernetes(testParams.testDir, "quick-release")
 		if err != nil {
 			return fmt.Errorf("failed to build Kubernetes: %v", err)
 		}
 	} else {
-		k8sDir = *localK8sDir
-	}
-
-	// If test version is set, then download and build Kubernetes to run K8s tests
-	// Otherwise, either kube version is set (which implies GCE) or a local K8s dir is being used
-	if len(*testVersion) != 0 && *testVersion != *kubeVersion {
-		err := downloadKubernetesSource(testParams.pkgDir, testParams.testParentDir, *testVersion)
-		if err != nil {
-			return fmt.Errorf("failed to download Kubernetes source: %v", err)
-		}
-		err = buildKubernetes(testParams.testDir, "WHAT=test/e2e/e2e.test")
-		if err != nil {
-			return fmt.Errorf("failed to build Kubernetes e2e: %v", err)
-		}
-		// kubetest relies on ginkgo and kubectl already built in the test k8s directory
-		err = buildKubernetes(testParams.testDir, "ginkgo")
-		if err != nil {
-			return fmt.Errorf("failed to build gingko: %v", err)
-		}
-		err = buildKubernetes(testParams.testDir, "kubectl")
-		if err != nil {
-			return fmt.Errorf("failed to build kubectl: %v", err)
-		}
-	} else {
-		testParams.testDir = k8sDir
+		testParams.testDir = *localK8sDir
 	}
 
 	if *bringupCluster {
 		var err error = nil
 		switch *deploymentStrat {
 		case "gce":
-			err = clusterUpGCE(k8sDir, *gceZone, *numNodes, testParams.imageType)
+			err = clusterUpGCE(testParams.testDir, *gceZone, *numNodes, testParams.imageType)
 		case "gke":
-			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType, *useStagingDriver)
+			err = clusterUpGKE(*gceZone, *gceRegion, *numNodes, testParams.imageType, *useManagedDriver)
 		default:
 			err = fmt.Errorf("deployment-strategy must be set to 'gce' or 'gke', but is: %s", *deploymentStrat)
 		}
@@ -307,7 +284,7 @@ func handle() error {
 		defer func() {
 			switch *deploymentStrat {
 			case "gce":
-				err := clusterDownGCE(k8sDir)
+				err := clusterDownGCE(testParams.testDir)
 				if err != nil {
 					klog.Errorf("failed to cluster down: %v", err)
 				}
@@ -322,7 +299,7 @@ func handle() error {
 		}()
 	}
 
-	if !*useStagingDriver {
+	if !*useManagedDriver {
 		err := installDriver(testParams.goPath, testParams.pkgDir, *stagingImage, testParams.stagingVersion, *deployOverlayName, *doDriverBuild)
 		if *teardownDriver {
 			defer func() {
@@ -348,11 +325,20 @@ func handle() error {
 
 	switch testParams.deploymentStrategy {
 	case "gke":
-		testParams.cloudProviderArgs, err = getGKEKubeTestArgs(*gceZone, *gceRegion, testParams.imageType)
+		testParams.cloudProviderArgs, err = getGKEKubeTestArgs(*gceZone, *gceRegion)
 		if err != nil {
 			return fmt.Errorf("failed to build GKE kubetest args: %v", err)
 		}
+	case "gce":
+		testParams.cloudProviderArgs = []string{
+			// This flag tells kubetest2 what "repo-root" is.
+			// If --legacy-mode is set, kubernetes/kubernetes is used;
+			// otherwise kubernetes/cloud-provider-gcp is used.
+			"--legacy-mode",
+			fmt.Sprintf("--repo-root=%s", testParams.testDir),
+		}
 	}
+
 	// For clusters deployed on GCE, use the apimachinery version utils (which supports non-gke based semantic versioning).
 	testParams.clusterVersion = mustGetKubeClusterVersion()
 	klog.Infof("kubernetes cluster server version: %s", testParams.clusterVersion)
@@ -363,7 +349,7 @@ func handle() error {
 		testParams.nodeVersion = *gkeNodeVersion
 		testParams.testSkip = generateGKETestSkip(testParams)
 	default:
-		return fmt.Errorf("Unknown deployment strategy %s", *deploymentStrat)
+		return fmt.Errorf("unknown deployment strategy %s", *deploymentStrat)
 	}
 
 	// Run the tests using the testDir kubernetes
@@ -377,7 +363,7 @@ func handle() error {
 			applicableStorageClassFiles = append(applicableStorageClassFiles, scFile)
 		}
 		if len(applicableStorageClassFiles) == 0 {
-			return fmt.Errorf("No applicable storage classes found")
+			return fmt.Errorf("no applicable storage classes found")
 		}
 		var ginkgoErrors []string
 		var testOutputDirs []string
@@ -441,8 +427,8 @@ func generateGKETestSkip(testParams *testParameters) string {
 	// e2e testsuite (until GKE supports v1 snapshot APIs). And to run 1.19x test suite for filestore,
 	// https://github.com/kubernetes/kubernetes/pull/96042 needs to be cherry-picked to 1.19 branch, so that
 	// configurable timeouts can be setup for filestore instance provisioning.
-	if (*useStagingDriver && curVer.lessThan(mustParseVersion("1.20.7-gke.6"))) ||
-		(!*useStagingDriver && (*curVer).lessThan(mustParseVersion("1.20.7"))) {
+	if (*useManagedDriver && curVer.lessThan(mustParseVersion("1.20.7-gke.6"))) ||
+		(!*useManagedDriver && (*curVer).lessThan(mustParseVersion("1.20.7"))) {
 		skipString = skipString + "|VolumeSnapshotDataSource"
 	}
 
@@ -465,10 +451,6 @@ func runCSITests(testParams *testParameters, storageClassFile, reportPrefix stri
 }
 
 func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix string) error {
-	err := os.Chdir(testParams.testDir)
-	if err != nil {
-		return err
-	}
 
 	kubeconfig, err := getKubeConfig()
 	if err != nil {
@@ -488,21 +470,66 @@ func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix 
 			kubetestDumpDir = artifactsDir
 		}
 	}
-	ginkgoArgs := fmt.Sprintf("--ginkgo.focus=%s --ginkgo.skip=%s", testParams.testFocus, testParams.testSkip)
-	testArgs := fmt.Sprintf("%s %s", ginkgoArgs, testConfigArg)
 
-	kubeTestArgs := []string{
-		"--test",
-		"--ginkgo-parallel=3",
-		"--check-version-skew=false",
-		fmt.Sprintf("--test_args=%s", testArgs),
+	focus := testParams.testFocus
+	skip := testParams.testSkip
+
+	// kubetest2 flags
+	var runID string
+	if uid, exists := os.LookupEnv("PROW_JOB_ID"); exists && uid != "" {
+		// reuse uid for CI use cases
+		runID = uid
+	} else {
+		runID = string(uuid.NewUUID())
 	}
+
+	// Usage: kubetest2 <deployer> [Flags] [DeployerFlags] -- [TesterArgs]
+	// [Flags]
+	kubeTest2Args := []string{
+		*deploymentStrat,
+		fmt.Sprintf("--run-id=%s", runID),
+		"--test=ginkgo",
+	}
+
+	// [DeployerFlags]
+	kubeTest2Args = append(kubeTest2Args, testParams.cloudProviderArgs...)
 	if kubetestDumpDir != "" {
-		kubeTestArgs = append(kubeTestArgs, fmt.Sprintf("--dump=%s", kubetestDumpDir))
+		kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--artifacts=%s", kubetestDumpDir))
 	}
-	kubeTestArgs = append(kubeTestArgs, testParams.cloudProviderArgs...)
 
-	err = runCommand("Running Tests", exec.Command("kubetest", kubeTestArgs...))
+	kubeTest2Args = append(kubeTest2Args, "--")
+
+	// [TesterArgs]
+	if len(*testVersion) != 0 {
+		if *testVersion == "master" {
+			// the kubernetes binaries should've already been built above because of `--kube-version`
+			// or by the user if --local-k8s-dir was set, these binaries should be copied to the
+			// path sent to kubetest2 through its --artifacts path
+
+			// pkg/_artifacts is the default value that kubetests uses for --artifacts
+			kubernetesTestBinariesPath := filepath.Join(testParams.pkgDir, "_artifacts")
+			if kubetestDumpDir != "" {
+				// a custom artifacts dir was set
+				kubernetesTestBinariesPath = kubetestDumpDir
+			}
+			kubernetesTestBinariesPath = filepath.Join(kubernetesTestBinariesPath, runID)
+
+			klog.Infof("Copying kubernetes binaries to path=%s to run the tests", kubernetesTestBinariesPath)
+			err := copyKubernetesTestBinaries(testParams.testDir, kubernetesTestBinariesPath)
+			if err != nil {
+				return fmt.Errorf("failed to copy the kubernetes test binaries, err=%v", err)
+			}
+			kubeTest2Args = append(kubeTest2Args, "--use-built-binaries")
+		} else {
+			kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--test-package-marker=latest-%s.txt", *testVersion))
+		}
+	}
+	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--focus-regex=%s", focus))
+	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--skip-regex=%s", skip))
+	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--parallel=%d", testParams.parallel))
+	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--test-args=%s", testConfigArg))
+
+	err = runCommand("Running Tests", exec.Command("kubetest2", kubeTest2Args...))
 	if err != nil {
 		return fmt.Errorf("failed to run tests on e2e cluster: %v", err)
 	}
@@ -519,6 +546,32 @@ func setEnvProject(project string) error {
 	err = os.Setenv("PROJECT", project)
 	if err != nil {
 		return err
+	}
+	return nil
+}
+
+// copyKubernetesBinariesForTest copies the common test binaries to the output directory
+func copyKubernetesTestBinaries(kuberoot string, outroot string) error {
+	const dockerizedOutput = "_output/dockerized"
+	var (
+		kubernetesTestBinaries = []string{
+			"kubectl",
+			"e2e.test",
+			"ginkgo",
+		}
+	)
+	root := filepath.Join(kuberoot, dockerizedOutput, "bin", runtime.GOOS, runtime.GOARCH)
+	for _, binary := range kubernetesTestBinaries {
+		source := filepath.Join(root, binary)
+		dest := filepath.Join(outroot, binary)
+		if _, err := os.Stat(source); err == nil {
+			klog.Infof("copying %s to %s", source, dest)
+			if err := CopyFile(source, dest); err != nil {
+				return fmt.Errorf("failed to copy %s to %s: %v", source, dest, err)
+			}
+		} else {
+			return fmt.Errorf("could not find %s: %v", source, err)
+		}
 	}
 	return nil
 }

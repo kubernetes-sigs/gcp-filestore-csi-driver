@@ -26,19 +26,25 @@ readonly gke_release_channel=${GKE_RELEASE_CHANNEL:-""}
 readonly gke_node_version=${GKE_NODE_VERSION:-}
 readonly gce_region=${GCE_CLUSTER_REGION:-}
 readonly storageclass_files=${STORAGECLASS_FILES:-}
-readonly use_staging_driver=${USE_STAGING_DRIVER:-false}
+readonly use_gke_driver=${USE_STAGING_DRIVER:-false}
 
 make -C "${PKGDIR}" test-k8s-integration
+
+go install sigs.k8s.io/kubetest2@latest;
+go install sigs.k8s.io/kubetest2/kubetest2-gce@latest;
+go install sigs.k8s.io/kubetest2/kubetest2-gke@latest;
+go install sigs.k8s.io/kubetest2/kubetest2-tester-ginkgo@latest;
+
 echo "make successful"
 base_cmd="${PKGDIR}/bin/k8s-integration-test \
             --run-in-prow=true --service-account-file=${E2E_GOOGLE_APPLICATION_CREDENTIALS} \
             --do-driver-build=${do_driver_build} --teardown-driver=${teardown_driver} --boskos-resource-type=${boskos_resource_type} \
             --test-version=${test_version} --num-nodes=3 --deployment-strategy=${deployment_strategy}"
 
-if [ "$use_staging_driver" = false ]; then
+if [ "$use_gke_driver" = false ]; then
   base_cmd="${base_cmd} --deploy-overlay-name=${overlay_name}"
 else
-  base_cmd="${base_cmd} --use-staging-driver=${use_staging_driver}"
+  base_cmd="${base_cmd} --use-gke-driver=${use_gke_driver}"
 fi
 
 if [ "$deployment_strategy" = "gke" ]; then
