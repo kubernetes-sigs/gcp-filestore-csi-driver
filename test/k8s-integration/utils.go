@@ -99,6 +99,12 @@ func ensureVariableVal(v *string, val string, msgOnError string) {
 	}
 }
 
+func ensureVariableNotVal(v *string, val string, msgOnError string) {
+	if *v == val {
+		klog.Fatal(msgOnError)
+	}
+}
+
 func isVariableSet(v *string) bool {
 	return len(*v) != 0
 }
