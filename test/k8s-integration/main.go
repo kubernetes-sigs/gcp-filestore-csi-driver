@@ -157,6 +157,7 @@ func main() {
 		ensureVariable(kubeFeatureGates, false, "Cannot set feature gates when using deployment strategy 'gke'.")
 		if len(*localK8sDir) == 0 {
 			ensureVariable(testVersion, true, "Must set either test-version or local k8s dir when using deployment strategy 'gke'.")
+			ensureVariableNotVal(testVersion, "master", "Must not set test-version to master when using deployment strategy 'gke'.")
 		}
 		if len(*gkeTestClusterName) == 0 {
 			randSuffix := string(uuid.NewUUID())[0:4]
