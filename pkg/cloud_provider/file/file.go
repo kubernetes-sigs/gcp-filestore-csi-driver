@@ -318,6 +318,10 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 	if err != nil {
 		return nil, err
 	}
+	ip := ""
+	if len(instance.Networks[0].IpAddresses) > 0 {
+		ip = instance.Networks[0].IpAddresses[0]
+	}
 	return &ServiceInstance{
 		Project:  project,
 		Location: location,
@@ -329,7 +333,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 		},
 		Network: Network{
 			Name:            instance.Networks[0].Network,
-			Ip:              instance.Networks[0].IpAddresses[0],
+			Ip:              ip,
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
@@ -573,10 +577,6 @@ func locationURI(project, location string) string {
 
 func instanceURI(project, location, name string) string {
 	return fmt.Sprintf(instanceURIFmt, project, location, name)
-}
-
-func operationURI(project, location, name string) string {
-	return fmt.Sprintf(operationURIFmt, project, location, name)
 }
 
 func backupURI(project, location, name string) string {
@@ -1014,6 +1014,10 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 	if err != nil {
 		return nil, err
 	}
+	ip := ""
+	if len(instance.Networks[0].IpAddresses) > 0 {
+		ip = instance.Networks[0].IpAddresses[0]
+	}
 	return &MultishareInstance{
 		Project:  project,
 		Location: location,
@@ -1021,7 +1025,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		Tier:     instance.Tier,
 		Network: Network{
 			Name:            instance.Networks[0].Network,
-			Ip:              instance.Networks[0].IpAddresses[0],
+			Ip:              ip,
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
