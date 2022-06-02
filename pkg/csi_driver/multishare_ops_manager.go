@@ -94,10 +94,10 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 		}
 	}
 
-	// No share or running share create op fouund. Proceed to eligible instance check.
+	// No share or running share create op found. Proceed to eligible instance check.
 	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix, ops)
 	if err != nil {
-		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, nil, status.Error(codes.Aborted, err.Error())
 	}
 
 	if len(eligible) > 0 {
@@ -286,14 +286,14 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
 		if err != nil {
 			klog.Errorf("failed to check eligibility of instance %s", instance.Name)
-			continue
+			return nil, 0, err
 		}
 
 		if op == nil {
 			shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
 			if err != nil {
 				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err)
-				continue
+				return nil, 0, err
 			}
 			if len(shares) >= util.MaxSharesPerInstance {
 				continue
@@ -310,8 +310,11 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 		}
 
 		if instance.State == "DELETING" || instance.State == "ERROR" {
+			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
 			continue
 		}
+
+		klog.Infof("Instance %s/%s/%s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, op.Id, op.Type.String())
 		nonReadyInstanceCount += 1
 		// TODO: If we see > 1 instances with 0 shares (these could be possibly leaked instances where the driver hit timeout during creation op was in progress), should we trigger delete op for such instances? Possibly yes. Given that instance create/delete and share create/delete is serialized, maybe yes.
 	}
