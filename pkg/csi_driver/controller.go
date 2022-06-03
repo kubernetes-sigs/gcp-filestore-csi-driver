@@ -629,6 +629,20 @@ func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
 	return reqZones[0], nil
 }
 
+func listZonesFromTopology(top *csi.TopologyRequirement) ([]string, error) {
+	reqZones, err := getZonesFromTopology(top.GetRequisite())
+	if err != nil {
+		return reqZones, fmt.Errorf("could not get zones from requisite topology: %v", err)
+	}
+
+	prefZones, err := getZonesFromTopology(top.GetPreferred())
+	if err != nil {
+		return prefZones, fmt.Errorf("could not get zones from preferred topology: %v", err)
+	}
+
+	return append(reqZones, prefZones...), nil
+}
+
 func getZonesFromTopology(topList []*csi.Topology) ([]string, error) {
 	zones := []string{}
 	for _, top := range topList {

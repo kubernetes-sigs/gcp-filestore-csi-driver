@@ -318,6 +318,10 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 	if err != nil {
 		return nil, err
 	}
+	ip := ""
+	if len(instance.Networks[0].IpAddresses) > 0 {
+		ip = instance.Networks[0].IpAddresses[0]
+	}
 	return &ServiceInstance{
 		Project:  project,
 		Location: location,
@@ -329,7 +333,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 		},
 		Network: Network{
 			Name:            instance.Networks[0].Network,
-			Ip:              instance.Networks[0].IpAddresses[0],
+			Ip:              ip,
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
@@ -573,10 +577,6 @@ func locationURI(project, location string) string {
 
 func instanceURI(project, location, name string) string {
 	return fmt.Sprintf(instanceURIFmt, project, location, name)
-}
-
-func operationURI(project, location, name string) string {
-	return fmt.Sprintf(operationURIFmt, project, location, name)
 }
 
 func backupURI(project, location, name string) string {
@@ -876,56 +876,45 @@ func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 }
 
 func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListFilter) ([]*Share, error) {
-	instances := make([]*MultishareInstance, 0, 1)
-	if filter.InstanceName != "-" {
-		instances = append(instances, &MultishareInstance{Name: filter.InstanceName, Location: filter.Location})
-	} else {
-		existingInstances, err := manager.ListMultishareInstances(ctx, filter)
-		if err != nil {
-			return nil, err
-		}
-		instances = append(instances, existingInstances...)
-	}
 
 	var shares []*Share
 
-	for _, instance := range instances {
-		uri := instanceURI(filter.Project, instance.Location, instance.Name)
-		lCall := manager.multishareInstancesSharesService.List(uri).Context(ctx)
-		nextPageToken := "pageToken"
+	instanceUri := instanceURI(filter.Project, filter.Location, filter.InstanceName)
+	lCall := manager.multishareInstancesSharesService.List(instanceUri).Context(ctx)
+	nextPageToken := "pageToken"
 
-		for nextPageToken != "" {
-			resp, err := lCall.Do()
+	for nextPageToken != "" {
+		resp, err := lCall.Do()
+		if err != nil {
+			klog.Errorf("list share error: %v for parent uri %q", err, instanceUri)
+			return nil, err
+		}
+
+		for _, sobj := range resp.Shares {
+			project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
 			if err != nil {
-				klog.Errorf("list share error: %v", err)
+				klog.Errorf("Failed to parse share url :%s", sobj.Name)
 				return nil, err
 			}
 
-			for _, sobj := range resp.Shares {
-				project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
-				if err != nil {
-					klog.Errorf("Failed to parse share url :%s", sobj.Name)
-					continue
-				}
-
-				s := &Share{
-					Name: shareName,
-					Parent: &MultishareInstance{
-						Name:     instanceName,
-						Project:  project,
-						Location: location,
-					},
-					MountPointName: sobj.MountName,
-					CapacityBytes:  sobj.CapacityGb * util.Gb,
-					Labels:         sobj.Labels,
-					State:          sobj.State,
-				}
-				shares = append(shares, s)
+			s := &Share{
+				Name: shareName,
+				Parent: &MultishareInstance{
+					Name:     instanceName,
+					Project:  project,
+					Location: location,
+				},
+				MountPointName: sobj.MountName,
+				CapacityBytes:  sobj.CapacityGb * util.Gb,
+				Labels:         sobj.Labels,
+				State:          sobj.State,
 			}
-			nextPageToken = resp.NextPageToken
-			lCall.PageToken(nextPageToken)
+			shares = append(shares, s)
 		}
+		nextPageToken = resp.NextPageToken
+		lCall.PageToken(nextPageToken)
 	}
+
 	return shares, nil
 }
 
@@ -1014,6 +1003,10 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 	if err != nil {
 		return nil, err
 	}
+	ip := ""
+	if len(instance.Networks[0].IpAddresses) > 0 {
+		ip = instance.Networks[0].IpAddresses[0]
+	}
 	return &MultishareInstance{
 		Project:  project,
 		Location: location,
@@ -1021,7 +1014,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		Tier:     instance.Tier,
 		Network: Network{
 			Name:            instance.Networks[0].Network,
-			Ip:              instance.Networks[0].IpAddresses[0],
+			Ip:              ip,
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
