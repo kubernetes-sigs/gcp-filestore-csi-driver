@@ -612,6 +612,122 @@ func TestMultishareCreateVolume(t *testing.T) {
 		checkOnlyVolidFmt bool // for auto generated instance, the instance name is not known
 	}{
 		{
+			name: "create volume called with volume content source",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				VolumeContentSource: &csi.VolumeContentSource{},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "create volume called with volume size < 100G in required bytes",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 99 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "create volume called with volume size < 100G in limit bytes",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					LimitBytes: 99 * util.Gb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "create volume called with volume size > 1T in required bytes",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 2 * util.Tb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "create volume called with volume size > 1T in limit bytes",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					LimitBytes: 2 * util.Tb,
+				},
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
 			name: "no initial instances, create instance and share, success response",
 			req: &csi.CreateVolumeRequest{
 				Name: testVolName,
@@ -885,7 +1001,7 @@ func TestMultishareDeleteVolume(t *testing.T) {
 		errorExpected bool
 	}{
 		{
-			name: "share not found, instance ready, instance deleted, succes response",
+			name: "share not found, instance not found, succes response",
 			req: &csi.DeleteVolumeRequest{
 				VolumeId: testVolId,
 			},
@@ -1079,6 +1195,22 @@ func TestMultishareControllerExpandVolume(t *testing.T) {
 		resp          *csi.ControllerExpandVolumeResponse
 		errorExpected bool
 	}{
+		{
+			name: "Target expansion < 100G in required bytes",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: 99 * util.Gb},
+			},
+			errorExpected: true,
+		},
+		{
+			name: "Target expansion > 1T in required bytes",
+			req: &csi.ControllerExpandVolumeRequest{
+				VolumeId:      testVolId,
+				CapacityRange: &csi.CapacityRange{RequiredBytes: 2 * util.Tb},
+			},
+			errorExpected: true,
+		},
 		{
 			name: "share not found, error respond",
 			req: &csi.ControllerExpandVolumeRequest{

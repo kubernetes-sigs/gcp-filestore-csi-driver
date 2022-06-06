@@ -726,6 +726,9 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
 	}
+	if isMultishareVolId(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for multishare backed volumes")
+	}
 
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
