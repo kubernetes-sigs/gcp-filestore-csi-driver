@@ -550,11 +550,11 @@ func getShareRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 
 	if rSet {
 		if rCap < util.MinShareSizeBytes {
-			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is less than minimum share size bytes %v", lCap, util.MinShareSizeBytes)
+			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is less than minimum share size bytes %v", rCap, util.MinShareSizeBytes)
 		}
 
 		if rCap > util.MaxShareSizeBytes {
-			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is greater than maximum share size bytes %v", lCap, util.MaxShareSizeBytes)
+			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is greater than maximum share size bytes %v", rCap, util.MaxShareSizeBytes)
 		}
 	}
 
