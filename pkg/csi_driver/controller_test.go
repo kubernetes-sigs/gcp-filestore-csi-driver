@@ -881,3 +881,29 @@ func ValidateExpectedError(t *testing.T, errResp <-chan error, operationUnblocke
 		t.Errorf("The operation should have been aborted, but was started")
 	}
 }
+
+func TestCreateSnapshot(t *testing.T) {
+	cases := []struct {
+		name      string
+		req       *csi.CreateSnapshotRequest
+		expectErr bool
+	}{
+		{
+			name: "Create snapshot request for multishare backed volumes",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeMultishare/mysc/myproject/location/instancename/sharename",
+			},
+			expectErr: true,
+		},
+	}
+	for _, test := range cases {
+		cs := initTestController(t)
+		_, err := cs.CreateSnapshot(context.TODO(), test.req)
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if test.expectErr && err == nil {
+			t.Errorf("test %q failed; got success", test.name)
+		}
+	}
+}

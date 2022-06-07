@@ -63,6 +63,7 @@ func NewMultishareController(driver *GCFSDriver, fileService file.Service, cloud
 }
 
 func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
+	klog.Infof("CreateVolume called for multishare with request %+v", req)
 	name := req.GetName()
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
@@ -70,13 +71,19 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	if err := m.driver.validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	if req.GetVolumeContentSource() != nil {
+		return nil, status.Error(codes.InvalidArgument, "Multishare backed volumes do not support volume content source")
+	}
 
 	instanceScPrefix, err := getInstanceSCPrefix(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	klog.Infof("CreateVolume called for multishare with request %+v", req)
+	_, err = getShareRequestCapacity(req.GetCapacityRange())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
 	if acquired := m.volumeLocks.TryAcquire(name); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, name)
 	}
