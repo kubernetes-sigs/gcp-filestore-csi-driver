@@ -1,4 +1,11 @@
 
+# v1.2.4 - Changelog since v1.2.3
+
+### Bug or Regression
+
+- Harden the invalid args checks for multi-share ops and add unit tests ([#298](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/298), [@saikat-royc](https://github.com/saikat-royc))
+- Fix typo in logging error of supported size ([#301](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/301), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.2.3 - Changelog since v1.2.2
 
 ### Bug or Regression
@@ -6,6 +13,7 @@
 - Shared VPC ipAddress fix and ListShare region limit ([#291](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/291), [@leiyiz](https://github.com/leiyiz))
 
 - Fail instance eligibility check if any error encountered during checks ([#292](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/291), [@saikat-royc](https://github.com/saikat-royc))
+
 
 # v1.2.2 - Changelog since v1.2.1
 
