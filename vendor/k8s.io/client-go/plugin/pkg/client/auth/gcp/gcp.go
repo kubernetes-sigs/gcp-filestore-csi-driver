@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/yaml"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/util/jsonpath"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 func init() {
@@ -76,7 +76,7 @@ var (
 //       # Caching options
 //
 //       # Raw string data representing cached access token.
-//       "access-token": "ya29.CjWdA4GiBPTt",
+//       "access-token": "access_token",
 //       # RFC3339Nano expiration timestamp for cached access token.
 //       "expiry": "2016-10-31 22:31:9.123",
 //
@@ -113,7 +113,14 @@ type gcpAuthProvider struct {
 	persister   restclient.AuthProviderConfigPersister
 }
 
+var warnOnce sync.Once
+
 func newGCPAuthProvider(_ string, gcpConfig map[string]string, persister restclient.AuthProviderConfigPersister) (restclient.AuthProvider, error) {
+	warnOnce.Do(func() {
+		klog.Warningf(`WARNING: the gcp auth plugin is deprecated in v1.22+, unavailable in v1.25+; use gcloud instead.
+To learn more, consult https://cloud.google.com/blog/products/containers-kubernetes/kubectl-auth-changes-in-gke`)
+	})
+
 	ts, err := tokenSource(isCmdTokenSource(gcpConfig), gcpConfig)
 	if err != nil {
 		return nil, err
@@ -188,7 +195,7 @@ func (g *gcpAuthProvider) Login() error { return nil }
 type cachedTokenSource struct {
 	lk          sync.Mutex
 	source      oauth2.TokenSource
-	accessToken string
+	accessToken string `datapolicy:"token"`
 	expiry      time.Time
 	persister   restclient.AuthProviderConfigPersister
 	cache       map[string]string
@@ -269,8 +276,8 @@ func (t *cachedTokenSource) baseCache() map[string]string {
 type commandTokenSource struct {
 	cmd       string
 	args      []string
-	tokenKey  string
-	expiryKey string
+	tokenKey  string `datapolicy:"token"`
+	expiryKey string `datapolicy:"secret-key"`
 	timeFmt   string
 }
 
