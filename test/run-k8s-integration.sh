@@ -27,6 +27,7 @@ readonly gke_node_version=${GKE_NODE_VERSION:-}
 readonly gce_region=${GCE_CLUSTER_REGION:-}
 readonly storageclass_files=${STORAGECLASS_FILES:-}
 readonly use_gke_driver=${USE_STAGING_DRIVER:-false}
+readonly parallel_run=${PARALLEL:-}
 
 make -C "${PKGDIR}" test-k8s-integration
 
@@ -71,4 +72,9 @@ if [ -n "$storageclass_files" ]; then
   base_cmd="${base_cmd} --storageclass-files=${storageclass_files}"
 fi
 
+if [ -n "$parallel_run" ]; then
+  base_cmd="${base_cmd} --parallel=${parallel_run}"
+fi
+
+echo "$base_cmd"
 eval "$base_cmd"
