@@ -321,9 +321,9 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	if err != nil {
 		return nil, 0, err
 	}
-	// An instance is considered as eligible if and only if its state is 'READY', and there's no ops running against it.
+	// An instance is considered as eligible if and only if the state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
-	// An instance is considered as non-ready if it's state is "CREATING", or its state is 'READY' but running ops are found on it.
+	// An instance is considered as non-ready if the state is "CREATING", or the state is 'READY' but running ops are found on it.
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
@@ -359,7 +359,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 			continue
 		}
 
-		klog.Infof("Instance %s/%s/%s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, op.Id, op.Type.String())
+		klog.Infof("Instance %s/%s/%s with state %s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, instance.State, op.Id, op.Type.String())
 		nonReadyInstanceCount += 1
 		// TODO: If we see > 1 instances with 0 shares (these could be possibly leaked instances where the driver hit timeout during creation op was in progress), should we trigger delete op for such instances? Possibly yes. Given that instance create/delete and share create/delete is serialized, maybe yes.
 	}
