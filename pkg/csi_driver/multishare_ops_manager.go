@@ -324,6 +324,11 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	var readyEligibleInstances []*file.MultishareInstance
 	nonReadyInstanceCount := 0
 	for _, instance := range instances {
+		if instance.State != "READY" {
+			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
+			continue
+		}
+
 		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
 		if err != nil {
 			klog.Errorf("failed to check eligibility of instance %s", instance.Name)
@@ -342,16 +347,6 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 
 			readyEligibleInstances = append(readyEligibleInstances, instance)
 			klog.Infof("Adding instance %s to eligible list", instance.String())
-			continue
-		}
-
-		// instances whose delete is in progress should not be accounted as non-ready instances.
-		if op.Type == util.InstanceDelete {
-			continue
-		}
-
-		if instance.State == "DELETING" || instance.State == "ERROR" {
-			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
 			continue
 		}
 
