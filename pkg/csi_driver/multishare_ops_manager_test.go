@@ -1546,7 +1546,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: "testprefix",
 					},
-					State: "REPAIRING",
+					State: "CREATING",
 				},
 				{
 					Name:     "instance-2",
@@ -1555,10 +1555,19 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: "testprefix",
 					},
-					State: "READY",
+					State: "REPAIRING",
 				},
 				{
 					Name:     "instance-3",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					State: "READY",
+				},
+				{
+					Name:     "instance-4",
 					Location: "us-central1",
 					Project:  "test-project",
 					Labels: map[string]string{
@@ -1578,11 +1587,11 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					State: "READY",
 				},
 			},
-			expectedNonReadyCount: 1,
+			expectedNonReadyCount: 2,
 			ops: []*OpInfo{
 				{
 					Id:     "op1",
-					Target: "projects/test-project/locations/us-central1/instances/instance-2/shares/share-1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-4/shares/share-1",
 					Type:   util.ShareDelete,
 				},
 			},
@@ -1599,6 +1608,15 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 						util.ParamMultishareInstanceScLabelKey: "testprefix",
 					},
 					State: "CREATING",
+				},
+				{
+					Name:     "instance-2",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					State: "ERROR",
 				},
 			},
 			expectedNonReadyCount: 1,

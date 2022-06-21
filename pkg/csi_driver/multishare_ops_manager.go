@@ -327,9 +327,15 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
-		if instance.State != "READY" && instance.State != "CREATING" {
-			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
+		if instance.State == "CREATING" {
+			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
+			nonReadyInstanceCount += 1
 			continue
+		}
+		if instance.State != "READY" {
+			klog.Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
+			continue
+			// TODO: If we saw instance states other than "CREATING" and "READY", we may need to do some special handldiing in the future.
 		}
 
 		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
