@@ -323,7 +323,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	}
 	// An instance is considered as eligible if and only if its state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
-	// An instance is considered as non-ready if it's being created, or its state is 'READY' but running ops are found on it.
+	// An instance is considered as non-ready if it's state is "CREATING", or its state is 'READY' but running ops are found on it.
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
