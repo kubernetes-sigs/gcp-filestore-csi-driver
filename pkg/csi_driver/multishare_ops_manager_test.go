@@ -1587,6 +1587,29 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "creating instance count as non-ready",
+			prefix: "testprefix",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					State: "CREATING",
+				},
+			},
+			expectedNonReadyCount: 1,
+			ops: []*OpInfo{
+				{
+					Id:     "op1",
+					Target: "projects/test-project/locations/us-central1/instances/instance-1",
+					Type:   util.InstanceCreate,
+				},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

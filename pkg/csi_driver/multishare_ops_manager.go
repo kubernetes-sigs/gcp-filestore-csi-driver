@@ -321,10 +321,13 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	if err != nil {
 		return nil, 0, err
 	}
+	// An instance is considered as eligible if and only if its state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
+	// An instance is considered as non-ready if it's being created, or its state is 'READY' but running ops are found on it.
 	nonReadyInstanceCount := 0
+
 	for _, instance := range instances {
-		if instance.State != "READY" {
+		if instance.State != "READY" && instance.State != "CREATING" {
 			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
 			continue
 		}
