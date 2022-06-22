@@ -765,6 +765,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Network: file.Network{
 						Ip: testIP,
 					},
+					State: "READY",
 				},
 				{
 					Name:     testInstanceName2,
@@ -778,6 +779,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Network: file.Network{
 						Ip: testIP,
 					},
+					State: "READY",
 				},
 			},
 			ops: []OpItem{
