@@ -321,9 +321,23 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	if err != nil {
 		return nil, 0, err
 	}
+	// An instance is considered as eligible if and only if the state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
+	// An instance is considered as non-ready if the state is "CREATING", or the state is 'READY' but running ops are found on it.
 	nonReadyInstanceCount := 0
+
 	for _, instance := range instances {
+		if instance.State == "CREATING" {
+			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
+			nonReadyInstanceCount += 1
+			continue
+		}
+		if instance.State != "READY" {
+			klog.Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
+			continue
+			// TODO: If we saw instance states other than "CREATING" and "READY", we may need to do some special handlding in the future.
+		}
+
 		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
 		if err != nil {
 			klog.Errorf("failed to check eligibility of instance %s", instance.Name)
@@ -345,17 +359,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 			continue
 		}
 
-		// instances whose delete is in progress should not be accounted as non-ready instances.
-		if op.Type == util.InstanceDelete {
-			continue
-		}
-
-		if instance.State == "DELETING" || instance.State == "ERROR" {
-			klog.V(5).Infof("Instance %s/%s/%s with state %s is not eligible", instance.Project, instance.Location, instance.Name, instance.State)
-			continue
-		}
-
-		klog.Infof("Instance %s/%s/%s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, op.Id, op.Type.String())
+		klog.Infof("Instance %s/%s/%s with state %s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, instance.State, op.Id, op.Type.String())
 		nonReadyInstanceCount += 1
 		// TODO: If we see > 1 instances with 0 shares (these could be possibly leaked instances where the driver hit timeout during creation op was in progress), should we trigger delete op for such instances? Possibly yes. Given that instance create/delete and share create/delete is serialized, maybe yes.
 	}
