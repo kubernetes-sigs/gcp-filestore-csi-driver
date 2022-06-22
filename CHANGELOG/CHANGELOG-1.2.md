@@ -1,3 +1,11 @@
+# v1.2.6 - Changelog since v1.2.5
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Check for instance READY state before placing a share on it ([#311](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/311), [@tyuchn](https://github.com/tyuchn))
+
 # v1.2.5 - Changelog since v1.2.4
 
 ## Changes by Kind
