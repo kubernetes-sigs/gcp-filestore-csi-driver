@@ -277,3 +277,10 @@ func AlignBytes(currBytes int64, stepBytes int64) int64 {
 	}
 	return ((currBytes + stepBytes - 1) / stepBytes) * stepBytes
 }
+
+func IsAligned(curSizeBytes int64, expectedBytes int64) bool {
+	if curSizeBytes%expectedBytes == 0 {
+		return true
+	}
+	return false
+}

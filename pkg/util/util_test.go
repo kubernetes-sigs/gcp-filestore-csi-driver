@@ -467,3 +467,70 @@ func TestAlignBytes(t *testing.T) {
 	}
 
 }
+
+func TestIsAligned(t *testing.T) {
+	tests := []struct {
+		name             string
+		inputBytes       int64
+		targetAlignBytes int64
+		expected         bool
+	}{
+		{
+			name:             "misaligned size - tc1",
+			inputBytes:       100 * Mb,
+			targetAlignBytes: 1 * Gb,
+			expected:         false,
+		},
+		{
+			name:             "misaligned size - tc2",
+			inputBytes:       100 * Gb,
+			targetAlignBytes: 1 * Tb,
+			expected:         false,
+		},
+		{
+			name:             "misaligned size - tc3",
+			inputBytes:       1*Gb + 1,
+			targetAlignBytes: 1 * Gb,
+			expected:         false,
+		},
+		{
+			name:             "misaligned size - tc4",
+			inputBytes:       1*Gb - 1,
+			targetAlignBytes: 1 * Gb,
+			expected:         false,
+		},
+		{
+			name:             "aligned size - tc1",
+			inputBytes:       1 * Tb,
+			targetAlignBytes: 1 * Gb,
+			expected:         true,
+		},
+		{
+			name:             "aligned size - tc2",
+			inputBytes:       100 * Tb,
+			targetAlignBytes: 1 * Gb,
+			expected:         true,
+		},
+		{
+			name:             "aligned size - tc3",
+			inputBytes:       100 * Gb,
+			targetAlignBytes: 1 * Gb,
+			expected:         true,
+		},
+		{
+			name:             "aligned size - tc4",
+			inputBytes:       101 * Gb,
+			targetAlignBytes: 1 * Gb,
+			expected:         true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := IsAligned(tc.inputBytes, tc.targetAlignBytes)
+			if got != tc.expected {
+				t.Errorf("got %t, expected %t", got, tc.expected)
+			}
+		})
+	}
+
+}
