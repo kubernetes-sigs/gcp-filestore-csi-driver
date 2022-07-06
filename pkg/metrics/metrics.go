@@ -65,6 +65,7 @@ func NewMetricsManager() *MetricsManager {
 	mm := &MetricsManager{
 		registry: metrics.NewKubeRegistry(),
 	}
+	metrics.RegisterProcessStartTime(mm.registry.Register)
 	mm.registry.MustRegister(operationSeconds)
 	return mm
 }
