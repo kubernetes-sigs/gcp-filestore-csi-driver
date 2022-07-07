@@ -80,9 +80,12 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	_, err = getShareRequestCapacity(req.GetCapacityRange())
+	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	if !util.IsAligned(reqBytes, util.Gb) {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("requested size(bytes) %d is not a multiple of 1GiB", reqBytes))
 	}
 	if acquired := m.volumeLocks.TryAcquire(name); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, name)
@@ -273,7 +276,9 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-
+	if !util.IsAligned(reqBytes, util.Gb) {
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("requested size(bytes) %d is not a multiple of 1GiB", reqBytes))
+	}
 	_, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
