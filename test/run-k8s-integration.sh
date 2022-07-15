@@ -31,10 +31,13 @@ readonly parallel_run=${PARALLEL:-}
 
 make -C "${PKGDIR}" test-k8s-integration
 
-go install sigs.k8s.io/kubetest2@latest;
-go install sigs.k8s.io/kubetest2/kubetest2-gce@latest;
-go install sigs.k8s.io/kubetest2/kubetest2-gke@latest;
-go install sigs.k8s.io/kubetest2/kubetest2-tester-ginkgo@latest;
+# Choose an older Kubetest2 commit version instead of using @latest 
+# because of a regression in https://github.com/kubernetes-sigs/kubetest2/pull/183.
+# Contact engprod oncall and ask about what is the version they are using for internal jobs.
+go install sigs.k8s.io/kubetest2@0e09086b60c122e1084edd2368d3d27fe36f384f;
+go install sigs.k8s.io/kubetest2/kubetest2-gce@0e09086b60c122e1084edd2368d3d27fe36f384f;
+go install sigs.k8s.io/kubetest2/kubetest2-gke@0e09086b60c122e1084edd2368d3d27fe36f384f;
+go install sigs.k8s.io/kubetest2/kubetest2-tester-ginkgo@0e09086b60c122e1084edd2368d3d27fe36f384f;
 
 echo "make successful"
 base_cmd="${PKGDIR}/bin/k8s-integration-test \

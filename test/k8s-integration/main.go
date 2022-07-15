@@ -529,6 +529,10 @@ func runTestsWithConfig(testParams *testParameters, testConfigArg, reportPrefix 
 	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--skip-regex=%s", skip))
 	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--parallel=%d", testParams.parallel))
 	kubeTest2Args = append(kubeTest2Args, fmt.Sprintf("--test-args=%s", testConfigArg))
+	// Default timeout has been reduced from 24 hours to 1 hours
+	// in k/k repo because Ginkgo v1 is deprecated
+	// since https://github.com/kubernetes/kubernetes/pull/109111.
+	kubeTest2Args = append(kubeTest2Args, "--ginkgo-args=--timeout=24h")
 
 	err = runCommand("Running Tests", exec.Command("kubetest2", kubeTest2Args...))
 	if err != nil {
