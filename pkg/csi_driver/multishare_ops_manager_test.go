@@ -1575,6 +1575,24 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					},
 					State: "READY",
 				},
+				{
+					Name:     "instance-5",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					State: "ERROR",
+				},
+				{
+					Name:     "instance-6",
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					State: "SUSPENDED",
+				},
 			},
 			expectedReadyInstance: []*file.MultishareInstance{
 				{
@@ -1587,7 +1605,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					State: "READY",
 				},
 			},
-			expectedNonReadyCount: 2,
+			expectedNonReadyCount: 3,
 			ops: []*OpInfo{
 				{
 					Id:     "op1",

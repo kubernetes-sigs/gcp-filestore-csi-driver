@@ -327,7 +327,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, ins
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
-		if instance.State == "CREATING" {
+		if instance.State == "CREATING" || instance.State == "REPAIRING" {
 			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
 			nonReadyInstanceCount += 1
 			continue
