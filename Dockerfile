@@ -25,10 +25,30 @@ ADD . .
 RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_FS_CSI_STAGING_VERSION=${STAGINGVERSION}
 
 # Install nfs packages
-FROM launcher.gcr.io/google/debian11 as deps
+# Note that the newer debian bullseye image does not work with nfs-common; I
+# believe that libcap needs extra configuration.
+FROM k8s.gcr.io/build-image/debian-base:buster-v1.9.0 as deps
 ENV DEBIAN_FRONTEND noninteractive
+
+# The netbase package is needed to get rpcbind to work correctly,
+# there is a version 2 portmapper service that is not started if only
+# nfs-common is installed. The older launcher.gcr.io image used here
+# did not need the netbase package.
+#
+# If nfs is not working, the rpcinfo command is useful for
+# debugging. rpcinfo -p queries using legacy version 2, and will show
+# "No remote programs registered." Without netbase, rpcinfo without
+# the -p options shows some services with no name, but not the key
+# portmapper service.
+#
+# If future problems come up, looking for different files in /etc
+# between older and newer distros (in this case it was /etc/rpc
+# existing only in the old launcher.gcr.io image) and using dpgk -S
+# <file> to determine which package supplies it, can be helpful.
 RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
     mount \
+    netbase \
+    ca-certificates \
     nfs-common
 
 # This is needed for rpcbind
