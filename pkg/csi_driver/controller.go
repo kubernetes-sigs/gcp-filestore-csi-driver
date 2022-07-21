@@ -164,15 +164,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			id := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
 			isBackupSource, err := util.IsBackupHandle(id)
 			if err != nil || !isBackupSource {
-				return nil, status.Error(codes.NotFound, fmt.Sprintf("Unsupported volume content source %v", id))
+				return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("Unsupported volume content source %v", id))
 			}
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
-				if file.IsNotFoundErr(err) {
-					glog.Errorf("Volume %v source snapshot %v not found", name, id)
-					return nil, status.Error(codes.NotFound, fmt.Sprintf("Failed to get snapshot %v", id))
-				}
 				glog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err)
+				if errCode := file.IsUserError(err); errCode != nil {
+					return nil, status.Error(*errCode, err.Error())
+				}
 				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err))
 			}
 			sourceSnapshotId = id
@@ -181,13 +180,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	// Check if the instance already exists
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
-	if err != nil {
-		if file.IsUserError(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
+	// No error is returned if the instance is not found during CreateVolume.
+	if err != nil && !file.IsNotFoundErr(err) {
+		if errCode := file.IsUserError(err); errCode != nil {
+			return nil, status.Error(*errCode, err.Error())
 		}
-		if !file.IsNotFoundErr(err) {
-			return nil, status.Error(codes.Internal, err.Error())
-		}
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	if filer != nil {
@@ -246,13 +244,10 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 		if createErr != nil {
 			glog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr)
-			if file.IsUserError(createErr) {
-				return nil, status.Error(codes.InvalidArgument, createErr.Error())
-			} else if file.IsTooManyRequestError(createErr) {
-				return nil, status.Error(codes.ResourceExhausted, createErr.Error())
-			} else {
-				return nil, status.Error(codes.Internal, createErr.Error())
+			if errCode := file.IsUserError(err); errCode != nil {
+				return nil, status.Error(*errCode, err.Error())
 			}
+			return nil, status.Error(codes.Internal, createErr.Error())
 		}
 	}
 	resp := &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
@@ -374,6 +369,9 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 	filer.Project = s.config.cloud.Project
 	newFiler, err := s.config.fileService.GetInstance(ctx, filer)
 	if err != nil && !file.IsNotFoundErr(err) {
+		if errCode := file.IsUserError(err); errCode != nil {
+			return nil, status.Error(*errCode, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {
@@ -557,12 +555,15 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	filer.Project = s.config.cloud.Project
 	filer, err = s.config.fileService.GetInstance(ctx, filer)
 	if err != nil {
+		if errCode := file.IsUserError(err); errCode != nil {
+			return nil, status.Error(*errCode, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if filer.State != "READY" {
@@ -738,13 +739,13 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		glog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	filer.Project = s.config.cloud.Project
 	// If parameters are empty we assume 'backup' type by default.
 	if req.GetParameters() != nil {
 		if _, err := util.IsSnapshotTypeSupported(req.GetParameters()); err != nil {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
 
@@ -792,9 +793,10 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		glog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
-		if file.IsNotFoundErr(err) {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		} else {
+		if err != nil {
+			if errCode := file.IsUserError(err); errCode != nil {
+				return nil, status.Error(*errCode, err.Error())
+			}
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	}
@@ -830,7 +832,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 
 	if !isBackup {
 		glog.Errorf("Deletion of volume snapshot type %q not supported", id)
-		return nil, status.Error(codes.Internal, "Deletion of volume snapshot type not supported")
+		return nil, status.Error(codes.InvalidArgument, "deletion is only supported for volume snapshots of type backup")
 	}
 
 	backupInfo, err := s.config.fileService.GetBackup(ctx, id)
