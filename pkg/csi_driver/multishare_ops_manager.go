@@ -72,9 +72,14 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
+	klog.Infof("ListMultishareResourceRunningOps call request initiated.")
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
 		return nil, nil, status.Error(codes.Internal, err.Error())
+	}
+	klog.Infof("ListMultishareResourceRunningOps call returned successfully with the following %d ops", len(ops))
+	for i, op := range ops {
+		klog.Infof("Op %d: %+v", i, op)
 	}
 	createShareOp := containsOpWithShareName(shareName, util.ShareCreate, ops)
 	if createShareOp != nil {
@@ -317,17 +322,24 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(inst
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
 func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string, ops []*OpInfo) ([]*file.MultishareInstance, int, error) {
+	klog.Infof("ListMultishareInstances call request initiated.")
 	instances, err := m.listInstanceForStorageClassPrefix(ctx, instanceScPrefix)
 	if err != nil {
 		return nil, 0, err
 	}
+	klog.Infof("ListMultishareInstances call returned successfully with the following %d instances", len(instances))
+	for i, instance := range instances {
+		klog.Infof("Multishare instance-%d name: %v, state: %v", i, instance.Name, instance.State)
+	}
 	// An instance is considered as eligible if and only if the state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
-	// An instance is considered as non-ready if the state is "CREATING", or the state is 'READY' but running ops are found on it.
+	// An instance is considered as non-ready if any of the following conditions are met:
+	// 1. The instance state is "CREATING" or "REPAIRING".
+	// 2. The instance state is 'READY', but running ops are found on it.
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
-		if instance.State == "CREATING" {
+		if instance.State == "CREATING" || instance.State == "REPAIRING" {
 			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
 			nonReadyInstanceCount += 1
 			continue
@@ -548,7 +560,6 @@ func (m *MultishareOpsManager) listMultishareResourceRunningOps(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-
 	var finalops []*OpInfo
 	for _, op := range ops {
 		if op.Done {
