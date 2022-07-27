@@ -1,3 +1,9 @@
+# v1.3.1 - Changelog since v1.3.0
+
+### Other (Cleanup)
+
+- Add log for list multishare instance ([#332](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/332), [@tyuchn](https://github.com/tyuchn))
+
 # v1.3.0 - Changelog since v1.2.7
 
 ## Changes by Kind
