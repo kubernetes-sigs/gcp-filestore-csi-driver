@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"testing"
 
+	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -1203,6 +1204,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 		initShares            []*file.Share
 		expectedNonReadyCount int
 		expectedReadyInstance []*file.MultishareInstance
+		req                   *csi.CreateVolumeRequest
 	}{
 		{
 			name: "no instances",
@@ -1656,7 +1658,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			cloudProvider, err := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			manager := NewMultishareOpsManager(cloudProvider)
-			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.prefix, tc.ops)
+			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.prefix, tc.ops, tc.req)
 			if err != nil {
 				t.Errorf("unexpected error")
 			}

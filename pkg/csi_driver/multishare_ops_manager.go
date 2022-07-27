@@ -102,7 +102,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	}
 
 	// No share or running share create op found. Proceed to eligible instance check.
-	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix, ops)
+	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix, ops, req)
 	if err != nil {
 		return nil, nil, status.Error(codes.Aborted, err.Error())
 	}
@@ -316,17 +316,22 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(inst
 }
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
-func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string, ops []*OpInfo) ([]*file.MultishareInstance, int, error) {
+func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string, ops []*OpInfo, req *csi.CreateVolumeRequest) ([]*file.MultishareInstance, int, error) {
+	klog.Infof("ListMultishareInstances call initiated for request %+v.", req)
 	instances, err := m.listInstanceForStorageClassPrefix(ctx, instanceScPrefix)
 	if err != nil {
 		return nil, 0, err
 	}
+	klog.Infof("ListMultishareInstances call returned successfully with %d instances for request %+v.", len(instances), req)
 	// An instance is considered as eligible if and only if the state is 'READY', and there's no ops running against it.
 	var readyEligibleInstances []*file.MultishareInstance
-	// An instance is considered as non-ready if the state is "CREATING", or the state is 'READY' but running ops are found on it.
+	// An instance is considered as non-ready if any of the following conditions are met:
+	// 1. The instance state is "CREATING" or "REPAIRING".
+	// 2. The instance state is 'READY', but running ops are found on it.
 	nonReadyInstanceCount := 0
 
 	for _, instance := range instances {
+		klog.Infof("Found multishare instance %s/%s/%s with state %s.", instance.Project, instance.Location, instance.Name, instance.State)
 		if instance.State == "CREATING" || instance.State == "REPAIRING" {
 			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
 			nonReadyInstanceCount += 1
