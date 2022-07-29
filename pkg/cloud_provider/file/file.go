@@ -35,7 +35,7 @@ import (
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
-	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 )
 
 type PollOpts struct {
@@ -176,7 +176,7 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 
 	basepath := createFilestoreEndpointUrlBasePath(endpoint)
 	glog.Infof("Using endpoint %q for multishare", basepath)
-	fileMultishareService, err := filev1beta1multishare.NewService(ctx, basepath, option.WithHTTPClient(client))
+	fileMultishareService, err := filev1beta1multishare.NewServiceBasePath(ctx, basepath, option.WithHTTPClient(client))
 	if err != nil {
 		return nil, err
 	}

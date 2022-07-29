@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -159,8 +158,8 @@ func ParseTimestamp(timestamp string) (*timestamppb.Timestamp, error) {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to parse timestamp %v: %v", timestamp, err))
 	}
 
-	tp, err := ptypes.TimestampProto(t)
-	if err != nil {
+	tp := timestamppb.New(t)
+	if err := tp.CheckValid(); err != nil {
 		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to covert timestamp %v: %v", timestamp, err))
 	}
 	return tp, err

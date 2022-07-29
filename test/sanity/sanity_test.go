@@ -15,10 +15,11 @@ limitations under the License.
 package sanitytest
 
 import (
+	"flag"
 	"os"
 	"testing"
 
-	sanity "github.com/kubernetes-csi/csi-test/v3/pkg/sanity"
+	sanity "github.com/kubernetes-csi/csi-test/v4/pkg/sanity"
 	"google.golang.org/grpc"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -39,6 +40,8 @@ func TestSanity(t *testing.T) {
 	endpoint := "unix:/tmp/csi.sock"
 	mountPath := "/tmp/csi/mount"
 	stagePath := "/tmp/csi/stage"
+	// skip snapshot not found test because Filestore CSI only supports backup type snapshot
+	skipTests := "CreateVolume.*should fail when the volume source snapshot is not found"
 
 	tmpDir := "/tmp/csi"
 	err := os.MkdirAll(tmpDir, 0755)
@@ -80,6 +83,8 @@ func TestSanity(t *testing.T) {
 	go func() {
 		gcfsDriver.Run(endpoint)
 	}()
+
+	flag.Set("ginkgo.skip", skipTests)
 
 	// Run test
 	testConfig := sanity.TestConfig{

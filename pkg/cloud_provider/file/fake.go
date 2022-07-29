@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
-	filev1beta1multishare "google.golang.org/api/file/v1beta1multishare"
+	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
