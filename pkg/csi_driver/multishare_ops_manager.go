@@ -50,8 +50,9 @@ type Workflow struct {
 
 // MultishareOpsManager manages the lifecycle of all instance and share operations.
 type MultishareOpsManager struct {
-	sync.Mutex // Lock to perform thread safe multishare operations.
-	cloud      *cloud.Cloud
+	sync.Mutex       // Lock to perform thread safe multishare operations.
+	cloud            *cloud.Cloud
+	controllerServer *controllerServer
 }
 
 func NewMultishareOpsManager(cloud *cloud.Cloud) *MultishareOpsManager {
@@ -134,6 +135,33 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	if numIneligible > 0 {
 		// some instances not ready yet. wait for more instances to be ready.
 		return nil, nil, status.Errorf(codes.Aborted, " %d non-ready instances detected. No ready instance found", numIneligible)
+	}
+
+	param := req.GetParameters()
+	// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
+	// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
+	if instance.Network.ConnectMode == privateServiceAccess {
+		if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+			instance.Network.ReservedIpRange = reservedIPRange
+		}
+	} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
+		reservedIPRange, err := m.controllerServer.reserveIPRange(ctx, &file.ServiceInstance{
+			Project:  instance.Project,
+			Name:     instance.Name,
+			Location: instance.Location,
+			Tier:     instance.Tier,
+		}, reservedIPV4CIDR)
+
+		// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
+		// The ListInstances response will contain the reservedIPRange if the operation was started
+		// In case of abort, the CIDR IP is released and available for reservation
+		defer m.controllerServer.config.ipAllocator.ReleaseIPRange(reservedIPRange)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Adding the reserved IP range to the instance object
+		instance.Network.ReservedIpRange = reservedIPRange
 	}
 
 	w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceCreate}, ops)
