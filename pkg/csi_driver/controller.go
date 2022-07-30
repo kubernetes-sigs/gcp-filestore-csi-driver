@@ -105,7 +105,7 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
 	if config.enableMultishare {
 		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks, config.ecfsDescription)
-		config.multiShareController.controllerServer = cs
+		config.multiShareController.opsManager.controllerServer = cs
 	}
 	return cs
 }
