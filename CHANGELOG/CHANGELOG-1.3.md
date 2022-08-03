@@ -1,3 +1,11 @@
+# v1.3.2 - Changelog since v1.3.1
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Multishare ip reservation bug fix ([#341](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/341), [@tyuchn](https://github.com/tyuchn))
+
 # v1.3.1 - Changelog since v1.3.0
 
 ### Other (Cleanup)
