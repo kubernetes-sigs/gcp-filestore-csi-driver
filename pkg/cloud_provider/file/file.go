@@ -176,7 +176,8 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 
 	basepath := createFilestoreEndpointUrlBasePath(endpoint)
 	glog.Infof("Using endpoint %q for multishare", basepath)
-	fileMultishareService, err := filev1beta1multishare.NewServiceBasePath(ctx, basepath, option.WithHTTPClient(client))
+	fileMultishareService, err := filev1beta1multishare.NewService(ctx, option.WithHTTPClient(client))
+	fileMultishareService.BasePath = basepath
 	if err != nil {
 		return nil, err
 	}

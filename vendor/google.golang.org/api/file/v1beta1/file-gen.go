@@ -108,29 +108,6 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	return s, nil
 }
 
-// NewServiceBasePath creates a new Service.
-func NewServiceBasePath(ctx context.Context, basePath string, opts ...option.ClientOption) (*Service, error) {
-	scopesOption := internaloption.WithDefaultScopes(
-		"https://www.googleapis.com/auth/cloud-platform",
-	)
-	// NOTE: prepend, so we don't override user-specified scopes.
-	opts = append([]option.ClientOption{scopesOption}, opts...)
-	opts = append(opts, internaloption.WithDefaultEndpoint(basePath))
-	opts = append(opts, internaloption.WithDefaultMTLSEndpoint(mtlsBasePath))
-	client, endpoint, err := htransport.NewClient(ctx, opts...)
-	if err != nil {
-		return nil, err
-	}
-	s, err := New(client)
-	if err != nil {
-		return nil, err
-	}
-	if endpoint != "" {
-		s.BasePath = endpoint
-	}
-	return s, nil
-}
-
 // New creates a new Service. It uses the provided http.Client for requests.
 //
 // Deprecated: please use NewService instead.
