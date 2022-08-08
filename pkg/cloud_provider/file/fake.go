@@ -295,17 +295,14 @@ func (manager *fakeServiceManager) ListMultishareInstances(ctx context.Context, 
 func (manager *fakeServiceManager) StartCreateMultishareInstanceOp(ctx context.Context, obj *MultishareInstance) (*filev1beta1multishare.Operation, error) {
 	instance := &MultishareInstance{
 		Project:       defaultProject,
-		Location:      defaultRegion,
+		Location:      obj.Location,
 		Name:          obj.Name,
 		Tier:          obj.Tier,
 		CapacityBytes: obj.CapacityBytes,
-		Network: Network{
-			Name:            obj.Network.Name,
-			Ip:              obj.Network.Ip,
-			ReservedIpRange: obj.Network.ReservedIpRange,
-		},
-		Labels: obj.Labels,
-		State:  "READY",
+		Network:       obj.Network,
+		KmsKeyName:    obj.KmsKeyName,
+		Labels:        obj.Labels,
+		State:         "READY",
 	}
 	manager.createdMultishareInstance[obj.Name] = instance
 	meta := &filev1beta1multishare.OperationMetadata{
