@@ -17,6 +17,9 @@ limitations under the License.
 package driver
 
 import (
+	"fmt"
+	"net"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/golang/glog"
 	pbSanitizer "github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
@@ -58,4 +61,13 @@ func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, h
 		glog.V(5).Infof("GRPC response: %+v", resp)
 	}
 	return resp, err
+}
+
+// IsIpWithinRange checks if an ip address is within the given ip range.
+func IsIpWithinRange(ipAddress, ipRange string) (bool, error) {
+	_, ipnet, err := net.ParseCIDR(ipRange)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse cidr range %s: %v", ipRange, err)
+	}
+	return ipnet.Contains(net.ParseIP(ipAddress)), nil
 }

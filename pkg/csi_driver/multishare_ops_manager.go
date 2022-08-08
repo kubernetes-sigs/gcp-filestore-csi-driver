@@ -68,10 +68,6 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 	// Check ShareCreateMap if a share create is already in progress.
 	shareName := util.ConvertVolToShareName(req.Name)
-	instanceScPrefix, err := getInstanceSCPrefix(req)
-	if err != nil {
-		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
-	}
 
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
@@ -103,7 +99,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	}
 
 	// No share or running share create op found. Proceed to eligible instance check.
-	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, instanceScPrefix, ops, req)
+	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, req, ops, instance)
 	if err != nil {
 		return nil, nil, status.Error(codes.Aborted, err.Error())
 	}
@@ -344,9 +340,9 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(inst
 }
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
-func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, instanceScPrefix string, ops []*OpInfo, req *csi.CreateVolumeRequest) ([]*file.MultishareInstance, int, error) {
+func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req *csi.CreateVolumeRequest, ops []*OpInfo, target *file.MultishareInstance) ([]*file.MultishareInstance, int, error) {
 	klog.Infof("ListMultishareInstances call initiated for request %+v.", req)
-	instances, err := m.listInstanceForStorageClassPrefix(ctx, instanceScPrefix)
+	instances, err := m.listMatchedInstances(ctx, req, target)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -651,16 +647,69 @@ func containsOpWithInstanceTargetPrefix(instance *file.MultishareInstance, ops [
 	return nil, nil
 }
 
-func (m *MultishareOpsManager) listInstanceForStorageClassPrefix(ctx context.Context, prefix string) ([]*file.MultishareInstance, error) {
+// listMatchedInstances will list all instances in current project,
+// but only matched instances will be returned.
+func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *csi.CreateVolumeRequest, target *file.MultishareInstance) ([]*file.MultishareInstance, error) {
 	instances, err := m.cloud.File.ListMultishareInstances(ctx, &file.ListFilter{Project: m.cloud.Project, Location: "-"})
 	if err != nil {
 		return nil, err
 	}
 	var finalInstances []*file.MultishareInstance
 	for _, i := range instances {
-		if val, ok := i.Labels[util.ParamMultishareInstanceScLabelKey]; ok && val == prefix {
+		matched, err := isMatchedInstance(i, target, req)
+		if err != nil {
+			return nil, err
+		}
+		klog.Infof("Found source instance %+v, comparing with target instance %+v and StorageClass parameters %v, matched = %t", *i, *target, req.GetParameters(), matched)
+		if matched {
 			finalInstances = append(finalInstances, i)
 		}
 	}
 	return finalInstances, nil
+}
+
+// A source instance will be considered as "matched" with the target instance
+// if and only if the following requirements were met:
+// 1. Both source and target instance should have a label with key
+//    "storage_gke_io_storage-class-id", and the value should be the same.
+// 2. (Check if exists) The ip address of the target instance should be
+//    within the ip range specified in "reserved-ipv4-cidr".
+// 3. (Check if exists) The ip address of the target instance should be
+//    within the ip range specified in "reserved-ip-range".
+// 4. Both source and target instance should be in the same location.
+// 5. Both source and target instance should be under the same tier.
+// 6. Both source and target instance should be in the same VPC network.
+// 7, Both source and target instance should have the same connect mode.
+// 8. Both source and target instance should have the same KmsKeyName.
+func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
+	if scPrefixSource, ok := source.Labels[util.ParamMultishareInstanceScLabelKey]; ok {
+		if _, ok := target.Labels[util.ParamMultishareInstanceScLabelKey]; !ok {
+			return false, fmt.Errorf("label %q missing in target instance %+v", util.ParamMultishareInstanceScLabelKey, target)
+		}
+		if scPrefixSource != target.Labels[util.ParamMultishareInstanceScLabelKey] {
+			return false, nil
+		}
+	} else {
+		return false, nil
+	}
+	params := req.GetParameters()
+	if instanceCIDR, ok := params[paramReservedIPV4CIDR]; ok {
+		withinRange, err := IsIpWithinRange(source.Network.Ip, instanceCIDR)
+		if err != nil {
+			return false, err
+		}
+		if !withinRange {
+			return false, nil
+		}
+	}
+	// Skip validation for parameter "reserved-ip-range" since it requires
+	// extra compute api auth and not clear if it's required.
+	if strings.EqualFold(source.Location, target.Location) &&
+		strings.EqualFold(source.Tier, target.Tier) &&
+		strings.EqualFold(source.Network.Name, target.Network.Name) &&
+		strings.EqualFold(source.Network.ConnectMode, target.Network.ConnectMode) &&
+		strings.EqualFold(source.KmsKeyName, target.KmsKeyName) {
+		return true, nil
+	}
+	return false, nil
 }
