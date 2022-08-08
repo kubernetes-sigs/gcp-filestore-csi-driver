@@ -449,7 +449,7 @@ func TestInstanceNeedsExpand(t *testing.T) {
 	}
 }
 
-func TestListInstanceForStorageClassPrefix(t *testing.T) {
+func TestListMatchedInstances(t *testing.T) {
 	found := func(inputList []*file.MultishareInstance, i *file.MultishareInstance) bool {
 		for _, f := range inputList {
 			if f.Project == i.Project && f.Location == i.Location && f.Name == i.Name {
@@ -462,16 +462,42 @@ func TestListInstanceForStorageClassPrefix(t *testing.T) {
 	tests := []struct {
 		name             string
 		initInstanceList []*file.MultishareInstance
-		prefix           string
 		expectedList     []*file.MultishareInstance
+		req              *csi.CreateVolumeRequest
+		target           *file.MultishareInstance
+		expectError      bool
 	}{
 		{
-			name:   "empty init inistance list",
-			prefix: "testprefix",
+			name: "empty init inistance list",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 		},
 		{
-			name:   "non-empty init inistance list",
-			prefix: "testprefix",
+			name: "non-empty init inistance list",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstanceList: []*file.MultishareInstance{
 				{
 					Name:     "test-instance",
@@ -494,8 +520,20 @@ func TestListInstanceForStorageClassPrefix(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-empty init inistance list, 1 instance match",
-			prefix: "testprefix-1",
+			name: "non-empty init inistance list, 1 instance match",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix-1",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix-1",
+				},
+			},
 			initInstanceList: []*file.MultishareInstance{
 				{
 					Name:     "test-instance-1",
@@ -526,8 +564,20 @@ func TestListInstanceForStorageClassPrefix(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-empty init inistance list, 2 instances match",
-			prefix: "testprefix",
+			name: "non-empty init inistance list, 2 instances match",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstanceList: []*file.MultishareInstance{
 				{
 					Name:     "test-instance-1",
@@ -573,6 +623,260 @@ func TestListInstanceForStorageClassPrefix(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "non-specified sc prefix in init instance list",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels:   map[string]string{},
+				},
+			},
+		},
+		{
+			name: "1 ip address within, 1 out of reserved-ipv4-cidr",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+					paramReservedIPV4CIDR:          "10.0.0.0/24",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+				Network: file.Network{
+					ReservedIpRange: "10.0.0.0/24",
+				},
+			},
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-0",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/21",
+						Ip:              "10.0.0.1",
+					},
+				},
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "11.0.0.0/24",
+						Ip:              "11.0.0.1",
+					},
+				},
+			},
+			expectedList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-0",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						Ip:              "10.0.0.1",
+					},
+				},
+			},
+		},
+		{
+			name: "location, tier, network, connect-mode and cmek alignment test",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+					paramReservedIPV4CIDR:          "10.0.0.0/24",
+					paramTier:                      "enterprise",
+					paramNetwork:                   "shared-network",
+					paramInstanceEncryptionKmsKey:  "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+				Network: file.Network{
+					ReservedIpRange: "10.0.0.0/24",
+					ConnectMode:     directPeering,
+					Name:            "shared-network",
+				},
+				Tier:       "enterprise",
+				KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+			},
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-0",
+					Project:  "test-project",
+					Location: "us-west1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "enterprise",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+				{
+					Name:     "test-instance-1",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "standard",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+				{
+					Name:     "test-instance-2",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            "default",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "enterprise",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+				{
+					Name:     "test-instance-3",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "enterprise",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key-1",
+				},
+				{
+					Name:     "test-instance-4",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier: "enterprise",
+				},
+				{
+					Name:     "test-instance-5",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/21",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "enterprise",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+			},
+			expectedList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance-5",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/21",
+						ConnectMode:     directPeering,
+						Name:            "shared-network",
+						Ip:              "10.0.0.2",
+					},
+					Tier:       "enterprise",
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
+			},
+		},
+		{
+			name: "invalid reserved-ipv4-cidr",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+					paramReservedIPV4CIDR:          "test-ip-range",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
+			initInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance",
+					Project:  "test-project",
+					Location: "us-central1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: "testprefix",
+					},
+				},
+			},
+			expectError: true,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -586,7 +890,13 @@ func TestListInstanceForStorageClassPrefix(t *testing.T) {
 			}
 
 			manager := NewMultishareOpsManager(cloudProvider)
-			filteredList, err := manager.listInstanceForStorageClassPrefix(context.Background(), tc.prefix)
+			filteredList, err := manager.listMatchedInstances(context.Background(), tc.req, tc.target)
+			if tc.expectError && err == nil {
+				t.Errorf("expected error: %v", err)
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("unexpectded error: %v", err)
+			}
 			for _, fi := range filteredList {
 				if !found(tc.expectedList, fi) {
 					t.Errorf("Failed to find instance")
@@ -1198,20 +1508,32 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 	}
 	tests := []struct {
 		name                  string
-		prefix                string
 		ops                   []*OpInfo
 		initInstances         []*file.MultishareInstance
 		initShares            []*file.Share
 		expectedNonReadyCount int
 		expectedReadyInstance []*file.MultishareInstance
 		req                   *csi.CreateVolumeRequest
+		target                *file.MultishareInstance
 	}{
 		{
 			name: "no instances",
 		},
 		{
-			name:   "all ready instances",
-			prefix: "testprefix",
+			name: "all ready instances",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "test-instance-1",
@@ -1254,8 +1576,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances (instance update)",
-			prefix: "testprefix",
+			name: "non-ready instances (instance update)",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1277,8 +1611,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances (share create)",
-			prefix: "testprefix",
+			name: "non-ready instances (share create)",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1300,8 +1646,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances (share update)",
-			prefix: "testprefix",
+			name: "non-ready instances (share update)",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1323,8 +1681,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances (share delete)",
-			prefix: "testprefix",
+			name: "non-ready instances (share delete)",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1346,8 +1716,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances 0, instance delete not counted as ready",
-			prefix: "testprefix",
+			name: "non-ready instances 0, instance delete not counted as ready",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1368,8 +1750,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "non-ready instances (share delete), ready instance",
-			prefix: "testprefix",
+			name: "non-ready instances (share delete), ready instance",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1411,8 +1805,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "no ready instance, no non-ready instance, instance with 10 shares not eligible",
-			prefix: "testprefix",
+			name: "no ready instance, no non-ready instance, instance with 10 shares not eligible",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1538,8 +1944,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "ready instance, non-ready instances, other instance state not count",
-			prefix: "testprefix",
+			name: "ready instance, non-ready instances, other instance state not count",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1617,8 +2035,20 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			},
 		},
 		{
-			name:   "creating instance count as non-ready",
-			prefix: "testprefix",
+			name: "creating instance count as non-ready",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: "testprefix",
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  "test-project",
+				Location: "us-central1",
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: "testprefix",
+				},
+			},
 			initInstances: []*file.MultishareInstance{
 				{
 					Name:     "instance-1",
@@ -1658,7 +2088,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			cloudProvider, err := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			manager := NewMultishareOpsManager(cloudProvider)
-			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.prefix, tc.ops, tc.req)
+			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target)
 			if err != nil {
 				t.Errorf("unexpected error")
 			}
