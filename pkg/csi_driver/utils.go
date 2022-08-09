@@ -71,3 +71,9 @@ func IsIpWithinRange(ipAddress, ipRange string) (bool, error) {
 	}
 	return ipnet.Contains(net.ParseIP(ipAddress)), nil
 }
+
+// IsCIDR verifies if the given ip range is a valid CIDR value.
+func IsCIDR(ipRange string) bool {
+	_, _, err := net.ParseCIDR(ipRange)
+	return err == nil
+}
