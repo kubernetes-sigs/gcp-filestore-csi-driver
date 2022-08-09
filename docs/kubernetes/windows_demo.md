@@ -123,7 +123,7 @@ This guide gives an example on how to use SMB share(s) in pods running on Window
     PROJECT=${CLOUDSDK_CORE_PROJECT} ./deploy/kubernetes/cluster_setup.sh
     ```
 
-4. On one of the Windows nodes, create an SMB share.
+4. On one of the Windows nodes, create a SMB share.
     
     Remember the name of this node, will be needed next step.
     ```Powershell
