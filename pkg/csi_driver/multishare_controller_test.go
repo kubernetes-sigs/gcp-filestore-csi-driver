@@ -761,9 +761,11 @@ func TestMultishareCreateVolume(t *testing.T) {
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
 					},
 					CapacityBytes: 1 * util.Tb,
-					Tier:          "Enterprise",
+					Tier:          "enterprise",
 					Network: file.Network{
-						Ip: testIP,
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
 					},
 					State: "READY",
 				},
@@ -775,9 +777,11 @@ func TestMultishareCreateVolume(t *testing.T) {
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
 					},
 					CapacityBytes: 1 * util.Tb,
-					Tier:          "Enterprise",
+					Tier:          "enterprise",
 					Network: file.Network{
-						Ip: testIP,
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
 					},
 					State: "READY",
 				},
@@ -796,6 +800,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 				},
 				Parameters: map[string]string{
 					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					paramTier:                      "enterprise",
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
