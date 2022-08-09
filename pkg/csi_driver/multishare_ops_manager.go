@@ -138,6 +138,9 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 	if instance.Network.ConnectMode == privateServiceAccess {
 		if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+			if IsCIDR(reservedIPRange) {
+				return nil, nil, status.Error(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value")
+			}
 			instance.Network.ReservedIpRange = reservedIPRange
 		}
 	} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
