@@ -20,7 +20,7 @@ The [CSI Snapshot](https://github.com/container-storage-interface/spec/blob/mast
     $ kubectl apply -f ./examples/kubernetes/backups-restore/sc.yaml
     ```
 
-    If a non-default network is used for the filestore instance, provide a network paramter to the storage class.
+    If a non-default network is used for the filestore instance, provide a network parameter to the storage class.
 
     ```yaml
     apiVersion: storage.k8s.io/v1
