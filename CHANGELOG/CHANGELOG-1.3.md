@@ -1,3 +1,12 @@
+# v1.3.3 - Changelog since v1.3.2
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Instance validation improvement when choosing eligible instances ([#337](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/337), [@tyuchn](https://github.com/tyuchn))
+- Add reserved ip range check and fail earlier if invalid ([#347](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/347), [@tyuchn](https://github.com/tyuchn))
+
 # v1.3.2 - Changelog since v1.3.1
 
 ## Changes by Kind
