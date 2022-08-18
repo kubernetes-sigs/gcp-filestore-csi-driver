@@ -76,7 +76,7 @@ var (
 //       # Caching options
 //
 //       # Raw string data representing cached access token.
-//       "access-token": "access_token",
+//       "access-token": "ya29.CjWdA4GiBPTt",
 //       # RFC3339Nano expiration timestamp for cached access token.
 //       "expiry": "2016-10-31 22:31:9.123",
 //
