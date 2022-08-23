@@ -907,3 +907,42 @@ func TestCreateSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestReplaceInvalidChars(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "Is valid",
+			input:    "filestore_csi_storage_gke_io66m92",
+			expected: "filestore_csi_storage_gke_io66m92",
+		},
+		{
+			name:     "Input contains multiple invalid characteres",
+			input:    "filestore_csi_storage_gke_io!@#$%^&*()",
+			expected: "filestore_csi_storage_gke_io__________",
+		},
+		{
+			name:     "Input contains multiple dots",
+			input:    "filestore.csi.storage.gke.io66m92",
+			expected: "filestore_csi_storage_gke_io66m92",
+		},
+		{
+			name:     "Input contains multiple dashes",
+			input:    "filestore-csi-storage-gke-io66m92",
+			expected: "filestore-csi-storage-gke-io66m92",
+		},
+	}
+
+	for _, test := range cases {
+		r, err := replaceInvalidChars(test.input)
+		if err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if r != test.expected {
+			t.Errorf("test %q failed: expected %q, got %q", test.name, test.expected, r)
+		}
+	}
+}

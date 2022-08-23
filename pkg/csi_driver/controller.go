@@ -18,6 +18,7 @@ package driver
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -680,10 +681,24 @@ func getZoneFromSegment(seg map[string]string) (string, error) {
 	return zone, nil
 }
 
+func replaceInvalidChars(s string) (string, error) {
+	// Keys and values can contain letters, numbers, underscores and dashes:
+	// https://cloud.google.com/resource-manager/docs/creating-managing-labels#requirements,
+	reg, err := regexp.Compile(`[^\w-_]`)
+	if err != nil {
+		return "", fmt.Errorf("failed to compile regex to match valid labels: %w", err)
+	}
+	return reg.ReplaceAllString(s, "_"), nil
+}
+
 func extractLabels(parameters map[string]string, driverName string) (map[string]string, error) {
 	labels := make(map[string]string)
 	scLables := make(map[string]string)
 	for k, v := range parameters {
+		v, err := replaceInvalidChars(v)
+		if err != nil {
+			return nil, err
+		}
 		switch strings.ToLower(k) {
 		case ParameterKeyPVCName:
 			labels[tagKeyCreatedForClaimName] = v
