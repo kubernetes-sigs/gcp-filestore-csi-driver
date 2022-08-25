@@ -156,6 +156,7 @@ const (
 	// Patch update masks
 	fileShareUpdateMask          = "file_shares"
 	multishareCapacityUpdateMask = "capacity_gb"
+	prodBasePath                 = "https://file.googleapis.com/"
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -1042,7 +1043,7 @@ func createFilestoreEndpointUrlBasePath(endpoint string) string {
 	if endpoint != "" {
 		return "https://" + endpoint + "/"
 	} else {
-		return ""
+		return prodBasePath
 	}
 }
 
