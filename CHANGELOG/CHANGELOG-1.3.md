@@ -1,4 +1,13 @@
-# v1.3.3 - Changelog since v1.3.2
+**Attention:**
+1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
+
+# v1.3.4 - Changelog since v1.3.3
+
+### Bug or Regression
+
+- fix basePath set to empty ([#366](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/366), [@leiyiz](https://github.com/leiyiz))
+
+# v1.3.3 - Changelog since v1.3.2 (Bad version)
 
 ## Changes by Kind
 
