@@ -217,7 +217,11 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 				newFiler.Network.ReservedIpRange = reservedIPRange
 			}
 		} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
-			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
+			regions, err := s.listRegions(req.GetAccessibilityRequirements())
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, err.Error())
+			}
+			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR, regions)
 
 			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
 			// The ListInstances response will contain the reservedIPRange if the operation was started
@@ -258,9 +262,43 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	return resp, nil
 }
 
+func (s *controllerServer) listRegions(top *csi.TopologyRequirement) ([]string, error) {
+	var allowedRegions []string
+	clusterRegion, err := util.GetRegionFromZone(s.config.cloud.Zone)
+	if err != nil {
+		return allowedRegions, err
+	}
+	if top == nil {
+		return append(allowedRegions, clusterRegion), nil
+	}
+
+	zones, err := listZonesFromTopology(top)
+	if err != nil {
+		return allowedRegions, err
+	}
+
+	seen := make(map[string]bool)
+	for _, zone := range zones {
+		region, err := util.GetRegionFromZone(zone)
+		if err != nil {
+			return allowedRegions, err
+		}
+		if !seen[region] {
+			seen[region] = true
+			allowedRegions = append(allowedRegions, region)
+		}
+	}
+
+	if len(allowedRegions) == 0 {
+		return append(allowedRegions, clusterRegion), nil
+	}
+
+	return allowedRegions, nil
+}
+
 // reserveIPRange returns the available IP in the cidr
-func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.ServiceInstance, cidr string) (string, error) {
-	cloudInstancesReservedIPRanges, err := s.getCloudInstancesReservedIPRanges(ctx, filer)
+func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.ServiceInstance, cidr string, regions []string) (string, error) {
+	cloudInstancesReservedIPRanges, err := s.getCloudInstancesReservedIPRanges(ctx, filer, regions)
 	if err != nil {
 		return "", err
 	}
@@ -276,14 +314,21 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 }
 
 // getCloudInstancesReservedIPRanges gets the list of reservedIPRanges from cloud instances
-func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context, filer *file.ServiceInstance) (map[string]bool, error) {
-	instances, err := s.config.fileService.ListInstances(ctx, filer)
-	if err != nil {
-		return nil, status.Error(codes.Aborted, err.Error())
-	}
-	multiShareInstances, err := s.config.fileService.ListMultishareInstances(ctx, &file.ListFilter{Project: filer.Project, Location: "-"})
-	if err != nil {
-		return nil, status.Error(codes.Aborted, err.Error())
+func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context, filer *file.ServiceInstance, regions []string) (map[string]bool, error) {
+	var instances []*file.ServiceInstance
+	var multiShareInstances []*file.MultishareInstance
+	for _, region := range regions {
+		filter := &file.ListFilter{Project: filer.Project, Location: region}
+		regionalInstances, err := s.config.fileService.ListInstances(ctx, filter)
+		if err != nil {
+			return nil, status.Error(codes.Aborted, err.Error())
+		}
+		instances = append(instances, regionalInstances...)
+		regionalMultiShareInstances, err := s.config.fileService.ListMultishareInstances(ctx, filter)
+		if err != nil {
+			return nil, status.Error(codes.Aborted, err.Error())
+		}
+		multiShareInstances = append(multiShareInstances, regionalMultiShareInstances...)
 	}
 
 	// Initialize an empty reserved list. It will be populated with all the reservedIPRanges obtained from the cloud instances

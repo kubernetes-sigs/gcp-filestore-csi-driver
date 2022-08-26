@@ -110,7 +110,7 @@ type Service interface {
 	CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	DeleteInstance(ctx context.Context, obj *ServiceInstance) error
 	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
-	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
+	ListInstances(ctx context.Context, filter *ListFilter) ([]*ServiceInstance, error)
 	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error)
 	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
@@ -398,9 +398,9 @@ func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Serv
 }
 
 // ListInstances returns a list of active instances in a project at a specific location
-func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error) {
+func (manager *gcfsServiceManager) ListInstances(ctx context.Context, filter *ListFilter) ([]*ServiceInstance, error) {
 	// Calling cloud provider service to get list of active instances. - indicates we are looking for instances in all the locations for a project
-	lCall := manager.instancesService.List(locationURI(obj.Project, "-")).Context(ctx)
+	lCall := manager.instancesService.List(locationURI(filter.Project, filter.Location)).Context(ctx)
 	nextPageToken := "pageToken"
 	var activeInstances []*ServiceInstance
 

@@ -81,7 +81,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	}
 
 	// Check if share already part of an existing instance.
-	regions, err := m.listRegions(req.GetAccessibilityRequirements())
+	regions, err := m.controllerServer.listRegions(req.GetAccessibilityRequirements())
 	if err != nil {
 		return nil, nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -149,7 +149,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 			Name:     instance.Name,
 			Location: instance.Location,
 			Tier:     instance.Tier,
-		}, reservedIPV4CIDR)
+		}, reservedIPV4CIDR, regions)
 
 		// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
 		// The ListInstances response will contain the reservedIPRange if the operation was started
@@ -165,40 +165,6 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 	w, err := m.startInstanceWorkflow(ctx, &Workflow{instance: instance, opType: util.InstanceCreate}, ops)
 	return w, nil, err
-}
-
-func (m *MultishareOpsManager) listRegions(top *csi.TopologyRequirement) ([]string, error) {
-	var allowedRegions []string
-	clusterRegion, err := util.GetRegionFromZone(m.cloud.Zone)
-	if err != nil {
-		return allowedRegions, err
-	}
-	if top == nil {
-		return append(allowedRegions, clusterRegion), nil
-	}
-
-	zones, err := listZonesFromTopology(top)
-	if err != nil {
-		return allowedRegions, err
-	}
-
-	seen := make(map[string]bool)
-	for _, zone := range zones {
-		region, err := util.GetRegionFromZone(zone)
-		if err != nil {
-			return allowedRegions, err
-		}
-		if !seen[region] {
-			seen[region] = true
-			allowedRegions = append(allowedRegions, region)
-		}
-	}
-
-	if len(allowedRegions) == 0 {
-		return append(allowedRegions, clusterRegion), nil
-	}
-
-	return allowedRegions, nil
 }
 
 func (m *MultishareOpsManager) startShareCreateWorkflowSafe(ctx context.Context, share *file.Share) (*Workflow, error) {

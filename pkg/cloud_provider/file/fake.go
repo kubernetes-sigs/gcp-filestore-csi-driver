@@ -116,7 +116,7 @@ func (manager *fakeServiceManager) GetInstance(ctx context.Context, obj *Service
 	}
 }
 
-func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error) {
+func (manager *fakeServiceManager) ListInstances(ctx context.Context, filter *ListFilter) ([]*ServiceInstance, error) {
 	instances := []*ServiceInstance{
 		{
 			Project:  defaultProject,

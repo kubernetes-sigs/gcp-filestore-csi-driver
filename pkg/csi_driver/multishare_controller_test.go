@@ -961,6 +961,12 @@ func TestMultishareCreateVolume(t *testing.T) {
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			mcs := NewMultishareController(initTestDriver(t), s, cloudProvider, util.NewVolumeLocks(), "")
+			cs := initTestController(t)
+			internalServer, ok := cs.(*controllerServer)
+			if !ok {
+				t.Fatalf("couldn't get internal controller")
+			}
+			mcs.opsManager.controllerServer = internalServer
 			resp, err := mcs.CreateVolume(context.Background(), tc.req)
 			if tc.errorExpected && err == nil {
 				t.Errorf("expected error not found")
