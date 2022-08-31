@@ -99,7 +99,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	}
 
 	// No share or running share create op found. Proceed to eligible instance check.
-	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, req, ops, instance)
+	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, req, ops, instance, regions)
 	if err != nil {
 		return nil, nil, status.Error(codes.Aborted, err.Error())
 	}
@@ -343,9 +343,9 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(inst
 }
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
-func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req *csi.CreateVolumeRequest, ops []*OpInfo, target *file.MultishareInstance) ([]*file.MultishareInstance, int, error) {
+func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req *csi.CreateVolumeRequest, ops []*OpInfo, target *file.MultishareInstance, regions []string) ([]*file.MultishareInstance, int, error) {
 	klog.Infof("ListMultishareInstances call initiated for request %+v.", req)
-	instances, err := m.listMatchedInstances(ctx, req, target)
+	instances, err := m.listMatchedInstances(ctx, req, target, regions)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -650,13 +650,18 @@ func containsOpWithInstanceTargetPrefix(instance *file.MultishareInstance, ops [
 	return nil, nil
 }
 
-// listMatchedInstances will list all instances in current project,
+// listMatchedInstances lists all instances under allowed regions in current project,
 // but only matched instances will be returned.
-func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *csi.CreateVolumeRequest, target *file.MultishareInstance) ([]*file.MultishareInstance, error) {
-	instances, err := m.cloud.File.ListMultishareInstances(ctx, &file.ListFilter{Project: m.cloud.Project, Location: "-"})
-	if err != nil {
-		return nil, err
+func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *csi.CreateVolumeRequest, target *file.MultishareInstance, regions []string) ([]*file.MultishareInstance, error) {
+	var instances []*file.MultishareInstance
+	for _, region := range regions {
+		regionalInstances, err := m.cloud.File.ListMultishareInstances(ctx, &file.ListFilter{Project: m.cloud.Project, Location: region})
+		if err != nil {
+			return nil, err
+		}
+		instances = append(instances, regionalInstances...)
 	}
+
 	var finalInstances []*file.MultishareInstance
 	for _, i := range instances {
 		matched, err := isMatchedInstance(i, target, req)
