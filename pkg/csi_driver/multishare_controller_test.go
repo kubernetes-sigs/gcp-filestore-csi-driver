@@ -467,7 +467,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 				t.Error("expected error, got none")
 			}
 			if !tc.expectErr && err != nil {
-				t.Error("unexpected error")
+				t.Errorf("unexpected error: %q", err)
 			}
 			if !reflect.DeepEqual(filer, tc.expectedInstance) {
 				t.Errorf("got filer %+v, want %+v", filer, tc.expectedInstance)
