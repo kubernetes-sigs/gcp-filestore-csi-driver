@@ -42,6 +42,8 @@ type GCFSDriverConfig struct {
 	EnableMultishare bool
 	Metrics          *metrics.MetricsManager
 	EcfsDescription  string
+	IsRegional       bool
+	ClusterName      string
 }
 
 type GCFSDriver struct {
@@ -110,6 +112,8 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			enableMultishare: config.EnableMultishare,
 			metricsManager:   config.Metrics,
 			ecfsDescription:  config.EcfsDescription,
+			isRegional:       config.IsRegional,
+			clusterName:      config.ClusterName,
 		})
 	}
 

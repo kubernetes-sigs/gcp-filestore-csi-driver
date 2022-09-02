@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/metadata"
-	gcpmeta "cloud.google.com/go/compute/metadata"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/compute/v1"
@@ -161,7 +160,7 @@ func getProjectAndZone(config *ConfigFile) (string, string, error) {
 		// Project ID is not available from the local GCE cloud provider config file.
 		// This could happen if the driver is not running in the master VM.
 		// Defaulting to project ID from the Metadata server.
-		projectID, err = gcpmeta.ProjectID()
+		projectID, err = metadata.ProjectID()
 		if err != nil {
 			return "", "", err
 		}
