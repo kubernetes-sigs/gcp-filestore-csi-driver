@@ -149,6 +149,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 			Name:     instance.Name,
 			Location: instance.Location,
 			Tier:     instance.Tier,
+			Network:  instance.Network,
 		}, reservedIPV4CIDR)
 
 		// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background

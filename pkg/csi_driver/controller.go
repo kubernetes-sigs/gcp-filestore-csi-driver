@@ -286,13 +286,19 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 		return nil, status.Error(codes.Aborted, err.Error())
 	}
 
-	// Initialize an empty reserved list. It will be populated with all the reservedIPRanges obtained from the cloud instances
+	// Initialize an empty reserved list. It will be populated with all the
+	// reservedIPRanges obtained from the cloud instances in the same VPC network
+	// as the ServiceInstance.
 	cloudInstancesReservedIPRanges := make(map[string]bool)
 	for _, instance := range instances {
-		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		if strings.EqualFold(instance.Network.Name, filer.Network.Name) {
+			cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		}
 	}
 	for _, instance := range multiShareInstances {
-		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		if strings.EqualFold(instance.Network.Name, filer.Network.Name) {
+			cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		}
 	}
 	return cloudInstancesReservedIPRanges, nil
 }
