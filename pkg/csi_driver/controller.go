@@ -76,11 +76,13 @@ const (
 	// User provided labels
 	ParameterKeyLabels = "labels"
 
-	// Keys for tags to attach to the provisioned disk.
+	// Keys for tags to attach to the provisioned Filestore shares and instances.
 	tagKeyCreatedForClaimNamespace = "kubernetes_io_created-for_pvc_namespace"
 	tagKeyCreatedForClaimName      = "kubernetes_io_created-for_pvc_name"
 	tagKeyCreatedForVolumeName     = "kubernetes_io_created-for_pv_name"
 	tagKeyCreatedBy                = "storage_gke_io_created-by"
+	tagKeyClusterName              = "storage_gke_io_cluster_name"
+	tagKeyClusterLocation          = "storage_gke_io_cluster_location"
 )
 
 // controllerServer handles volume provisioning
@@ -98,13 +100,15 @@ type controllerServerConfig struct {
 	multiShareController *MultishareController
 	metricsManager       *metrics.MetricsManager
 	ecfsDescription      string
+	isRegional           bool
+	clusterName          string
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	cs := &controllerServer{config: config}
 	config.ipAllocator = util.NewIPAllocator(make(map[string]bool))
 	if config.enableMultishare {
-		config.multiShareController = NewMultishareController(config.driver, config.fileService, config.cloud, config.volumeLocks, config.ecfsDescription)
+		config.multiShareController = NewMultishareController(config)
 		config.multiShareController.opsManager.controllerServer = cs
 	}
 	return cs

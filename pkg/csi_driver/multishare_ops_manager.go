@@ -690,16 +690,19 @@ func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *cs
 // 6. Both source and target instance should be in the same VPC network.
 // 7, Both source and target instance should have the same connect mode.
 // 8. Both source and target instance should have the same KmsKeyName.
+// 9. Both source and target instance should have a label with key
+//    "gke_cluster_location", and the value should be the same.
+// 10. Both source and target instance should have a label with key
+//    "gke_cluster_name", and the value should be the same.
 func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
-	if scPrefixSource, ok := source.Labels[util.ParamMultishareInstanceScLabelKey]; ok {
-		if _, ok := target.Labels[util.ParamMultishareInstanceScLabelKey]; !ok {
-			return false, fmt.Errorf("label %q missing in target instance %+v", util.ParamMultishareInstanceScLabelKey, target)
+	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, tagKeyClusterLocation, tagKeyClusterName}
+	for _, labelKey := range matchLabels {
+		if _, ok := target.Labels[labelKey]; !ok {
+			return false, fmt.Errorf("label %q missing in target instance %+v", labelKey, target)
 		}
-		if scPrefixSource != target.Labels[util.ParamMultishareInstanceScLabelKey] {
+		if source.Labels[labelKey] != target.Labels[labelKey] {
 			return false, nil
 		}
-	} else {
-		return false, nil
 	}
 	params := req.GetParameters()
 	if instanceCIDR, ok := params[paramReservedIPV4CIDR]; ok {
