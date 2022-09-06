@@ -35,6 +35,7 @@ const (
 	defaultRegion     = "us-central1"
 	defaultTier       = "BASIC_HDD"
 	defaultCapacityGb = 1024
+	defaultNetwork    = "default"
 )
 
 type fakeServiceManager struct {
@@ -125,6 +126,7 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 			Tier:     defaultTier,
 			Network: Network{
 				ReservedIpRange: "192.168.92.32/29",
+				Name:            defaultNetwork,
 			},
 			State: "READY",
 		},
@@ -135,6 +137,7 @@ func (manager *fakeServiceManager) ListInstances(ctx context.Context, obj *Servi
 			Tier:     defaultTier,
 			Network: Network{
 				ReservedIpRange: "192.168.92.40/29",
+				Name:            defaultNetwork,
 			},
 			State: "READY",
 		},

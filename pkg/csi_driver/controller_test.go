@@ -907,3 +907,73 @@ func TestCreateSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestGetCloudInstancesReservedIPRanges(t *testing.T) {
+	cases := []struct {
+		name                       string
+		initMultishareInstanceList []*file.MultishareInstance
+		instance                   *file.ServiceInstance
+		expectIPRange              map[string]bool
+		expectErr                  bool
+	}{
+		{
+			name: "existing instances in different vpc networks",
+			initMultishareInstanceList: []*file.MultishareInstance{
+				{
+					Name:     "test-instance",
+					Project:  testProject,
+					Location: "us-west1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.0.0.0/24",
+						ConnectMode:     directPeering,
+						Name:            testVPCNetwork,
+						Ip:              "10.0.0.2",
+					},
+					Tier: enterpriseTier,
+				},
+				{
+					Name:     "test-instance-1",
+					Project:  testProject,
+					Location: "us-west1",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					},
+					Network: file.Network{
+						ReservedIpRange: "10.1.1.0/24",
+						ConnectMode:     directPeering,
+						Name:            defaultNetwork,
+						Ip:              "10.1.1.2",
+					},
+					Tier: enterpriseTier,
+				},
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: testLocation,
+				Tier:     defaultTier,
+				Network: file.Network{
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
+				},
+			},
+			expectIPRange: map[string]bool{"192.168.92.32/29": true, "192.168.92.40/29": true, "10.1.1.0/24": true},
+		},
+	}
+	for _, test := range cases {
+		cs := initTestController(t).(*controllerServer)
+		for _, i := range test.initMultishareInstanceList {
+			cs.config.fileService.StartCreateMultishareInstanceOp(context.Background(), i)
+		}
+		ipRange, err := cs.getCloudInstancesReservedIPRanges(context.Background(), test.instance)
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if !reflect.DeepEqual(test.expectIPRange, ipRange) {
+			t.Errorf("test %q failed; expected: %#v; got %#v", test.name, test.expectIPRange, ipRange)
+		}
+	}
+}
