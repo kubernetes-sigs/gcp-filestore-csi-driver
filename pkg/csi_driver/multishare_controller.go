@@ -48,16 +48,20 @@ type MultishareController struct {
 	opsManager      *MultishareOpsManager
 	volumeLocks     *util.VolumeLocks
 	ecfsDescription string
+	isRegional      bool
+	clustername     string
 }
 
-func NewMultishareController(driver *GCFSDriver, fileService file.Service, cloud *cloud.Cloud, volumeLock *util.VolumeLocks, ecfsDescription string) *MultishareController {
+func NewMultishareController(config *controllerServerConfig) *MultishareController {
 	return &MultishareController{
-		opsManager:      NewMultishareOpsManager(cloud),
-		driver:          driver,
-		fileService:     fileService,
-		cloud:           cloud,
-		volumeLocks:     volumeLock,
-		ecfsDescription: ecfsDescription,
+		opsManager:      NewMultishareOpsManager(config.cloud),
+		driver:          config.driver,
+		fileService:     config.fileService,
+		cloud:           config.cloud,
+		volumeLocks:     config.volumeLocks,
+		ecfsDescription: config.ecfsDescription,
+		isRegional:      config.isRegional,
+		clustername:     config.clusterName,
 	}
 }
 
@@ -394,7 +398,14 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("tier %q not supported for multishare volumes", tier))
 	}
 
-	labels, err := extractInstanceLabels(req.GetParameters(), m.driver.config.Name)
+	location := m.cloud.Zone
+	if m.isRegional {
+		location, _ = util.GetRegionFromZone(location)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to get region for regional cluster: %v", err.Error())
+		}
+	}
+	labels, err := extractInstanceLabels(req.GetParameters(), m.driver.config.Name, m.clustername, location)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
@@ -453,7 +464,7 @@ func (m *MultishareController) pickRegion(top *csi.TopologyRequirement) (string,
 	return region, nil
 }
 
-func extractInstanceLabels(parameters map[string]string, driverName string) (map[string]string, error) {
+func extractInstanceLabels(parameters map[string]string, driverName, clusterName, location string) (map[string]string, error) {
 	instanceLabels := make(map[string]string)
 	userProvidedLabels := make(map[string]string)
 	for k, v := range parameters {
@@ -474,6 +485,8 @@ func extractInstanceLabels(parameters map[string]string, driverName string) (map
 	}
 
 	instanceLabels[tagKeyCreatedBy] = strings.ReplaceAll(driverName, ".", "_")
+	instanceLabels[tagKeyClusterName] = clusterName
+	instanceLabels[tagKeyClusterLocation] = location
 	finalInstanceLabels, err := mergeLabels(userProvidedLabels, instanceLabels)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
