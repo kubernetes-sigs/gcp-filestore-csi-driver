@@ -43,6 +43,8 @@ var (
 	enableMultishare        = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
 	filestoreServiceEnpoint = flag.String("filestore-service-endpoint", "", "Endpoint for filestore service")
 	ecfsDescription         = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
+	isRegional              = flag.Bool("is-regional", false, "cluster is regional cluster")
+	gkeClusterName          = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
 	// This is set at compile time
 	version = "unknown"
 )
@@ -64,6 +66,12 @@ func main() {
 			mm = metrics.NewMetricsManager()
 			mm.InitializeHttpHandler(*httpEndpoint, *metricsPath)
 			mm.EmitGKEComponentVersion()
+		}
+
+		if *enableMultishare {
+			if *gkeClusterName == "" {
+				klog.Fatalf("gke-cluster-name has to be set when multishare feature is enabled")
+			}
 		}
 
 		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *filestoreServiceEnpoint)
@@ -95,6 +103,8 @@ func main() {
 		EnableMultishare: *enableMultishare,
 		Metrics:          mm,
 		EcfsDescription:  *ecfsDescription,
+		IsRegional:       *isRegional,
+		ClusterName:      *gkeClusterName,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)
