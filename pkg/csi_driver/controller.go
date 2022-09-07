@@ -285,18 +285,27 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 	if err != nil {
 		return nil, status.Error(codes.Aborted, err.Error())
 	}
+	// Due to unreachable location some instances may not show up here.
+	// TODO: create a new function to take a list of locations
+	// and return error if unreachable contained the region of interest.
 	multiShareInstances, err := s.config.fileService.ListMultishareInstances(ctx, &file.ListFilter{Project: filer.Project, Location: "-"})
 	if err != nil {
 		return nil, status.Error(codes.Aborted, err.Error())
 	}
 
-	// Initialize an empty reserved list. It will be populated with all the reservedIPRanges obtained from the cloud instances
+	// Initialize an empty reserved list. It will be populated with all the
+	// reservedIPRanges obtained from the cloud instances in the same VPC network
+	// as the ServiceInstance.
 	cloudInstancesReservedIPRanges := make(map[string]bool)
 	for _, instance := range instances {
-		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		if strings.EqualFold(instance.Network.Name, filer.Network.Name) {
+			cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		}
 	}
 	for _, instance := range multiShareInstances {
-		cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		if strings.EqualFold(instance.Network.Name, filer.Network.Name) {
+			cloudInstancesReservedIPRanges[instance.Network.ReservedIpRange] = true
+		}
 	}
 	return cloudInstancesReservedIPRanges, nil
 }
