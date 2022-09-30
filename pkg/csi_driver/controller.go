@@ -34,10 +34,10 @@ import (
 )
 
 const (
-	// premium tier min is 2.5 Tb, let GCFS error
-	minVolumeSize     int64 = 1 * util.Tb
-	modeInstance            = "modeInstance"
-	newInstanceVolume       = "vol1"
+	minVolumeSizeStandard   int64 = 1 * util.Tb
+	minVolumeSizeEnterprise int64 = 2.5 * util.Tb
+	modeInstance                  = "modeInstance"
+	newInstanceVolume             = "vol1"
 
 	defaultTier    = "standard"
 	enterpriseTier = "enterprise"
@@ -138,7 +138,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	capBytes, err := getRequestCapacity(req.GetCapacityRange())
+	capBytes, err := getRequestCapacity(req.GetCapacityRange(), strings.ToLower(req.GetParameters()[paramTier]))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -418,7 +418,14 @@ func (s *controllerServer) ControllerGetCapabilities(ctx context.Context, req *c
 }
 
 // getRequestCapacity returns the volume size that should be provisioned
-func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
+func getRequestCapacity(capRange *csi.CapacityRange, tier string) (int64, error) {
+	var minVolumeSize int64
+	if tier == enterpriseTier {
+		minVolumeSize = minVolumeSizeEnterprise
+	} else {
+		minVolumeSize = minVolumeSizeStandard
+	}
+
 	if capRange == nil {
 		return minVolumeSize, nil
 	}
@@ -559,17 +566,17 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return response, err
 	}
 
-	reqBytes, err := getRequestCapacity(req.GetCapacityRange())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
 	}
 	defer s.config.volumeLocks.Release(volumeID)
 
 	filer, _, err := getFileInstanceFromID(volumeID)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	reqBytes, err := getRequestCapacity(req.GetCapacityRange(), strings.ToLower(filer.Tier))
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}

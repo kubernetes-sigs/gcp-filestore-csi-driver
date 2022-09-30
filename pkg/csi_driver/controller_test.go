@@ -233,100 +233,108 @@ func TestControllerGetCapabilities(t *testing.T) {
 func TestControllerExpandVolume(t *testing.T) {
 }
 
+type tier struct {
+	name  string
+	bytes int64
+}
+
 func TestGetRequestCapacity(t *testing.T) {
-	cases := []struct {
-		name          string
-		capRange      *csi.CapacityRange
-		bytes         int64
-		errorExpected bool
-	}{
-		{
-			name:  "default",
-			bytes: 1 * util.Tb,
-		},
-		{
-			name: "required below min",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 100 * util.Gb,
+	tiers := []tier{{name: defaultTier, bytes: 1 * util.Tb}, {name: enterpriseTier, bytes: 2.5 * util.Tb}}
+	for _, tier := range tiers {
+		cases := []struct {
+			name          string
+			capRange      *csi.CapacityRange
+			bytes         int64
+			errorExpected bool
+		}{
+			{
+				name:  "default",
+				bytes: tier.bytes,
 			},
-			bytes: 1 * util.Tb,
-		},
-		{
-			name: "required equals min",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 1 * util.Tb,
+			{
+				name: "required below min",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				bytes: tier.bytes,
 			},
-			bytes: 1 * util.Tb,
-		},
-		{
-			name: "required above min",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 1*util.Tb + 1*util.Gb,
+			{
+				name: "required equals min",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: 1 * util.Tb,
+				},
+				bytes: tier.bytes,
 			},
-			bytes: 1*util.Tb + 1*util.Gb,
-		},
-		{
-			name: "limit equals min",
-			capRange: &csi.CapacityRange{
-				LimitBytes: 1 * util.Tb,
+			{
+				name: "required above min",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: tier.bytes + 1*util.Gb,
+				},
+				bytes: tier.bytes + 1*util.Gb,
 			},
-			bytes: 1 * util.Tb,
-		},
-		{
-			name: "limit above min",
-			capRange: &csi.CapacityRange{
-				LimitBytes: 1*util.Tb + 1*util.Gb,
+			{
+				name: "limit equals min",
+				capRange: &csi.CapacityRange{
+					LimitBytes: tier.bytes,
+				},
+				bytes: tier.bytes,
 			},
-			bytes: 1*util.Tb + 1*util.Gb,
-		},
-		{
-			name: "required below min, limit above min",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 100 * util.Gb,
-				LimitBytes:    2 * util.Tb,
+			{
+				name: "limit above min",
+				capRange: &csi.CapacityRange{
+					LimitBytes: tier.bytes + 1*util.Gb,
+				},
+				bytes: tier.bytes + 1*util.Gb,
 			},
-			bytes: 1 * util.Tb,
-		},
-		{
-			name: "required below min, limit below min",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 100 * util.Gb,
-				LimitBytes:    500 * util.Gb,
+			{
+				name: "required below min, limit above min",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+					LimitBytes:    tier.bytes + 1*util.Gb,
+				},
+				bytes: tier.bytes,
 			},
-			errorExpected: true,
-		},
-		{
-			name: "required above limit",
-			capRange: &csi.CapacityRange{
-				RequiredBytes: 5 * util.Tb,
-				LimitBytes:    2 * util.Tb,
+			{
+				name: "required below min, limit below min",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: tier.bytes - 100*util.Gb,
+					LimitBytes:    tier.bytes - 500*util.Gb,
+				},
+				errorExpected: true,
 			},
-			errorExpected: true,
-		},
-		{
-			name: "limit below min",
-			capRange: &csi.CapacityRange{
-				LimitBytes: 100 * util.Gb,
+			{
+				name: "required above limit",
+				capRange: &csi.CapacityRange{
+					RequiredBytes: tier.bytes + 3*util.Tb,
+					LimitBytes:    tier.bytes + 1*util.Tb,
+				},
+				errorExpected: true,
 			},
-			errorExpected: true,
-		},
-	}
+			{
+				name: "limit below min",
+				capRange: &csi.CapacityRange{
+					LimitBytes: tier.bytes - 100*util.Gb,
+				},
+				errorExpected: true,
+			},
+		}
 
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			bytes, err := getRequestCapacity(tc.capRange)
-			if err != nil && tc.errorExpected {
-				return
-			}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				bytes, err := getRequestCapacity(tc.capRange, tier.name)
+				if err != nil && tc.errorExpected {
+					return
+				}
 
-			if err == nil && tc.errorExpected {
-				t.Errorf("Test %q failed: expected error", tc.name)
-			}
-			if bytes != tc.bytes {
-				t.Errorf("test %q failed: got %v bytes, expected %v", tc.name, bytes, tc.bytes)
-			}
-		})
+				if err == nil && tc.errorExpected {
+					t.Errorf("Test %q failed: expected error", tc.name)
+				}
+				if bytes != tc.bytes {
+					t.Errorf("test %q failed: got %v bytes, expected %v", tc.name, bytes, tc.bytes)
+				}
+			})
 
+		}
 	}
 }
 
