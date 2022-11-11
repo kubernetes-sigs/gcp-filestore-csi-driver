@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -31,7 +32,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -239,19 +240,19 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("CreateInstance operation failed for instance %s: %v", obj.Name, err)
+		klog.Errorf("CreateInstance operation failed for instance %s: %w", obj.Name, err)
 		return nil, err
 	}
 
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
 		return nil, err
 	}
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		glog.Errorf("failed to get instance after creation: %v", err)
+		klog.Errorf("failed to get instance after creation: %w", err)
 		return nil, err
 	}
 	return instance, nil
@@ -293,19 +294,19 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
+		klog.Errorf("CreateInstance operation failed for instance %v: %w", obj.Name, err)
 		return nil, err
 	}
 
 	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
 		return nil, err
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		glog.Errorf("failed to get instance after creation: %v", err)
+		klog.Errorf("failed to get instance after creation: %w", err)
 		return nil, err
 	}
 	return serviceInstance, nil
@@ -514,8 +515,9 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	}
 	glog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupUri)
 	opbackup, err := manager.backupService.Create(locationURI(obj.Project, region), backupobj).BackupId(backupName).Context(ctx).Do()
+
 	if err != nil {
-		glog.Errorf("Create Backup operation failed: %v", err)
+		klog.Errorf("Create Backup operation failed: %w", err)
 		return nil, err
 	}
 
@@ -630,8 +632,9 @@ func IsNotFoundErr(err error) bool {
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
 func IsUserError(err error) *codes.Code {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
+	// Upwrap the error
+	var apiErr *googleapi.Error
+	if !errors.As(err, &apiErr) {
 		return nil
 	}
 

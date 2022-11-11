@@ -22,7 +22,7 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 )

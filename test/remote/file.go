@@ -23,7 +23,7 @@ import (
 
 	"golang.org/x/oauth2/google"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

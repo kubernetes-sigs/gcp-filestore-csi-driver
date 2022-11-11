@@ -28,7 +28,7 @@ import (
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
