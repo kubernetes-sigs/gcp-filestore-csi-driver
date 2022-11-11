@@ -27,7 +27,7 @@ import (
 	. "github.com/onsi/gomega"
 	compute "google.golang.org/api/compute/v1"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	testutils "sigs.k8s.io/gcp-filestore-csi-driver/test/e2e/utils"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
 )

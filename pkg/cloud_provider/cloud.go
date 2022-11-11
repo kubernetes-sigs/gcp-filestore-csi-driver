@@ -29,7 +29,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"gopkg.in/gcfg.v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 )
 
