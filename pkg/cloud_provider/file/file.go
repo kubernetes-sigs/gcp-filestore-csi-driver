@@ -38,6 +38,12 @@ import (
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 )
 
+const (
+	testEndpoint    = "test-file.sandbox.googleapis.com"
+	stagingEndpoint = "staging-file.sandbox.googleapis.com"
+	prodEndpoint    = "file.googleapis.com"
+)
+
 type PollOpts struct {
 	Interval time.Duration
 	Timeout  time.Duration
@@ -175,7 +181,11 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 	}
 	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
 
-	basepath := createFilestoreEndpointUrlBasePath(endpoint)
+	basepath, err := createFilestoreEndpointUrlBasePath(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
 	glog.Infof("Using endpoint %q for multishare", basepath)
 	fileMultishareService, err := filev1beta1multishare.NewService(ctx, option.WithHTTPClient(client))
 	fileMultishareService.BasePath = basepath
@@ -1039,12 +1049,28 @@ func shareURI(project, location, instanceName, shareName string) string {
 	return fmt.Sprintf(shareURIFmt, project, location, instanceName, shareName)
 }
 
-func createFilestoreEndpointUrlBasePath(endpoint string) string {
+func createFilestoreEndpointUrlBasePath(endpoint string) (string, error) {
 	if endpoint != "" {
-		return "https://" + endpoint + "/"
+		if !isValidEndpoint(endpoint) {
+			return "", fmt.Errorf("invalid filestore endpoint %v", endpoint)
+		}
+		return "https://" + endpoint + "/", nil
 	} else {
-		return prodBasePath
+		return prodBasePath, nil
 	}
+}
+
+func isValidEndpoint(endpoint string) bool {
+	switch endpoint {
+	case testEndpoint:
+		return true
+	case stagingEndpoint:
+		return true
+	case prodEndpoint:
+		return true
+	}
+
+	return false
 }
 
 func (manager *gcfsServiceManager) ListOps(ctx context.Context, filter *ListFilter) ([]*filev1beta1multishare.Operation, error) {
