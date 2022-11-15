@@ -420,3 +420,62 @@ func TestGenerateShareURI(t *testing.T) {
 		})
 	}
 }
+
+func TestCreateFilestoreEndpointUrlBasePath(t *testing.T) {
+	var (
+		testBasePath    = "https://" + testEndpoint + "/"
+		stagingBasePath = "https://" + stagingEndpoint + "/"
+	)
+	_ = testBasePath
+	tests := []struct {
+		name          string
+		inputurl      string
+		opurl         string
+		errorExpected bool
+	}{
+		{
+			name:  "tc1 - empty endpoint, prod base path picked",
+			opurl: prodBasePath,
+		},
+		{
+			name:     "tc1 - test endpoint",
+			inputurl: testEndpoint,
+			opurl:    testBasePath,
+		},
+		{
+			name:     "tc2 - staging endpoint",
+			inputurl: stagingEndpoint,
+			opurl:    stagingBasePath,
+		},
+		{
+			name:     "tc3 - prod endpoint",
+			inputurl: prodEndpoint,
+			opurl:    prodBasePath,
+		},
+		{
+			name:          "tc4 - invalid endpoint",
+			inputurl:      "Test-file.googleapis.com",
+			errorExpected: true,
+		},
+		{
+			name:          "tc5 - invalid endpoint",
+			inputurl:      "random.com",
+			errorExpected: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			url, err := createFilestoreEndpointUrlBasePath(tc.inputurl)
+			if err != nil && !tc.errorExpected {
+				t.Errorf("unexpected error %v", err)
+			}
+			if err == nil && tc.errorExpected {
+				t.Errorf("expected error got nil")
+			}
+			if tc.opurl != url {
+				t.Errorf("got %s, want %s", url, tc.opurl)
+			}
+		})
+	}
+}
