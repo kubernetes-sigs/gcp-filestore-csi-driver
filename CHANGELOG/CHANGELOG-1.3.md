@@ -1,6 +1,17 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.7 - Changelog since v1.3.5
+
+### Bug or Regression
+
+- Strict check for filestore service endpoints ([#383](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/383), [@saikat-royc](https://github.com/saikat-royc))
+
+# v1.3.5 - Changelog since v1.3.4
+
+### Feature
+- If multishare is enabled, the container now requires "--gke-cluster-name" flag to be set ([#372](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/372), [@leiyiz](https://github.com/leiyiz))
+
 # v1.3.4 - Changelog since v1.3.3
 
 ### Bug or Regression
