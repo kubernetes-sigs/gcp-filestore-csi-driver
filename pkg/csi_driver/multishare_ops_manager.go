@@ -679,21 +679,22 @@ func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *cs
 
 // A source instance will be considered as "matched" with the target instance
 // if and only if the following requirements were met:
-// 1. Both source and target instance should have a label with key
-//    "storage_gke_io_storage-class-id", and the value should be the same.
-// 2. (Check if exists) The ip address of the target instance should be
-//    within the ip range specified in "reserved-ipv4-cidr".
-// 3. (Check if exists) The ip address of the target instance should be
-//    within the ip range specified in "reserved-ip-range".
-// 4. Both source and target instance should be in the same location.
-// 5. Both source and target instance should be under the same tier.
-// 6. Both source and target instance should be in the same VPC network.
+//  1. Both source and target instance should have a label with key
+//     "storage_gke_io_storage-class-id", and the value should be the same.
+//  2. (Check if exists) The ip address of the target instance should be
+//     within the ip range specified in "reserved-ipv4-cidr".
+//  3. (Check if exists) The ip address of the target instance should be
+//     within the ip range specified in "reserved-ip-range".
+//  4. Both source and target instance should be in the same location.
+//  5. Both source and target instance should be under the same tier.
+//  6. Both source and target instance should be in the same VPC network.
+//
 // 7, Both source and target instance should have the same connect mode.
-// 8. Both source and target instance should have the same KmsKeyName.
-// 9. Both source and target instance should have a label with key
-//    "gke_cluster_location", and the value should be the same.
-// 10. Both source and target instance should have a label with key
-//    "gke_cluster_name", and the value should be the same.
+//  8. Both source and target instance should have the same KmsKeyName.
+//  9. Both source and target instance should have a label with key
+//     "gke_cluster_location", and the value should be the same.
+//  10. Both source and target instance should have a label with key
+//     "gke_cluster_name", and the value should be the same.
 func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
 	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, tagKeyClusterLocation, tagKeyClusterName}
 	for _, labelKey := range matchLabels {
