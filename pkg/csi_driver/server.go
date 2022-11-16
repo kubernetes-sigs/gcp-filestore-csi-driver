@@ -22,8 +22,8 @@ import (
 	"os"
 	"sync"
 
-	"github.com/golang/glog"
 	"google.golang.org/grpc"
+	"k8s.io/klog/v2"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 )
@@ -74,25 +74,25 @@ func (s *nonBlockingGRPCServer) ForceStop() {
 func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, cs csi.ControllerServer, ns csi.NodeServer) {
 	u, err := url.Parse(endpoint)
 	if err != nil {
-		glog.Fatal(err.Error())
+		klog.Fatal(err.Error())
 	}
 
 	var addr string
 	if u.Scheme == "unix" {
 		addr = u.Path
 		if err := os.Remove(addr); err != nil && !os.IsNotExist(err) {
-			glog.Fatalf("Failed to remove %s, error: %s", addr, err.Error())
+			klog.Fatalf("Failed to remove %s, error: %s", addr, err.Error())
 		}
 	} else if u.Scheme == "tcp" {
 		addr = u.Host
 	} else {
-		glog.Fatalf("%v endpoint scheme not supported", u.Scheme)
+		klog.Fatalf("%v endpoint scheme not supported", u.Scheme)
 	}
 
-	glog.Infof("Start listening with scheme %v, addr %v", u.Scheme, addr)
+	klog.Infof("Start listening with scheme %v, addr %v", u.Scheme, addr)
 	listener, err := net.Listen(u.Scheme, addr)
 	if err != nil {
-		glog.Fatalf("Failed to listen: %v", err)
+		klog.Fatalf("Failed to listen: %v", err)
 	}
 
 	opts := []grpc.ServerOption{
@@ -111,7 +111,7 @@ func (s *nonBlockingGRPCServer) serve(endpoint string, ids csi.IdentityServer, c
 		csi.RegisterNodeServer(server, ns)
 	}
 
-	glog.Infof("Listening for connections on address: %#v", listener.Addr())
+	klog.Infof("Listening for connections on address: %#v", listener.Addr())
 
 	server.Serve(listener)
 
