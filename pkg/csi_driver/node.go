@@ -23,11 +23,11 @@ import (
 	"runtime"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -132,15 +132,15 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 	err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
 	if err != nil {
-		glog.Errorf("Mount %q failed, cleaning up", targetPath)
+		klog.Errorf("Mount %q failed, cleaning up", targetPath)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			glog.Errorf("Unmount %q failed: %v", targetPath, unmntErr)
+			klog.Errorf("Unmount %q failed: %v", targetPath, unmntErr)
 		}
 
 		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", targetPath, err))
 	}
 
-	glog.V(4).Infof("Successfully mounted %s", targetPath)
+	klog.V(4).Infof("Successfully mounted %s", targetPath)
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
@@ -276,12 +276,12 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 
 	if mounted {
 		// Already mounted
-		glog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
+		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
 
 	if needsCreateDir {
-		glog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
+		klog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
 		if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
 			return nil, fmt.Errorf("mkdir failed for path %s (%v)", stagingTargetPath, err)
 		}
@@ -297,14 +297,14 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 
 	err = s.mounter.Mount(source, stagingTargetPath, fstype, options)
 	if err != nil {
-		glog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
+		klog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			glog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr)
+			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr)
 		}
 		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", stagingTargetPath, err))
 	}
 
-	glog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
+	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -328,7 +328,7 @@ func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	glog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s", volumeID, stagingTargetPath)
+	klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s", volumeID, stagingTargetPath)
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
