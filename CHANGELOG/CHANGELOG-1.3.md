@@ -1,7 +1,7 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
-# v1.3.7 - Changelog since v1.3.5
+# v1.3.9 - Changelog since v1.3.5
 
 ### Bug or Regression
 
