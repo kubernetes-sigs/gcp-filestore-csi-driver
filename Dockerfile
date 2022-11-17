@@ -49,7 +49,8 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install
     mount \
     netbase \
     ca-certificates \
-    nfs-common
+    nfs-common \
+    python
 
 # This is needed for rpcbind
 RUN mkdir /run/sendsigs.omit.d
@@ -112,6 +113,8 @@ ARG DRIVERBINARY=gcp-filestore-csi-driver
 COPY --from=builder /bin/${DRIVERBINARY} /${DRIVERBINARY}
 RUN true
 COPY deploy/kubernetes/nfs_services_start.sh /nfs_services_start.sh
+COPY /pyNfsClient /pyNfsClient
+COPY /releaselock.py /releaselock.py
 
 
 ENTRYPOINT ["/gcp-filestore-csi-driver"]
