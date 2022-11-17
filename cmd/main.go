@@ -33,18 +33,20 @@ import (
 )
 
 var (
-	endpoint                = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
-	nodeID                  = flag.String("nodeid", "", "node id")
-	runController           = flag.Bool("controller", false, "run controller service")
-	runNode                 = flag.Bool("node", false, "run node service")
-	cloudConfigFilePath     = flag.String("cloud-config", "", "Path to GCE cloud provider config")
-	httpEndpoint            = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
-	metricsPath             = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
-	enableMultishare        = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
-	filestoreServiceEnpoint = flag.String("filestore-service-endpoint", "", "Endpoint for filestore service")
-	ecfsDescription         = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
-	isRegional              = flag.Bool("is-regional", false, "cluster is regional cluster")
-	gkeClusterName          = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	endpoint                        = flag.String("endpoint", "unix:/tmp/csi.sock", "CSI endpoint")
+	nodeID                          = flag.String("nodeid", "", "node id")
+	runController                   = flag.Bool("controller", false, "run controller service")
+	runNode                         = flag.Bool("node", false, "run node service")
+	cloudConfigFilePath             = flag.String("cloud-config", "", "Path to GCE cloud provider config")
+	httpEndpoint                    = flag.String("http-endpoint", "", "The TCP network address where the prometheus metrics endpoint will listen (example: `:8080`). The default is empty string, which means metrics endpoint is disabled.")
+	metricsPath                     = flag.String("metrics-path", "/metrics", "The HTTP path where prometheus metrics will be exposed. Default is `/metrics`.")
+	enableMultishare                = flag.Bool("enable-multishare", false, "if set to true, the driver will support multishare instance provisioning")
+	testFilestoreServiceEndpoint    = flag.String("filestore-service-endpoint", "", "Endpoint for filestore service - used for testing only. Must be a well-known string.")
+	primaryFilestoreServiceEndpoint = flag.String("primary-filestore-service-endpoint", "", "Primary endpoint for filestore service. This takes precedence over filestore-service-endpoint if present.")
+	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
+	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
+	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+
 	// This is set at compile time
 	version = "unknown"
 )
@@ -74,7 +76,7 @@ func main() {
 			}
 		}
 
-		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *filestoreServiceEnpoint)
+		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *primaryFilestoreServiceEndpoint, *testFilestoreServiceEndpoint)
 	} else {
 		if *nodeID == "" {
 			klog.Fatalf("nodeid cannot be empty for node service")

@@ -172,27 +172,37 @@ var (
 	shareUriRegex    = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)/shares/([^/]+)$`)
 )
 
-func NewGCFSService(version string, client *http.Client, endpoint string) (Service, error) {
+func NewGCFSService(version string, client *http.Client, primaryFilestoreServiceEndpoint, testFilestoreServiceEndpoint string) (Service, error) {
 	ctx := context.Background()
 
-	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(client))
-	if err != nil {
-		return nil, err
-	}
-	fileService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
-
-	basepath, err := createFilestoreEndpointUrlBasePath(endpoint)
-	if err != nil {
-		return nil, err
+	fsOpts := []option.ClientOption{
+		option.WithHTTPClient(client),
+		option.WithUserAgent(fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)),
 	}
 
-	glog.Infof("Using endpoint %q for multishare", basepath)
-	fileMultishareService, err := filev1beta1multishare.NewService(ctx, option.WithHTTPClient(client))
-	fileMultishareService.BasePath = basepath
+	if primaryFilestoreServiceEndpoint != "" {
+		fsOpts = append(fsOpts, option.WithEndpoint(primaryFilestoreServiceEndpoint))
+	} else if testFilestoreServiceEndpoint != "" {
+		endpoint, err := createFilestoreEndpointUrlBasePath(testFilestoreServiceEndpoint)
+		if err != nil {
+			return nil, err
+		}
+		fsOpts = append(fsOpts, option.WithEndpoint(endpoint))
+	}
+
+	fileService, err := filev1beta1.NewService(ctx, fsOpts...)
 	if err != nil {
 		return nil, err
 	}
-	fileMultishareService.UserAgent = fmt.Sprintf("Google Cloud Filestore CSI Driver/%s (%s %s)", version, runtime.GOOS, runtime.GOARCH)
+
+	glog.Infof("Using endpoint %q for non-multishare filestore", fileService.BasePath)
+
+	fileMultishareService, err := filev1beta1multishare.NewService(ctx, fsOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	glog.Infof("Using endpoint %q for multishare filestore", fileMultishareService.BasePath)
 
 	return &gcfsServiceManager{
 		fileService:                      fileService,

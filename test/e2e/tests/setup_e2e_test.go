@@ -15,6 +15,7 @@ limitations under the License.
 package tests
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -61,16 +62,17 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	var err error
+	ctx := context.Background()
 	tcc := make(chan *remote.TestContext)
 	defer close(tcc)
 	zones = []string{"us-central1-c", "us-central1-b"}
 
 	rand.Seed(time.Now().UnixNano())
 
-	computeService, err = remote.GetComputeClient()
+	computeService, err = remote.GetComputeClient(ctx, "")
 	Expect(err).To(BeNil())
 
-	fileService, err = remote.GetFileClient()
+	fileService, err = remote.GetFileClient(ctx, "")
 	Expect(err).To(BeNil())
 
 	fileInstancesService = filev1beta1.NewProjectsLocationsInstancesService(fileService)
