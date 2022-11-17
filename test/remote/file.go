@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/oauth2/google"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
+	"google.golang.org/api/option"
 	"k8s.io/klog"
 )
 
@@ -31,7 +32,7 @@ const (
 	backoff = time.Second * 6
 )
 
-func GetFileClient() (*filev1beta1.Service, error) {
+func GetFileClient(ctx context.Context, filestoreEndpoint string) (*filev1beta1.Service, error) {
 	klog.V(4).Infof("Getting file client...")
 
 	// Setup the file client for retrieving resources
@@ -44,12 +45,16 @@ func GetFileClient() (*filev1beta1.Service, error) {
 		}
 
 		var client *http.Client
-		client, err = google.DefaultClient(context.Background(), filev1beta1.CloudPlatformScope)
+		client, err = google.DefaultClient(ctx, filev1beta1.CloudPlatformScope)
 		if err != nil {
 			continue
 		}
 
-		fs, err = filev1beta1.New(client)
+		fOpts := []option.ClientOption{option.WithHTTPClient(client)}
+		if filestoreEndpoint != "" {
+			fOpts = append(fOpts, option.WithEndpoint(filestoreEndpoint))
+		}
+		fs, err = filev1beta1.NewService(ctx, fOpts...)
 		if err != nil {
 			continue
 		}

@@ -28,6 +28,7 @@ import (
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"google.golang.org/api/option"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog"
@@ -241,7 +242,7 @@ func (i *InstanceInfo) createDefaultFirewallRule() error {
 	return nil
 }
 
-func GetComputeClient() (*compute.Service, error) {
+func GetComputeClient(ctx context.Context, computeEndpoint string) (*compute.Service, error) {
 	const retries = 10
 	const backoff = time.Second * 6
 
@@ -257,12 +258,16 @@ func GetComputeClient() (*compute.Service, error) {
 		}
 
 		var client *http.Client
-		client, err = google.DefaultClient(context.TODO(), compute.ComputeScope)
+		client, err = google.DefaultClient(ctx, compute.ComputeScope)
 		if err != nil {
 			continue
 		}
 
-		cs, err = compute.New(client)
+		computeOpts := []option.ClientOption{option.WithHTTPClient(client)}
+		if computeEndpoint != "" {
+			computeOpts = append(computeOpts, option.WithEndpoint(computeEndpoint))
+		}
+		cs, err = compute.NewService(ctx, computeOpts...)
 		if err != nil {
 			continue
 		}
