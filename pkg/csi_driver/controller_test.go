@@ -238,24 +238,29 @@ func TestGetRequestCapacity(t *testing.T) {
 		name          string
 		capRange      *csi.CapacityRange
 		bytes         int64
+		tier          string
 		errorExpected bool
 	}{
 		{
 			name:  "default",
 			bytes: 1 * util.Tb,
+			tier:  defaultTier,
 		},
 		{
-			name: "required below min",
+			name: "required below min, limit not provided",
 			capRange: &csi.CapacityRange{
 				RequiredBytes: 100 * util.Gb,
 			},
-			bytes: 1 * util.Tb,
+			tier:          defaultTier,
+			bytes:         1 * util.Tb,
+			errorExpected: false,
 		},
 		{
 			name: "required equals min",
 			capRange: &csi.CapacityRange{
 				RequiredBytes: 1 * util.Tb,
 			},
+			tier:  defaultTier,
 			bytes: 1 * util.Tb,
 		},
 		{
@@ -263,6 +268,7 @@ func TestGetRequestCapacity(t *testing.T) {
 			capRange: &csi.CapacityRange{
 				RequiredBytes: 1*util.Tb + 1*util.Gb,
 			},
+			tier:  defaultTier,
 			bytes: 1*util.Tb + 1*util.Gb,
 		},
 		{
@@ -270,6 +276,7 @@ func TestGetRequestCapacity(t *testing.T) {
 			capRange: &csi.CapacityRange{
 				LimitBytes: 1 * util.Tb,
 			},
+			tier:  defaultTier,
 			bytes: 1 * util.Tb,
 		},
 		{
@@ -277,6 +284,7 @@ func TestGetRequestCapacity(t *testing.T) {
 			capRange: &csi.CapacityRange{
 				LimitBytes: 1*util.Tb + 1*util.Gb,
 			},
+			tier:  defaultTier,
 			bytes: 1*util.Tb + 1*util.Gb,
 		},
 		{
@@ -285,6 +293,7 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 100 * util.Gb,
 				LimitBytes:    2 * util.Tb,
 			},
+			tier:  defaultTier,
 			bytes: 1 * util.Tb,
 		},
 		{
@@ -293,6 +302,7 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 100 * util.Gb,
 				LimitBytes:    500 * util.Gb,
 			},
+			tier:          defaultTier,
 			errorExpected: true,
 		},
 		{
@@ -301,20 +311,173 @@ func TestGetRequestCapacity(t *testing.T) {
 				RequiredBytes: 5 * util.Tb,
 				LimitBytes:    2 * util.Tb,
 			},
+			tier:          defaultTier,
 			errorExpected: true,
 		},
 		{
-			name: "limit below min",
+			name: "limit below min default",
 			capRange: &csi.CapacityRange{
 				LimitBytes: 100 * util.Gb,
 			},
+			tier:          defaultTier,
 			errorExpected: true,
+		},
+		{
+			name: "required above max default",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Tb,
+			},
+			tier:          defaultTier,
+			errorExpected: true,
+		},
+		{
+			name: "limit above max and no min provided",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 100 * util.Tb,
+			},
+			tier:          defaultTier,
+			bytes:         639 * util.Tb / 10,
+			errorExpected: false,
+		},
+		{
+			name: "limit above max but min in range",
+			capRange: &csi.CapacityRange{
+				LimitBytes:    100 * util.Tb,
+				RequiredBytes: 15 * util.Tb,
+			},
+			tier:  defaultTier,
+			bytes: 15 * util.Tb,
+		},
+		{
+			name: "limit below min enterprise",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 100 * util.Gb,
+			},
+			tier:          enterpriseTier,
+			errorExpected: true,
+		},
+		{
+			name: "required above max enterprise",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Tb,
+			},
+			tier:          enterpriseTier,
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range enterprise",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 2 * util.Tb,
+				LimitBytes:    3 * util.Tb,
+			},
+			tier:  enterpriseTier,
+			bytes: 2 * util.Tb,
+		},
+		{
+			name: "limit below min highScale",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 5 * util.Tb,
+			},
+			tier:          highScaleTier,
+			errorExpected: true,
+		},
+		{
+			name: "required above max highScale",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 200 * util.Tb,
+			},
+			tier:          highScaleTier,
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range highScale",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 20 * util.Tb,
+				LimitBytes:    30 * util.Tb,
+			},
+			tier:  highScaleTier,
+			bytes: 20 * util.Tb,
+		},
+		{
+			name: "limit below min premium",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 1 * util.Tb,
+			},
+			tier:          premiumTier,
+			errorExpected: true,
+		},
+		{
+			name: "required above max premium",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 70 * util.Tb,
+			},
+			tier:          premiumTier,
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range premium",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+				LimitBytes:    60 * util.Tb,
+			},
+			tier:  premiumTier,
+			bytes: 3 * util.Tb,
+		},
+		{
+			name: "limit below min basicSSD",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 1 * util.Tb,
+			},
+			tier:          basicSSDTier,
+			errorExpected: true,
+		},
+		{
+			name: "required above max basicSSD",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 70 * util.Tb,
+			},
+			tier:          basicSSDTier,
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range basicSSD",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+				LimitBytes:    60 * util.Tb,
+			},
+			tier:  basicSSDTier,
+			bytes: 3 * util.Tb,
+		},
+		{
+			name: "limit below min basicHDD",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 100 * util.Gb,
+			},
+			tier:          basicHDDTier,
+			errorExpected: true,
+		},
+		{
+			name: "required above max basicHDD",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 70 * util.Tb,
+			},
+			tier:          basicHDDTier,
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range basicHDD",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 1 * util.Tb,
+				LimitBytes:    60 * util.Tb,
+			},
+			tier:  basicHDDTier,
+			bytes: 1 * util.Tb,
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			bytes, err := getRequestCapacity(tc.capRange)
+			bytes, err := getRequestCapacity(tc.capRange, tc.tier)
 			if err != nil && tc.errorExpected {
 				return
 			}
