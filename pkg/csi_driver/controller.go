@@ -34,14 +34,18 @@ import (
 )
 
 const (
-	// premium tier min is 2.5 Tb, let GCFS error
-	minVolumeSize     int64 = 1 * util.Tb
-	modeInstance            = "modeInstance"
-	newInstanceVolume       = "vol1"
+	modeInstance      = "modeInstance"
+	newInstanceVolume = "vol1"
 
-	defaultTier    = "standard"
-	enterpriseTier = "enterprise"
-	defaultNetwork = "default"
+	// premium tier min is 2.5 Tb, let GCFS error
+	defaultMinVolumeSize int64 = 1 * util.Tb
+	defaultTier                = "standard"
+	enterpriseTier             = "enterprise"
+	premiumTier		   = "premium"
+	basicHDDTier		   = "basic_hdd"
+	basicSSDTier		   = "basic_ssd"
+	highScaleTier              = "high_scale_ssd"
+	defaultNetwork             = "default"
 
 	directPeering        = "DIRECT_PEERING"
 	privateServiceAccess = "PRIVATE_SERVICE_ACCESS"
@@ -49,6 +53,7 @@ const (
 	// Keys for Topology.
 	TopologyKeyZone = "topology.gke.io/zone"
 )
+
 
 // Volume attributes
 const (
@@ -84,6 +89,13 @@ const (
 	tagKeyClusterName              = "storage_gke_io_cluster_name"
 	tagKeyClusterLocation          = "storage_gke_io_cluster_location"
 )
+
+
+
+type capacityRangeForTier struct {
+	min int64
+	max int64
+}
 
 // controllerServer handles volume provisioning
 type controllerServer struct {
@@ -138,7 +150,8 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	capBytes, err := getRequestCapacity(req.GetCapacityRange())
+	tier := getTierFromParams(req.GetParameters())
+	capBytes, err := getRequestCapacity(req.GetCapacityRange(), tier)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -417,36 +430,99 @@ func (s *controllerServer) ControllerGetCapabilities(ctx context.Context, req *c
 	}, nil
 }
 
-// getRequestCapacity returns the volume size that should be provisioned
-func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
-	if capRange == nil {
-		return minVolumeSize, nil
+// getTierFromParams returns the provided tier or default
+func getTierFromParams(params map[string]string) string {
+	if val, ok := params[paramTier]; ok {
+		return val
 	}
 
-	rCap := capRange.GetRequiredBytes()
-	rSet := rCap > 0
-	lCap := capRange.GetLimitBytes()
-	lSet := lCap > 0
+	return defaultTier
+}
 
-	if lSet && rSet && lCap < rCap {
-		return 0, fmt.Errorf("limit bytes %v is less than required bytes %v", lCap, rCap)
+func invalidCapacityRange(capRange *csi.CapacityRange, tier string)  error {
+	validRange := provisionableCapacityForTier(tier)
+
+	minRequired := capRange.GetRequiredBytes()
+	minSet := minRequired > 0
+	maxRequested := capRange.GetLimitBytes()
+	maxSet := maxRequested > 0
+
+
+
+	if maxSet && minSet && maxRequested < minRequired {
+		return fmt.Errorf("limit bytes %v is less than required bytes %v", maxRequested, minRequired)
 	}
 
-	if lSet && lCap < minVolumeSize {
-		return 0, fmt.Errorf("limit bytes %v is less than minimum instance size bytes %v", lCap, minVolumeSize)
-	}
-
-	if lSet {
-		if rCap == 0 {
-			// request not set
-			return lCap, nil
+	if minSet{
+		if minRequired > validRange.max {
+			return fmt.Errorf("request bytes %v is more than maximum instance size bytes %v for tier %s", minRequired, validRange.max, tier)
 		}
-		// request set, round up to min
-		return util.Max(rCap, minVolumeSize), nil
+
+		if !maxSet && minRequired < validRange.min { 
+			// Avoid surprising users by provisioning more than Requested
+			return fmt.Errorf("limit bytes %v is less than minimum instance size bytes %v for tier %s, but no maximum was specified", minRequired, validRange.min, tier)
+		}
+	}
+	if maxSet {
+		if maxRequested < validRange.min {
+			return fmt.Errorf("limit bytes %v is less than minimum instance size bytes %v for tier %s", maxRequested, validRange.min, tier)
+
+		}
+		if !minSet && maxRequested > validRange.max {
+			// Avoid surprising users by provisioning less than Requested
+			return fmt.Errorf("limit bytes %v is more than maximum instance size bytes %v for tier %s, but no minumum was specified", maxRequested, validRange.max, tier)
+		}
 	}
 
-	// limit not set
-	return util.Max(rCap, minVolumeSize), nil
+	return nil
+}
+
+func provisionableCapacityForTier(tier string) capacityRangeForTier {
+	defaultRange := capacityRangeForTier { min: 1 * util.Tb, max: 639 * util.Tb / 10 }
+	enterpriseRange := capacityRangeForTier { min: 1 * util.Tb, max: 10 * util.Tb }
+	highScaleRange := capacityRangeForTier { min: 10 * util.Tb, max: 100 * util.Tb }
+	premiumRange := capacityRangeForTier { min: 25 * util.Tb / 10, max: 639 * util.Tb / 10 }
+	provisionableCapacityForTier := map[string]capacityRangeForTier {
+		defaultTier: defaultRange,
+		enterpriseTier: enterpriseRange,
+		highScaleTier: highScaleRange,
+		premiumTier: premiumRange,
+		basicSSDTier: premiumRange, //these two are aliases
+		basicHDDTier: defaultRange, //these two are aliases
+	}
+
+	validRange, ok := provisionableCapacityForTier[tier]; 
+	if !ok {
+		validRange = provisionableCapacityForTier[defaultTier]
+	}
+	return validRange
+}
+
+// getRequestCapacity returns the volume size that should be provisioned
+func getRequestCapacity(capRange *csi.CapacityRange, tier string) (int64, error) {
+	validRange := provisionableCapacityForTier(tier)
+
+	if capRange == nil {
+		return validRange.min, nil
+	}
+
+	if err := invalidCapacityRange(capRange, tier); err != nil {
+		return 0, err;
+	}
+
+	minRequired := capRange.GetRequiredBytes()
+	minSet := minRequired > 0
+	maxRequired := capRange.GetLimitBytes()
+	maxSet := maxRequired > 0
+
+
+	if minSet {
+		return util.Max(minRequired, validRange.min), nil
+	} else if maxSet {
+		return util.Min(maxRequired, validRange.max), nil
+	} else {
+		return validRange.min, nil
+	}
 }
 
 // generateNewFileInstance populates the GCFS Instance object using
@@ -559,11 +635,6 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return response, err
 	}
 
-	reqBytes, err := getRequestCapacity(req.GetCapacityRange())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
 	}
@@ -573,6 +644,12 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	reqBytes, err := getRequestCapacity(req.GetCapacityRange(), filer.Tier)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
 
 	filer.Project = s.config.cloud.Project
 	filer, err = s.config.fileService.GetInstance(ctx, filer)
