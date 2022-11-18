@@ -20,9 +20,9 @@ import (
 	"fmt"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/glog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -122,7 +122,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 
 func (driver *GCFSDriver) addVolumeCapabilityAccessModes(vc []csi.VolumeCapability_AccessMode_Mode) error {
 	for _, c := range vc {
-		glog.Infof("Enabling volume access mode: %v", c.String())
+		klog.Infof("Enabling volume access mode: %v", c.String())
 		mode := NewVolumeCapabilityAccessMode(c)
 		driver.vcap[mode.Mode] = mode
 	}
@@ -176,7 +176,7 @@ func (driver *GCFSDriver) validateVolumeCapability(c *csi.VolumeCapability) erro
 func (driver *GCFSDriver) addControllerServiceCapabilities(cl []csi.ControllerServiceCapability_RPC_Type) error {
 	var csc []*csi.ControllerServiceCapability
 	for _, c := range cl {
-		glog.Infof("Enabling controller service capability: %v", c.String())
+		klog.Infof("Enabling controller service capability: %v", c.String())
 		csc = append(csc, NewControllerServiceCapability(c))
 	}
 	driver.cscap = csc
@@ -186,7 +186,7 @@ func (driver *GCFSDriver) addControllerServiceCapabilities(cl []csi.ControllerSe
 func (driver *GCFSDriver) addNodeServiceCapabilities(nl []csi.NodeServiceCapability_RPC_Type) error {
 	var nsc []*csi.NodeServiceCapability
 	for _, n := range nl {
-		glog.Infof("Enabling node service capability: %v", n.String())
+		klog.Infof("Enabling node service capability: %v", n.String())
 		nsc = append(nsc, NewNodeServiceCapability(n))
 	}
 	driver.nscap = nsc
@@ -208,7 +208,7 @@ func (driver *GCFSDriver) ValidateControllerServiceRequest(c csi.ControllerServi
 }
 
 func (driver *GCFSDriver) Run(endpoint string) {
-	glog.Infof("Running driver: %v", driver.config.Name)
+	klog.Infof("Running driver: %v", driver.config.Name)
 
 	//Start the nonblocking GRPC
 	s := NewNonBlockingGRPCServer()

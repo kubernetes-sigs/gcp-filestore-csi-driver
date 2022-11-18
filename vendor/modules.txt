@@ -42,9 +42,6 @@ github.com/go-openapi/swag
 ## explicit; go 1.15
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
-# github.com/golang/glog v1.0.0
-## explicit; go 1.11
-github.com/golang/glog
 # github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 ## explicit
 github.com/golang/groupcache/lru
@@ -278,7 +275,6 @@ golang.org/x/time/rate
 ## explicit; go 1.15
 google.golang.org/api/cloudresourcemanager/v1
 google.golang.org/api/compute/v1
-google.golang.org/api/container/v1beta1
 google.golang.org/api/file/v1beta1
 google.golang.org/api/googleapi
 google.golang.org/api/googleapi/transport
