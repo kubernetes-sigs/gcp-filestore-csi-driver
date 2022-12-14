@@ -364,6 +364,9 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		if file.IsNotFoundErr(err) {
 			return &csi.DeleteVolumeResponse{}, nil
 		}
+		if errCode := file.IsUserError(err); errCode != nil {
+			return nil, status.Error(*errCode, err.Error())
+		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
