@@ -123,7 +123,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			ipRangeSize:                   IpRangeSizeEnterprise,
 			pendingIPRanges:               make(map[string]bool),
 			cloudProviderReservedIPRanges: make(map[string]bool),
-			expected:                      "192.168.92.0/24",
+			expected:                      "192.168.92.0/26",
 			errorExpected:                 false,
 		},
 		{
@@ -145,7 +145,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			cloudProviderReservedIPRanges: map[string]bool{
 				ipsLarge[0]: true,
 			},
-			expected:      "192.168.93.0/24",
+			expected:      "192.168.93.0/26",
 			errorExpected: false,
 		},
 		{
@@ -167,7 +167,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			cloudProviderReservedIPRanges: map[string]bool{
 				ips[3]: true,
 			},
-			expected:      "192.168.93.0/24",
+			expected:      "192.168.92.64/26",
 			errorExpected: false,
 		},
 		{
@@ -189,7 +189,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 				ips[3]: true,
 			},
 			cloudProviderReservedIPRanges: map[string]bool{},
-			expected:                      "192.168.93.0/24",
+			expected:                      "192.168.92.64/26",
 			errorExpected:                 false,
 		},
 		{
@@ -211,7 +211,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 				ipsLarge[0]: true,
 			},
 			cloudProviderReservedIPRanges: map[string]bool{},
-			expected:                      "192.168.93.0/24",
+			expected:                      "192.168.93.0/26",
 			errorExpected:                 false,
 		},
 		{
@@ -250,7 +250,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			cloudProviderReservedIPRanges: map[string]bool{
 				ipsLarge[1]: true,
 			},
-			expected:      "192.168.94.0/24",
+			expected:      "192.168.94.0/26",
 			errorExpected: false,
 		},
 		{
@@ -278,7 +278,7 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			cloudProviderReservedIPRanges: map[string]bool{
 				ipsLarge[1]: true,
 			},
-			expected:      "192.168.95.0/24",
+			expected:      "192.168.95.0/26",
 			errorExpected: false,
 		},
 		{
@@ -309,13 +309,13 @@ func TestGetUnReservedIPRange(t *testing.T) {
 		},
 		{
 			name:        "Unreserved IP Range obtained with carry over to significant bytes enterprise",
-			cidr:        "192.168.0.0/13",
+			cidr:        "192.168.0.0/16",
 			ipRangeSize: IpRangeSizeEnterprise,
-			// Using a function for this case as we reserve 32 IP ranges
-			pendingIPRanges: getIPRanges("192.168.0.0/13", 256, IpRangeSizeEnterprise, t),
+			// Using a function for this case as we reserve 4 IP ranges
+			pendingIPRanges: getIPRanges("192.168.0.0/16", 4, IpRangeSizeEnterprise, t),
 			// Reserving IP ranges from 192.168.0.0/29 to 192.168.1.248
-			cloudProviderReservedIPRanges: getIPRanges("192.169.0.0/13", 256, IpRangeSizeEnterprise, t),
-			expected:                      "192.170.0.0/24",
+			cloudProviderReservedIPRanges: getIPRanges("192.168.1.0/16", 4, IpRangeSizeEnterprise, t),
+			expected:                      "192.168.2.0/26",
 			errorExpected:                 false,
 		},
 		{

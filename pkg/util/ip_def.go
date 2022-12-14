@@ -21,5 +21,5 @@ const (
 	IpRangeSize = 29
 
 	// the ipRangeSize for enterprise tier Filestore instances
-	IpRangeSizeEnterprise = 24
+	IpRangeSizeEnterprise = 26
 )
