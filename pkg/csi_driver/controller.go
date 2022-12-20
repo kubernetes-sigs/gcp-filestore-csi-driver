@@ -167,7 +167,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			id := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
 			isBackupSource, err := util.IsBackupHandle(id)
 			if err != nil || !isBackupSource {
-				return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("Unsupported volume content source %v", id))
+				return nil, status.Errorf(codes.InvalidArgument, "Unsupported volume content source %v", id)
 			}
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
@@ -175,7 +175,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 				if errCode := file.IsUserError(err); errCode != nil {
 					return nil, status.Error(*errCode, err.Error())
 				}
-				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err.Error()))
+				return nil, status.Errorf(codes.Internal, "Failed to get snapshot %v: %v", id, err.Error())
 			}
 			sourceSnapshotId = id
 		}
@@ -215,7 +215,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if newFiler.Network.ConnectMode == privateServiceAccess {
 			if reservedIPRange, ok := param[paramReservedIPRange]; ok {
 				if IsCIDR(reservedIPRange) {
-					return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value %v", reservedIPRange))
+					return nil, status.Errorf(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value %v", reservedIPRange)
 				}
 				newFiler.Network.ReservedIpRange = reservedIPRange
 			}
@@ -390,7 +390,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("volume %v doesn't exist", volumeID))
+		return nil, status.Errorf(codes.NotFound, "volume %v doesn't exist", volumeID)
 	}
 
 	// Validate that the volume matches the capabilities
@@ -599,7 +599,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	}
 
 	if hasPendingOps {
-		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Update operation ongoing for volume %v", volumeID))
+		return nil, status.Errorf(codes.DeadlineExceeded, "Update operation ongoing for volume %v", volumeID)
 	}
 
 	filer.Volume.SizeBytes = reqBytes
@@ -777,21 +777,21 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	} else {
 		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceVolumeHandle)
 		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle))
+			return nil, status.Errorf(codes.Internal, "Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle)
 		}
 		if backupSourceCSIHandle != volumeID {
-			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID))
+			return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID)
 		}
 		// Check if backup is in the process of getting created.
 		if backupInfo.Backup.State == "CREATING" || backupInfo.Backup.State == "FINALIZING" {
-			return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+			return nil, status.Errorf(codes.DeadlineExceeded, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
 		}
 		if backupInfo.Backup.State != "READY" {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+			return nil, status.Errorf(codes.Internal, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
 		}
 		tp, err := util.ParseTimestamp(backupInfo.Backup.CreateTime)
 		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to parse create timestamp for backup %v", backupInfo.Backup.Name))
+			return nil, status.Errorf(codes.Internal, "failed to parse create timestamp for backup %v", backupInfo.Backup.Name)
 		}
 		klog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backupInfo.Backup.Name)
 		return &csi.CreateSnapshotResponse{
@@ -860,7 +860,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 	}
 
 	if backupInfo.Backup.State == "DELETING" {
-		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State))
+		return nil, status.Errorf(codes.DeadlineExceeded, "Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State)
 	}
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
