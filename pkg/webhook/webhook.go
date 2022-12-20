@@ -180,13 +180,13 @@ func main(cmd *cobra.Command, args []string) {
 	defer cancel() // stops certwatcher
 	cw, err := certwatcher.New(certFile, keyFile)
 	if err != nil {
-		klog.Fatalf("failed to initialize new cert watcher: %v", err)
+		klog.Fatalf("failed to initialize new cert watcher: %v", err.Error())
 	}
 	tlsConfig := &tls.Config{
 		GetCertificate: cw.GetCertificate,
 	}
 
 	if err := startServer(ctx, tlsConfig, cw); err != nil {
-		klog.Fatalf("server stopped: %v", err)
+		klog.Fatalf("server stopped: %v", err.Error())
 	}
 }

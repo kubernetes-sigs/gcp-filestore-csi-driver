@@ -56,7 +56,7 @@ func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, h
 	klog.V(5).Infof("GRPC request: %+v", pbSanitizer.StripSecretsCSI03(req).String())
 	resp, err := handler(ctx, req)
 	if err != nil {
-		klog.Errorf("GRPC error: %v", err)
+		klog.Errorf("GRPC error: %v", err.Error())
 	} else {
 		klog.V(5).Infof("GRPC response: %+v", resp)
 	}
@@ -67,7 +67,7 @@ func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, h
 func IsIpWithinRange(ipAddress, ipRange string) (bool, error) {
 	_, ipnet, err := net.ParseCIDR(ipRange)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse cidr range %s: %v", ipRange, err)
+		return false, fmt.Errorf("failed to parse cidr range %s: %w", ipRange, err)
 	}
 	return ipnet.Contains(net.ParseIP(ipAddress)), nil
 }

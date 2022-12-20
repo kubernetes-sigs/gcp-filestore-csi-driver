@@ -192,7 +192,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 				if errCode := file.IsUserError(err); errCode != nil {
 					return nil, status.Error(*errCode, err.Error())
 				}
-				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err))
+				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err.Error()))
 			}
 			sourceSnapshotId = id
 		}
@@ -535,7 +535,7 @@ func getRequestCapacity(capRange *csi.CapacityRange, tier string) (int64, error)
 func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
 	location, err := s.pickZone(topo)
 	if err != nil {
-		return nil, fmt.Errorf("invalid topology error %v", err.Error())
+		return nil, fmt.Errorf("invalid topology error %w", err)
 	}
 
 	// Set default parameters
@@ -553,7 +553,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if tier == enterpriseTier {
 				region, err := util.GetRegionFromZone(location)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get region from zone %s: %v", location, err)
+					return nil, fmt.Errorf("failed to get region from zone %s: %w", location, err)
 				}
 				location = region
 			}
@@ -709,12 +709,12 @@ func (s *controllerServer) pickZone(top *csi.TopologyRequirement) (string, error
 func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
 	reqZones, err := getZonesFromTopology(top.GetRequisite())
 	if err != nil {
-		return "", fmt.Errorf("could not get zones from requisite topology: %v", err)
+		return "", fmt.Errorf("could not get zones from requisite topology: %w", err)
 	}
 
 	prefZones, err := getZonesFromTopology(top.GetPreferred())
 	if err != nil {
-		return "", fmt.Errorf("could not get zones from preferred topology: %v", err)
+		return "", fmt.Errorf("could not get zones from preferred topology: %w", err)
 	}
 
 	if len(prefZones) == 0 && len(reqZones) == 0 {
@@ -730,12 +730,12 @@ func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
 func listZonesFromTopology(top *csi.TopologyRequirement) ([]string, error) {
 	reqZones, err := getZonesFromTopology(top.GetRequisite())
 	if err != nil {
-		return reqZones, fmt.Errorf("could not get zones from requisite topology: %v", err)
+		return reqZones, fmt.Errorf("could not get zones from requisite topology: %w", err)
 	}
 
 	prefZones, err := getZonesFromTopology(top.GetPreferred())
 	if err != nil {
-		return prefZones, fmt.Errorf("could not get zones from preferred topology: %v", err)
+		return prefZones, fmt.Errorf("could not get zones from preferred topology: %w", err)
 	}
 
 	return append(reqZones, prefZones...), nil
@@ -750,7 +750,7 @@ func getZonesFromTopology(topList []*csi.Topology) ([]string, error) {
 
 		zone, err := getZoneFromSegment(top.GetSegments())
 		if err != nil {
-			return nil, fmt.Errorf("could not get zone from topology: %v", err)
+			return nil, fmt.Errorf("could not get zone from topology: %w", err)
 		}
 		zones = append(zones, zone)
 	}
@@ -835,7 +835,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
-		klog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
+		klog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	filer.Project = s.config.cloud.Project
@@ -889,7 +889,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
-		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
+		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
 		if err != nil {
 			if errCode := file.IsUserError(err); errCode != nil {
 				return nil, status.Error(*errCode, err.Error())
@@ -946,7 +946,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 	}
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
-		klog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err)
+		klog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
