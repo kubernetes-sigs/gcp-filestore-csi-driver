@@ -118,7 +118,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		}
 		if os.IsNotExist(err) {
 			if mkdirErr := os.MkdirAll(targetPath, 0750); mkdirErr != nil {
-				return nil, status.Error(codes.Internal, fmt.Sprintf("mkdir failed on path %s (%v)", targetPath, mkdirErr.Error()))
+				return nil, status.Errorf(codes.Internal, "mkdir failed on path %s (%v)", targetPath, mkdirErr.Error())
 			}
 		}
 	}
@@ -137,7 +137,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 			klog.Errorf("Unmount %q failed: %v", targetPath, unmntErr.Error())
 		}
 
-		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", targetPath, err.Error()))
+		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", targetPath, err.Error())
 	}
 
 	klog.V(4).Infof("Successfully mounted %s", targetPath)
@@ -236,7 +236,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	}
 
 	if err := validateVolumeCapability(volumeCapability); err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("VolumeCapability is invalid: %v", err.Error()))
+		return nil, status.Errorf(codes.InvalidArgument, "VolumeCapability is invalid: %v", err.Error())
 	}
 
 	// Validate volume attributes
@@ -301,7 +301,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
 			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr.Error())
 		}
-		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", stagingTargetPath, err.Error()))
+		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", stagingTargetPath, err.Error())
 	}
 
 	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
