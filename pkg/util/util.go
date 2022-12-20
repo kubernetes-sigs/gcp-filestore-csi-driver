@@ -156,12 +156,12 @@ func GetRegionFromZone(location string) (string, error) {
 func ParseTimestamp(timestamp string) (*timestamppb.Timestamp, error) {
 	t, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to parse timestamp %v: %v", timestamp, err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to parse timestamp %v: %v", timestamp, err.Error()))
 	}
 
 	tp, err := ptypes.TimestampProto(t)
 	if err != nil {
-		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to covert timestamp %v: %v", timestamp, err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to covert timestamp %v: %v", timestamp, err.Error()))
 	}
 	return tp, err
 }

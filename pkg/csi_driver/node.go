@@ -118,7 +118,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		}
 		if os.IsNotExist(err) {
 			if mkdirErr := os.MkdirAll(targetPath, 0750); mkdirErr != nil {
-				return nil, status.Error(codes.Internal, fmt.Sprintf("mkdir failed on path %s (%v)", targetPath, mkdirErr))
+				return nil, status.Error(codes.Internal, fmt.Sprintf("mkdir failed on path %s (%v)", targetPath, mkdirErr.Error()))
 			}
 		}
 	}
@@ -134,10 +134,10 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	if err != nil {
 		klog.Errorf("Mount %q failed, cleaning up", targetPath)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			klog.Errorf("Unmount %q failed: %v", targetPath, unmntErr)
+			klog.Errorf("Unmount %q failed: %v", targetPath, unmntErr.Error())
 		}
 
-		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", targetPath, err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", targetPath, err.Error()))
 	}
 
 	klog.V(4).Infof("Successfully mounted %s", targetPath)
@@ -193,12 +193,12 @@ func (s *nodeServer) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVol
 		if os.IsNotExist(err) {
 			return nil, status.Errorf(codes.NotFound, "path %s does not exist", req.VolumePath)
 		}
-		return nil, status.Errorf(codes.Internal, "unknown error when stat on %s: %v", req.VolumePath, err)
+		return nil, status.Errorf(codes.Internal, "unknown error when stat on %s: %v", req.VolumePath, err.Error())
 	}
 
 	available, capacity, used, inodesFree, inodes, inodesUsed, err := getFSStat(req.VolumePath)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to get fs info on path %s: %v", req.VolumePath, err)
+		return nil, status.Errorf(codes.Internal, "failed to get fs info on path %s: %v", req.VolumePath, err.Error())
 	}
 
 	return &csi.NodeGetVolumeStatsResponse{
@@ -236,7 +236,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	}
 
 	if err := validateVolumeCapability(volumeCapability); err != nil {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("VolumeCapability is invalid: %v", err))
+		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("VolumeCapability is invalid: %v", err.Error()))
 	}
 
 	// Validate volume attributes
@@ -283,7 +283,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if needsCreateDir {
 		klog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
 		if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
-			return nil, fmt.Errorf("mkdir failed for path %s (%v)", stagingTargetPath, err)
+			return nil, fmt.Errorf("mkdir failed for path %s (%w)", stagingTargetPath, err)
 		}
 	}
 
@@ -299,9 +299,9 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if err != nil {
 		klog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr)
+			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr.Error())
 		}
-		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", stagingTargetPath, err))
+		return nil, status.Error(codes.Internal, fmt.Sprintf("mount %q failed: %v", stagingTargetPath, err.Error()))
 	}
 
 	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
@@ -435,7 +435,7 @@ func getFSStat(path string) (available, capacity, used, inodesFree, inodes, inod
 	statfs := &unix.Statfs_t{}
 	err = unix.Statfs(path, statfs)
 	if err != nil {
-		err = fmt.Errorf("failed to get fs info on path %s: %v", path, err)
+		err = fmt.Errorf("failed to get fs info on path %s: %w", path, err)
 		return
 	}
 
