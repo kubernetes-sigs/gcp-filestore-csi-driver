@@ -253,7 +253,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if !util.IsAligned(reqBytes, util.Gb) {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("requested size(bytes) %d is not a multiple of 1GiB", reqBytes))
+		return nil, status.Errorf(codes.InvalidArgument, "requested size(bytes) %d is not a multiple of 1GiB", reqBytes)
 	}
 	_, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
 	if err != nil {
@@ -376,7 +376,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		case paramConnectMode:
 			connectMode = v
 			if connectMode != directPeering && connectMode != privateServiceAccess {
-				return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess))
+				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
 		case paramInstanceEncryptionKmsKey:
 			kmsKeyName = v
@@ -390,12 +390,12 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
-			return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("invalid parameter %q", k))
+			return nil, status.Errorf(codes.InvalidArgument, "invalid parameter %q", k)
 		}
 	}
 
 	if tier != enterpriseTier {
-		return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("tier %q not supported for multishare volumes", tier))
+		return nil, status.Errorf(codes.InvalidArgument, "tier %q not supported for multishare volumes", tier)
 	}
 
 	location := m.cloud.Zone
