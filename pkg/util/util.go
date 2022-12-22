@@ -143,14 +143,14 @@ func ConvertLabelsStringToMap(labels string) (map[string]string, error) {
 	return labelsMap, nil
 }
 
+// GetRegionFromZone return the corresponding region name based on a zone name
+// Example "us-central1-a" return "us-central1"
 func GetRegionFromZone(location string) (string, error) {
 	tokens := strings.Split(location, "-")
 	if len(tokens) != 3 {
-		return "", fmt.Errorf("Failed to parse location %v", location)
+		return "", fmt.Errorf("failed to parse location %v", location)
 	}
-
-	tokens = tokens[:2]
-	return strings.Join(tokens, "-"), nil
+	return strings.Join(tokens[0:2], "-"), nil
 }
 
 func ParseTimestamp(timestamp string) (*timestamppb.Timestamp, error) {

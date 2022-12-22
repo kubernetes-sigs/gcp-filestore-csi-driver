@@ -468,6 +468,40 @@ func TestAlignBytes(t *testing.T) {
 
 }
 
+func TestGetRegionFromZone(t *testing.T) {
+	tests := []struct {
+		name       string
+		location   string
+		wantRegion string
+		wantErr    bool
+	}{
+		{
+			name:       "valid location",
+			location:   "us-central1-c",
+			wantRegion: "us-central1",
+			wantErr:    false,
+		},
+		{
+			name:       "invalid location",
+			location:   "us-central1-1-2",
+			wantRegion: "",
+			wantErr:    true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotRegion, err := GetRegionFromZone(tt.location)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("GetRegionFromZone() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if gotRegion != tt.wantRegion {
+				t.Errorf("GetRegionFromZone() gotRegion = %v, want %v", gotRegion, tt.wantRegion)
+			}
+		})
+	}
+}
+
 func TestIsAligned(t *testing.T) {
 	tests := []struct {
 		name             string
