@@ -216,7 +216,7 @@ func handle() error {
 		defer func() {
 			err = setEnvProject(oldProjectStr)
 			if err != nil {
-				klog.Errorf("failed to set project environment to %s: %v", oldProject, err)
+				klog.Errorf("failed to set project environment to %s: %v", oldProject, err.Error())
 			}
 		}()
 
@@ -240,7 +240,7 @@ func handle() error {
 			if *teardownCluster {
 				err := deleteImage(*stagingImage, testParams.stagingVersion)
 				if err != nil {
-					klog.Errorf("failed to delete image: %v", err)
+					klog.Errorf("failed to delete image: %v", err.Error())
 				}
 			}
 		}()
@@ -287,12 +287,12 @@ func handle() error {
 			case "gce":
 				err := clusterDownGCE(testParams.testDir)
 				if err != nil {
-					klog.Errorf("failed to cluster down: %v", err)
+					klog.Errorf("failed to cluster down: %v", err.Error())
 				}
 			case "gke":
 				err := clusterDownGKE(*gceZone, *gceRegion)
 				if err != nil {
-					klog.Errorf("failed to cluster down: %v", err)
+					klog.Errorf("failed to cluster down: %v", err.Error())
 				}
 			default:
 				klog.Errorf("deployment-strategy must be set to 'gce', but is: %s", *deploymentStrat)
@@ -305,18 +305,18 @@ func handle() error {
 		if *teardownDriver {
 			defer func() {
 				if teardownErr := deleteDriver(testParams.goPath, testParams.pkgDir, *deployOverlayName); teardownErr != nil {
-					klog.Errorf("failed to delete driver: %v", teardownErr)
+					klog.Errorf("failed to delete driver: %v", teardownErr.Error())
 				}
 			}()
 		}
 		if err != nil {
-			return fmt.Errorf("failed to install CSI Driver: %v", err)
+			return fmt.Errorf("failed to install CSI Driver: %w", err)
 		}
 	}
 
 	cancel, err := dumpDriverLogs()
 	if err != nil {
-		return fmt.Errorf("failed to start driver logging: %v", err)
+		return fmt.Errorf("failed to start driver logging: %w", err)
 	}
 	defer func() {
 		if cancel != nil {

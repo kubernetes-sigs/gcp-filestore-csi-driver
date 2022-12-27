@@ -68,12 +68,12 @@ func NewCloud(ctx context.Context, version string, configPath string, filestoreS
 
 	file, err := file.NewGCFSService(version, client, filestoreServiceEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Filestore service: %v", err)
+		return nil, fmt.Errorf("failed to initialize Filestore service: %w", err)
 	}
 
 	project, zone, err := getProjectAndZone(configFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize project information: %v", err)
+		return nil, fmt.Errorf("failed to initialize project information: %w", err)
 	}
 	return &Cloud{
 		File:    file,
@@ -89,13 +89,13 @@ func maybeReadConfig(configPath string) (*ConfigFile, error) {
 
 	reader, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't open cloud provider configuration at %s: %v", configPath, err)
+		return nil, fmt.Errorf("couldn't open cloud provider configuration at %s: %w", configPath, err)
 	}
 	defer reader.Close()
 
 	cfg := &ConfigFile{}
 	if err := gcfg.FatalOnly(gcfg.ReadInto(cfg, reader)); err != nil {
-		return nil, fmt.Errorf("couldn't read cloud provider configuration at %s: %v", configPath, err)
+		return nil, fmt.Errorf("couldn't read cloud provider configuration at %s: %w", configPath, err)
 	}
 	klog.Infof("Config file read %#v", cfg)
 	return cfg, nil
@@ -128,7 +128,7 @@ func generateTokenSource(ctx context.Context, configFile *ConfigFile) (oauth2.To
 func newOauthClient(ctx context.Context, tokenSource oauth2.TokenSource) (*http.Client, error) {
 	if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
 		if _, err := tokenSource.Token(); err != nil {
-			klog.Errorf("error fetching initial token: %v", err)
+			klog.Errorf("error fetching initial token: %v", err.Error())
 			return false, nil
 		}
 		return true, nil

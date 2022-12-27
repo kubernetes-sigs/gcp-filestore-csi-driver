@@ -38,11 +38,11 @@ var _ Service = &metadataServiceManager{}
 func NewMetadataService() (Service, error) {
 	zone, err := metadata.Zone()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current zone: %v", err)
+		return nil, fmt.Errorf("failed to get current zone: %w", err)
 	}
 	projectID, err := metadata.ProjectID()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get project: %v", err)
+		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
 
 	return &metadataServiceManager{

@@ -386,18 +386,18 @@ func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *Serv
 	klog.V(4).Infof("Starting DeleteInstance cloud operation for instance %s", uri)
 	op, err := manager.instancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("DeleteInstance operation failed: %v", err)
+		return fmt.Errorf("DeleteInstance operation failed: %w", err)
 	}
 
 	klog.V(4).Infof("For instance %s, waiting for delete op %v to complete", uri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return fmt.Errorf("WaitFor DeleteInstance op %s failed: %v", op.Name, err)
+		return fmt.Errorf("WaitFor DeleteInstance op %s failed: %w", op.Name, err)
 	}
 
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil && !IsNotFoundErr(err) {
-		return fmt.Errorf("failed to get instance after deletion: %v", err)
+		return fmt.Errorf("failed to get instance after deletion: %w", err)
 	}
 	if instance != nil {
 		return fmt.Errorf("instance %s still exists after delete operation in state %v", uri, instance.State)
@@ -473,18 +473,18 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	)
 	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("patch operation failed: %v", err)
+		return nil, fmt.Errorf("patch operation failed: %w", err)
 	}
 
 	klog.V(4).Infof("For instance %s, waiting for patch op %v to complete", instanceuri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor patch op %s failed: %v", op.Name, err)
+		return nil, fmt.Errorf("WaitFor patch op %s failed: %w", op.Name, err)
 	}
 
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+		return nil, fmt.Errorf("failed to get instance after creation: %w", err)
 	}
 	klog.V(4).Infof("After resize got instance %#v", instance)
 	return instance, nil
@@ -523,7 +523,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	klog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %v", opbackup.Name, backupSource, backupUri, err)
+		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %w", opbackup.Name, backupSource, backupUri, err)
 	}
 
 	backupObj, err := manager.backupService.Get(backupUri).Context(ctx).Do()
@@ -540,13 +540,13 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId string) error {
 	opbackup, err := manager.backupService.Delete(backupId).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %w", backupId, opbackup.Name, err)
 	}
 
 	klog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return fmt.Errorf("delete backup: %v, op %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("delete backup: %v, op %s failed: %w", backupId, opbackup.Name, err)
 	}
 
 	klog.Infof("Backup %v successfully deleted", backupId)
@@ -670,7 +670,7 @@ func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *Servi
 	for {
 		resp, err := manager.operationsService.List(locationURI(obj.Project, obj.Location)).PageToken(nextToken).Context(ctx).Do()
 		if err != nil {
-			return false, fmt.Errorf("list operations for instance %q, token %q failed: %v", uri, nextToken, err)
+			return false, fmt.Errorf("list operations for instance %q, token %q failed: %w", uri, nextToken, err)
 		}
 
 		filteredOps, err := ApplyFilter(resp.Operations, uri, operationType, done)
@@ -767,7 +767,7 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
+		return nil, fmt.Errorf("CreateInstance operation failed: %w", err)
 	}
 	klog.Infof("Started create instance op %s, for instance %q project %q, location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, description %s", op.Name, instance.Name, instance.Project, instance.Location, targetinstance.Tier, targetinstance.CapacityGb, targetinstance.Networks[0].Network, targetinstance.Networks[0].ReservedIpRange, targetinstance.Networks[0].ConnectMode, targetinstance.KmsKeyName, targetinstance.Labels, targetinstance.Description)
 	return op, nil
@@ -777,7 +777,7 @@ func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.C
 	uri := instanceURI(instance.Project, instance.Location, instance.Name)
 	op, err := manager.multishareInstancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("DeleteInstance operation failed: %v", err)
+		return nil, fmt.Errorf("DeleteInstance operation failed: %w", err)
 	}
 	klog.Infof("Started Delete Instance op %s for instance uri %s", op.Name, uri)
 	return op, nil
@@ -803,7 +803,7 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 	}
 	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("patch operation failed: %v for instance %+v", err, targetinstance)
+		return nil, fmt.Errorf("patch operation failed: %w for instance %+v", err, targetinstance)
 	}
 
 	klog.Infof("Started instance update operation %s for instance %+v", op.Name, targetinstance)
@@ -820,7 +820,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateShare operation failed: %v", err)
+		return nil, fmt.Errorf("CreateShare operation failed: %w", err)
 	}
 	klog.Infof("Started Create Share op %s for share %q instance uri %q, with capacity(GB) %v, Labels %v", op.Name, share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	return op, nil
@@ -830,7 +830,7 @@ func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, share
 	uri := shareURI(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
 	op, err := manager.multishareInstancesSharesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("DeleteShare operation failed: %v", err)
+		return nil, fmt.Errorf("DeleteShare operation failed: %w", err)
 	}
 	klog.Infof("Started Delete Share op %s for share uri %q ", op.Name, uri)
 	return op, nil
@@ -845,7 +845,7 @@ func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, share
 	}
 	op, err := manager.multishareInstancesSharesService.Patch(uri, targetShare).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("ResizeShare operation failed: %v", err)
+		return nil, fmt.Errorf("ResizeShare operation failed: %w", err)
 	}
 	klog.Infof("Started Resize Share op %s for share uri %q ", op.Name, uri)
 	return op, nil
