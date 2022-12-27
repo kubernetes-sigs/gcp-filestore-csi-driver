@@ -188,7 +188,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			}
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
-				klog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err)
+				klog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err.Error())
 				if errCode := file.IsUserError(err); errCode != nil {
 					return nil, status.Error(*errCode, err.Error())
 				}
@@ -266,7 +266,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
 		}
 		if createErr != nil {
-			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr)
+			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
 			if errCode := file.IsUserError(err); errCode != nil {
 				return nil, status.Error(*errCode, err.Error())
 			}
@@ -376,7 +376,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 
 	err = s.config.fileService.DeleteInstance(ctx, filer)
 	if err != nil {
-		klog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err)
+		klog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 

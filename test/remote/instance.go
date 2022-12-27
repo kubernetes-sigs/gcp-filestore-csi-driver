@@ -148,7 +148,7 @@ func (i *InstanceInfo) CreateOrGetInstance(serviceAccount string) error {
 
 		instance, err = i.computeService.Instances.Get(i.project, i.zone, i.name).Do()
 		if err != nil {
-			klog.Errorf("Failed to get instance %v: %v", i.name, err)
+			klog.Errorf("Failed to get instance %v: %v", i.name, err.Error())
 			return false, nil
 		}
 
@@ -188,7 +188,7 @@ func (i *InstanceInfo) DeleteInstance() {
 		if isGCEError(err, "notFound") {
 			return
 		}
-		klog.Errorf("Error deleting instance %q: %v", i.name, err)
+		klog.Errorf("Error deleting instance %q: %v", i.name, err.Error())
 	}
 }
 
