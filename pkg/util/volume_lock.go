@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	VolumeOperationAlreadyExistsFmt = "An operation with the given volume key %s already exists"
+	VolumeOperationAlreadyExistsFmt = "An operation with the given volume key %s already exists.\n --- Most likely a long process is still running to completion. Retrying."
 )
 
 // VolumeLocks implements a map with atomic operations. It stores a set of all volume IDs
