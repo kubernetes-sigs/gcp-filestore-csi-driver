@@ -130,7 +130,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 	if numIneligible > 0 {
 		// some instances not ready yet. wait for more instances to be ready.
-		return nil, nil, status.Errorf(codes.Aborted, " %d non-ready instances detected. No ready instance found", numIneligible)
+		return nil, nil, status.Errorf(codes.Aborted, " %d non-ready instances detected. No ready instance found. \n --- Most likely a long process is still running to completion. Retrying.", numIneligible)
 	}
 
 	param := req.GetParameters()
