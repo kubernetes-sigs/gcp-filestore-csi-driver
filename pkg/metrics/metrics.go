@@ -22,7 +22,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/component-base/metrics"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -140,7 +140,7 @@ func (mm *MetricsManager) InitializeHttpHandler(address, path string) {
 	go func() {
 		klog.Infof("Metric server listening at %q", address)
 		if err := http.ListenAndServe(address, mux); err != nil {
-			klog.Fatalf("Failed to start metric server at specified address (%q) and path (%q): %s", address, path, err)
+			klog.Fatalf("Failed to start metric server at specified address (%q) and path (%q): %s", address, path, err.Error())
 		}
 	}()
 }

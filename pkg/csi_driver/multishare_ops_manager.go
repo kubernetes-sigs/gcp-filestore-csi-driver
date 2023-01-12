@@ -28,7 +28,7 @@ import (
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -331,7 +331,7 @@ func (m *MultishareOpsManager) startShareWorkflow(ctx context.Context, w *Workfl
 func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(instance *file.MultishareInstance, ops []*OpInfo) error {
 	instanceUri, err := file.GenerateMultishareInstanceURI(instance)
 	if err != nil {
-		return status.Errorf(codes.Internal, "failed to parse instance handle, err: %v", err)
+		return status.Errorf(codes.Internal, "failed to parse instance handle, err: %v", err.Error())
 	}
 
 	// Check for instance prefix in op target.
@@ -380,7 +380,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 		if op == nil {
 			shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
 			if err != nil {
-				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err)
+				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err.Error())
 				return nil, 0, err
 			}
 			if len(shares) >= util.MaxSharesPerInstance {
@@ -623,7 +623,7 @@ func containsOpWithShareName(shareName string, opType util.OperationType, ops []
 func containsOpWithShareTarget(share *file.Share, opType util.OperationType, ops []*OpInfo) (*OpInfo, error) {
 	shareUri, err := file.GenerateShareURI(share)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "failed to parse share handle, err: %v", err)
+		return nil, status.Errorf(codes.Internal, "failed to parse share handle, err: %v", err.Error())
 	}
 
 	for _, op := range ops {

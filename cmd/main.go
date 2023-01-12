@@ -21,9 +21,7 @@ import (
 	"flag"
 	"os"
 
-	"github.com/golang/glog"
-
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -52,6 +50,7 @@ var (
 const driverName = "filestore.csi.storage.gke.io"
 
 func main() {
+	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
 	flag.Parse()
 
@@ -87,7 +86,7 @@ func main() {
 	}
 
 	if err != nil {
-		glog.Fatalf("Failed to initialize cloud provider: %v", err)
+		klog.Fatalf("Failed to initialize cloud provider: %v", err)
 	}
 
 	mounter := mount.New("")
@@ -109,10 +108,10 @@ func main() {
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)
 	if err != nil {
-		glog.Fatalf("Failed to initialize Cloud Filestore CSI Driver: %v", err)
+		klog.Fatalf("Failed to initialize Cloud Filestore CSI Driver: %v", err)
 	}
 
-	glog.Infof("Running Google Cloud Filestore CSI driver version %v", version)
+	klog.Infof("Running Google Cloud Filestore CSI driver version %v", version)
 	gcfsDriver.Run(*endpoint)
 
 	os.Exit(0)

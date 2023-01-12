@@ -19,6 +19,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -26,12 +27,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -186,7 +186,7 @@ func NewGCFSService(version string, client *http.Client, endpoint string) (Servi
 		return nil, err
 	}
 
-	glog.Infof("Using endpoint %q for multishare", basepath)
+	klog.Infof("Using endpoint %q for multishare", basepath)
 	fileMultishareService, err := filev1beta1multishare.NewService(ctx, option.WithHTTPClient(client))
 	fileMultishareService.BasePath = basepath
 	if err != nil {
@@ -227,7 +227,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		Labels:     obj.Labels,
 	}
 
-	glog.V(4).Infof("Creating instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v",
+	klog.V(4).Infof("Creating instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
@@ -239,19 +239,19 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		betaObj.Labels)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("CreateInstance operation failed for instance %s: %v", obj.Name, err)
+		klog.Errorf("CreateInstance operation failed for instance %s: %w", obj.Name, err)
 		return nil, err
 	}
 
-	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
+	klog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
 		return nil, err
 	}
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		glog.Errorf("failed to get instance after creation: %v", err)
+		klog.Errorf("failed to get instance after creation: %w", err)
 		return nil, err
 	}
 	return instance, nil
@@ -280,7 +280,7 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		State:      obj.State,
 	}
 
-	glog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v backup source %q",
+	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v backup source %q",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
@@ -293,19 +293,19 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
+		klog.Errorf("CreateInstance operation failed for instance %v: %w", obj.Name, err)
 		return nil, err
 	}
 
-	glog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
+	klog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		glog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
+		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
 		return nil, err
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		glog.Errorf("failed to get instance after creation: %v", err)
+		klog.Errorf("failed to get instance after creation: %w", err)
 		return nil, err
 	}
 	return serviceInstance, nil
@@ -315,12 +315,12 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	instanceUri := instanceURI(obj.Project, obj.Location, obj.Name)
 	instance, err := manager.instancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("Failed to get instance %v", instanceUri)
+		klog.Errorf("Failed to get instance %v", instanceUri)
 		return nil, err
 	}
 
 	if instance != nil {
-		glog.V(4).Infof("GetInstance call fetched instance %+v", instance)
+		klog.V(4).Infof("GetInstance call fetched instance %+v", instance)
 		return cloudInstanceToServiceInstance(instance)
 	}
 	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
@@ -383,27 +383,27 @@ func CompareInstances(a, b *ServiceInstance) error {
 
 func (manager *gcfsServiceManager) DeleteInstance(ctx context.Context, obj *ServiceInstance) error {
 	uri := instanceURI(obj.Project, obj.Location, obj.Name)
-	glog.V(4).Infof("Starting DeleteInstance cloud operation for instance %s", uri)
+	klog.V(4).Infof("Starting DeleteInstance cloud operation for instance %s", uri)
 	op, err := manager.instancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("DeleteInstance operation failed: %v", err)
+		return fmt.Errorf("DeleteInstance operation failed: %w", err)
 	}
 
-	glog.V(4).Infof("For instance %s, waiting for delete op %v to complete", uri, op.Name)
+	klog.V(4).Infof("For instance %s, waiting for delete op %v to complete", uri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return fmt.Errorf("WaitFor DeleteInstance op %s failed: %v", op.Name, err)
+		return fmt.Errorf("WaitFor DeleteInstance op %s failed: %w", op.Name, err)
 	}
 
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil && !IsNotFoundErr(err) {
-		return fmt.Errorf("failed to get instance after deletion: %v", err)
+		return fmt.Errorf("failed to get instance after deletion: %w", err)
 	}
 	if instance != nil {
 		return fmt.Errorf("instance %s still exists after delete operation in state %v", uri, instance.State)
 	}
 
-	glog.Infof("Instance %s has been deleted", uri)
+	klog.Infof("Instance %s has been deleted", uri)
 	return nil
 }
 
@@ -461,7 +461,7 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 		KmsKeyName: obj.KmsKeyName,
 	}
 
-	glog.V(4).Infof("Patching instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q",
+	klog.V(4).Infof("Patching instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q",
 		obj.Name,
 		obj.Location,
 		betaObj.Tier,
@@ -473,20 +473,20 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	)
 	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask(fileShareUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("patch operation failed: %v", err)
+		return nil, fmt.Errorf("patch operation failed: %w", err)
 	}
 
-	glog.V(4).Infof("For instance %s, waiting for patch op %v to complete", instanceuri, op.Name)
+	klog.V(4).Infof("For instance %s, waiting for patch op %v to complete", instanceuri, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor patch op %s failed: %v", op.Name, err)
+		return nil, fmt.Errorf("WaitFor patch op %s failed: %w", op.Name, err)
 	}
 
 	instance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get instance after creation: %v", err)
+		return nil, fmt.Errorf("failed to get instance after creation: %w", err)
 	}
-	glog.V(4).Infof("After resize got instance %#v", instance)
+	klog.V(4).Infof("After resize got instance %#v", instance)
 	return instance, nil
 }
 
@@ -512,17 +512,18 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		SourceInstance:  backupSource,
 		SourceFileShare: obj.Volume.Name,
 	}
-	glog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupUri)
+	klog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupUri)
 	opbackup, err := manager.backupService.Create(locationURI(obj.Project, region), backupobj).BackupId(backupName).Context(ctx).Do()
+
 	if err != nil {
-		glog.Errorf("Create Backup operation failed: %v", err)
+		klog.Errorf("Create Backup operation failed: %w", err)
 		return nil, err
 	}
 
-	glog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
+	klog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %v", opbackup.Name, backupSource, backupUri, err)
+		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %w", opbackup.Name, backupSource, backupUri, err)
 	}
 
 	backupObj, err := manager.backupService.Get(backupUri).Context(ctx).Do()
@@ -532,23 +533,23 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	if backupObj.State != "READY" {
 		return nil, fmt.Errorf("backup %v for source %v is not ready, current state: %v", backupUri, backupSource, backupObj.State)
 	}
-	glog.Infof("Successfully created backup %+v for source instance %v", backupObj, backupSource)
+	klog.Infof("Successfully created backup %+v for source instance %v", backupObj, backupSource)
 	return backupObj, nil
 }
 
 func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId string) error {
 	opbackup, err := manager.backupService.Delete(backupId).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %w", backupId, opbackup.Name, err)
 	}
 
-	glog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
+	klog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return fmt.Errorf("delete backup: %v, op %s failed: %v", backupId, opbackup.Name, err)
+		return fmt.Errorf("delete backup: %v, op %s failed: %w", backupId, opbackup.Name, err)
 	}
 
-	glog.Infof("Backup %v successfully deleted", backupId)
+	klog.Infof("Backup %v successfully deleted", backupId)
 	return nil
 }
 
@@ -630,8 +631,9 @@ func IsNotFoundErr(err error) bool {
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
 func IsUserError(err error) *codes.Code {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
+	// Upwrap the error
+	var apiErr *googleapi.Error
+	if !errors.As(err, &apiErr) {
 		return nil
 	}
 
@@ -668,7 +670,7 @@ func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *Servi
 	for {
 		resp, err := manager.operationsService.List(locationURI(obj.Project, obj.Location)).PageToken(nextToken).Context(ctx).Do()
 		if err != nil {
-			return false, fmt.Errorf("list operations for instance %q, token %q failed: %v", uri, nextToken, err)
+			return false, fmt.Errorf("list operations for instance %q, token %q failed: %w", uri, nextToken, err)
 		}
 
 		filteredOps, err := ApplyFilter(resp.Operations, uri, operationType, done)
@@ -697,7 +699,7 @@ func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done b
 			return nil, err
 		}
 		if meta.Target == uri && meta.Verb == opType && op.Done == done {
-			glog.V(4).Infof("Operation %q match filter for target %q", op.Name, meta.Target)
+			klog.V(4).Infof("Operation %q match filter for target %q", op.Name, meta.Target)
 			res = append(res, op)
 		}
 	}
@@ -709,7 +711,7 @@ func (manager *gcfsServiceManager) GetMultishareInstance(ctx context.Context, ob
 	instanceUri := instanceURI(obj.Project, obj.Location, obj.Name)
 	instance, err := manager.multishareInstancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
-		glog.Errorf("Failed to get instance %v", instanceUri)
+		klog.Errorf("Failed to get instance %v", instanceUri)
 		return nil, err
 	}
 
@@ -765,7 +767,7 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateInstance operation failed: %v", err)
+		return nil, fmt.Errorf("CreateInstance operation failed: %w", err)
 	}
 	klog.Infof("Started create instance op %s, for instance %q project %q, location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, description %s", op.Name, instance.Name, instance.Project, instance.Location, targetinstance.Tier, targetinstance.CapacityGb, targetinstance.Networks[0].Network, targetinstance.Networks[0].ReservedIpRange, targetinstance.Networks[0].ConnectMode, targetinstance.KmsKeyName, targetinstance.Labels, targetinstance.Description)
 	return op, nil
@@ -775,7 +777,7 @@ func (manager *gcfsServiceManager) StartDeleteMultishareInstanceOp(ctx context.C
 	uri := instanceURI(instance.Project, instance.Location, instance.Name)
 	op, err := manager.multishareInstancesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("DeleteInstance operation failed: %v", err)
+		return nil, fmt.Errorf("DeleteInstance operation failed: %w", err)
 	}
 	klog.Infof("Started Delete Instance op %s for instance uri %s", op.Name, uri)
 	return op, nil
@@ -801,7 +803,7 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 	}
 	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("patch operation failed: %v for instance %+v", err, targetinstance)
+		return nil, fmt.Errorf("patch operation failed: %w for instance %+v", err, targetinstance)
 	}
 
 	klog.Infof("Started instance update operation %s for instance %+v", op.Name, targetinstance)
@@ -818,7 +820,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateShare operation failed: %v", err)
+		return nil, fmt.Errorf("CreateShare operation failed: %w", err)
 	}
 	klog.Infof("Started Create Share op %s for share %q instance uri %q, with capacity(GB) %v, Labels %v", op.Name, share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	return op, nil
@@ -828,7 +830,7 @@ func (manager *gcfsServiceManager) StartDeleteShareOp(ctx context.Context, share
 	uri := shareURI(share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name)
 	op, err := manager.multishareInstancesSharesService.Delete(uri).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("DeleteShare operation failed: %v", err)
+		return nil, fmt.Errorf("DeleteShare operation failed: %w", err)
 	}
 	klog.Infof("Started Delete Share op %s for share uri %q ", op.Name, uri)
 	return op, nil
@@ -843,7 +845,7 @@ func (manager *gcfsServiceManager) StartResizeShareOp(ctx context.Context, share
 	}
 	op, err := manager.multishareInstancesSharesService.Patch(uri, targetShare).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("ResizeShare operation failed: %v", err)
+		return nil, fmt.Errorf("ResizeShare operation failed: %w", err)
 	}
 	klog.Infof("Started Resize Share op %s for share uri %q ", op.Name, uri)
 	return op, nil

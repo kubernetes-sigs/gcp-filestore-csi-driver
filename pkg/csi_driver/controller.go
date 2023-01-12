@@ -22,11 +22,10 @@ import (
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/golang/glog"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
@@ -128,7 +127,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return response, err
 	}
 
-	glog.V(4).Infof("CreateVolume called with request %+v", req)
+	klog.V(4).Infof("CreateVolume called with request %+v", req)
 	name := req.GetName()
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
@@ -142,7 +141,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	glog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
+	klog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
 	if err != nil {
@@ -168,15 +167,15 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			id := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
 			isBackupSource, err := util.IsBackupHandle(id)
 			if err != nil || !isBackupSource {
-				return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("Unsupported volume content source %v", id))
+				return nil, status.Errorf(codes.InvalidArgument, "Unsupported volume content source %v", id)
 			}
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
-				glog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err)
+				klog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err.Error())
 				if errCode := file.IsUserError(err); errCode != nil {
 					return nil, status.Error(*errCode, err.Error())
 				}
-				return nil, status.Error(codes.Internal, fmt.Sprintf("Failed to get snapshot %v: %v", id, err))
+				return nil, status.Errorf(codes.Internal, "Failed to get snapshot %v: %v", id, err.Error())
 			}
 			sourceSnapshotId = id
 		}
@@ -193,7 +192,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	}
 
 	if filer != nil {
-		glog.V(4).Infof("Found existing instance %+v, current instance %+v\n", filer, newFiler)
+		klog.V(4).Infof("Found existing instance %+v, current instance %+v\n", filer, newFiler)
 		// Instance already exists, check if it meets the request
 		if err = file.CompareInstances(newFiler, filer); err != nil {
 			return nil, status.Error(codes.AlreadyExists, err.Error())
@@ -201,12 +200,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		// Check if the filestore instance is in the process of getting created.
 		if filer.State == "CREATING" {
 			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
-			glog.V(4).Infof(msg)
+			klog.V(4).Infof(msg)
 			return nil, status.Error(codes.DeadlineExceeded, msg)
 		}
 		if filer.State != "READY" {
 			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
-			glog.V(4).Infof(msg)
+			klog.V(4).Infof(msg)
 			return nil, status.Error(codes.Internal, msg)
 		}
 	} else {
@@ -216,7 +215,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if newFiler.Network.ConnectMode == privateServiceAccess {
 			if reservedIPRange, ok := param[paramReservedIPRange]; ok {
 				if IsCIDR(reservedIPRange) {
-					return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value %v", reservedIPRange))
+					return nil, status.Errorf(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value %v", reservedIPRange)
 				}
 				newFiler.Network.ReservedIpRange = reservedIPRange
 			}
@@ -250,7 +249,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
 		}
 		if createErr != nil {
-			glog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr)
+			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
 			if errCode := file.IsUserError(err); errCode != nil {
 				return nil, status.Error(*errCode, err.Error())
 			}
@@ -258,7 +257,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 	}
 	resp := &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
-	glog.Infof("CreateVolume succeeded: %+v", resp)
+	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
 }
 
@@ -312,7 +311,7 @@ func (s *controllerServer) getCloudInstancesReservedIPRanges(ctx context.Context
 
 // DeleteVolume deletes a GCFS instance
 func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	glog.Infof("DeleteVolume called with request %+v", req)
+	klog.Infof("DeleteVolume called with request %+v", req)
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
@@ -333,7 +332,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
 		// An invalid ID should be treated as doesn't exist
-		glog.V(5).Infof("failed to get instance for volume %v deletion: %v", volumeID, err)
+		klog.V(5).Infof("failed to get instance for volume %v deletion: %v", volumeID, err)
 		return &csi.DeleteVolumeResponse{}, nil
 	}
 
@@ -357,11 +356,11 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 
 	err = s.config.fileService.DeleteInstance(ctx, filer)
 	if err != nil {
-		glog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err)
+		klog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	glog.Infof("DeleteVolume succeeded for volume %v", volumeID)
+	klog.Infof("DeleteVolume succeeded for volume %v", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
 }
 
@@ -391,7 +390,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	if newFiler == nil {
-		return nil, status.Error(codes.NotFound, fmt.Sprintf("volume %v doesn't exist", volumeID))
+		return nil, status.Errorf(codes.NotFound, "volume %v doesn't exist", volumeID)
 	}
 
 	// Validate that the volume matches the capabilities
@@ -454,7 +453,7 @@ func getRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
 	location, err := s.pickZone(topo)
 	if err != nil {
-		return nil, fmt.Errorf("invalid topology error %v", err.Error())
+		return nil, fmt.Errorf("invalid topology error %w", err)
 	}
 
 	// Set default parameters
@@ -472,7 +471,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if tier == enterpriseTier {
 				region, err := util.GetRegionFromZone(location)
 				if err != nil {
-					return nil, fmt.Errorf("failed to get region from zone %s: %v", location, err)
+					return nil, fmt.Errorf("failed to get region from zone %s: %w", location, err)
 				}
 				location = region
 			}
@@ -541,7 +540,7 @@ func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapsho
 
 // ControllerExpandVolume expands a GCFS instance share.
 func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	glog.V(4).Infof("ControllerExpandVolume called with request %+v", req)
+	klog.V(4).Infof("ControllerExpandVolume called with request %+v", req)
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
@@ -587,7 +586,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	}
 
 	if util.BytesToGb(reqBytes) <= util.BytesToGb(filer.Volume.SizeBytes) {
-		glog.Infof("Controller expand volume succeeded for volume %v, existing size(bytes): %v", volumeID, filer.Volume.SizeBytes)
+		klog.Infof("Controller expand volume succeeded for volume %v, existing size(bytes): %v", volumeID, filer.Volume.SizeBytes)
 		return &csi.ControllerExpandVolumeResponse{
 			CapacityBytes:         filer.Volume.SizeBytes,
 			NodeExpansionRequired: false,
@@ -600,7 +599,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	}
 
 	if hasPendingOps {
-		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Update operation ongoing for volume %v", volumeID))
+		return nil, status.Errorf(codes.DeadlineExceeded, "Update operation ongoing for volume %v", volumeID)
 	}
 
 	filer.Volume.SizeBytes = reqBytes
@@ -609,7 +608,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	glog.Infof("Controller expand volume succeeded for volume %v, new size(bytes): %v", volumeID, newfiler.Volume.SizeBytes)
+	klog.Infof("Controller expand volume succeeded for volume %v, new size(bytes): %v", volumeID, newfiler.Volume.SizeBytes)
 	return &csi.ControllerExpandVolumeResponse{
 		CapacityBytes:         newfiler.Volume.SizeBytes,
 		NodeExpansionRequired: false,
@@ -628,12 +627,12 @@ func (s *controllerServer) pickZone(top *csi.TopologyRequirement) (string, error
 func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
 	reqZones, err := getZonesFromTopology(top.GetRequisite())
 	if err != nil {
-		return "", fmt.Errorf("could not get zones from requisite topology: %v", err)
+		return "", fmt.Errorf("could not get zones from requisite topology: %w", err)
 	}
 
 	prefZones, err := getZonesFromTopology(top.GetPreferred())
 	if err != nil {
-		return "", fmt.Errorf("could not get zones from preferred topology: %v", err)
+		return "", fmt.Errorf("could not get zones from preferred topology: %w", err)
 	}
 
 	if len(prefZones) == 0 && len(reqZones) == 0 {
@@ -649,12 +648,12 @@ func pickZoneFromTopology(top *csi.TopologyRequirement) (string, error) {
 func listZonesFromTopology(top *csi.TopologyRequirement) ([]string, error) {
 	reqZones, err := getZonesFromTopology(top.GetRequisite())
 	if err != nil {
-		return reqZones, fmt.Errorf("could not get zones from requisite topology: %v", err)
+		return reqZones, fmt.Errorf("could not get zones from requisite topology: %w", err)
 	}
 
 	prefZones, err := getZonesFromTopology(top.GetPreferred())
 	if err != nil {
-		return prefZones, fmt.Errorf("could not get zones from preferred topology: %v", err)
+		return prefZones, fmt.Errorf("could not get zones from preferred topology: %w", err)
 	}
 
 	return append(reqZones, prefZones...), nil
@@ -669,7 +668,7 @@ func getZonesFromTopology(topList []*csi.Topology) ([]string, error) {
 
 		zone, err := getZoneFromSegment(top.GetSegments())
 		if err != nil {
-			return nil, fmt.Errorf("could not get zone from topology: %v", err)
+			return nil, fmt.Errorf("could not get zone from topology: %w", err)
 		}
 		zones = append(zones, zone)
 	}
@@ -735,7 +734,7 @@ func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (
 }
 
 func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	glog.V(4).Infof("CreateSnapshot called with request %+v", req)
+	klog.V(4).Infof("CreateSnapshot called with request %+v", req)
 	if len(req.Name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot name must be provided")
 	}
@@ -754,7 +753,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	filer, _, err := getFileInstanceFromID(volumeID)
 	if err != nil {
-		glog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err)
+		klog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	filer.Project = s.config.cloud.Project
@@ -778,23 +777,23 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	} else {
 		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceVolumeHandle)
 		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle))
+			return nil, status.Errorf(codes.Internal, "Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle)
 		}
 		if backupSourceCSIHandle != volumeID {
-			return nil, status.Error(codes.AlreadyExists, fmt.Sprintf("Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID))
+			return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID)
 		}
 		// Check if backup is in the process of getting created.
 		if backupInfo.Backup.State == "CREATING" || backupInfo.Backup.State == "FINALIZING" {
-			return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+			return nil, status.Errorf(codes.DeadlineExceeded, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
 		}
 		if backupInfo.Backup.State != "READY" {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State))
+			return nil, status.Errorf(codes.Internal, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
 		}
 		tp, err := util.ParseTimestamp(backupInfo.Backup.CreateTime)
 		if err != nil {
-			return nil, status.Error(codes.Internal, fmt.Sprintf("failed to parse create timestamp for backup %v", backupInfo.Backup.Name))
+			return nil, status.Errorf(codes.Internal, "failed to parse create timestamp for backup %v", backupInfo.Backup.Name)
 		}
-		glog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backupInfo.Backup.Name)
+		klog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backupInfo.Backup.Name)
 		return &csi.CreateSnapshotResponse{
 			Snapshot: &csi.Snapshot{
 				SizeBytes:      util.GbToBytes(backupInfo.Backup.CapacityGb),
@@ -808,7 +807,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
-		glog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err)
+		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
 		if err != nil {
 			if errCode := file.IsUserError(err); errCode != nil {
 				return nil, status.Error(*errCode, err.Error())
@@ -829,7 +828,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 			ReadyToUse:     true,
 		},
 	}
-	glog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
+	klog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
 	return resp, nil
 }
 
@@ -842,30 +841,30 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 	isBackup, err := util.IsBackupHandle(id)
 	if err != nil {
 		// Sanity tests expects delete to pass for invalid handles.
-		glog.Warningf("Could not parse snapshot handle %v", id)
+		klog.Warningf("Could not parse snapshot handle %v", id)
 		return &csi.DeleteSnapshotResponse{}, nil
 	}
 
 	if !isBackup {
-		glog.Errorf("Deletion of volume snapshot type %q not supported", id)
+		klog.Errorf("Deletion of volume snapshot type %q not supported", id)
 		return nil, status.Error(codes.InvalidArgument, "deletion is only supported for volume snapshots of type backup")
 	}
 
 	backupInfo, err := s.config.fileService.GetBackup(ctx, id)
 	if err != nil {
 		if file.IsNotFoundErr(err) {
-			glog.Infof("Volume snapshot with ID %v not found", id)
+			klog.Infof("Volume snapshot with ID %v not found", id)
 			return &csi.DeleteSnapshotResponse{}, nil
 		}
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	if backupInfo.Backup.State == "DELETING" {
-		return nil, status.Error(codes.DeadlineExceeded, fmt.Sprintf("Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State))
+		return nil, status.Errorf(codes.DeadlineExceeded, "Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State)
 	}
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
-		glog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err)
+		klog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err.Error())
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 

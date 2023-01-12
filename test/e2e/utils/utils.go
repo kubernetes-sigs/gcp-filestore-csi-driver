@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/oauth2/google"
 	cloudresourcemanager "google.golang.org/api/cloudresourcemanager/v1"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	boskosclient "sigs.k8s.io/boskos/client"
 	remote "sigs.k8s.io/gcp-filestore-csi-driver/test/remote"
 )

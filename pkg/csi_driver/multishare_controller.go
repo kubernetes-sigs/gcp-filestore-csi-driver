@@ -199,7 +199,7 @@ func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.Delete
 	if workflow != nil {
 		err = m.waitOnWorkflow(ctx, workflow)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
+			return nil, status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err.Error())
 		}
 	}
 
@@ -233,7 +233,7 @@ func (m *MultishareController) startAndWaitForInstanceDeleteOrShrink(ctx context
 	}
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		return status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
+		return status.Errorf(codes.Internal, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err.Error())
 	}
 	return nil
 }
@@ -253,7 +253,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	if !util.IsAligned(reqBytes, util.Gb) {
-		return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("requested size(bytes) %d is not a multiple of 1GiB", reqBytes))
+		return nil, status.Errorf(codes.InvalidArgument, "requested size(bytes) %d is not a multiple of 1GiB", reqBytes)
 	}
 	_, project, location, instanceName, shareName, err := parseMultishareVolId(req.VolumeId)
 	if err != nil {
@@ -296,7 +296,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "wait on %s operation %q failed with error: %v", workflow.opType.String(), workflow.opName, err)
+		return nil, status.Errorf(codes.Internal, "wait on %s operation %q failed with error: %v", workflow.opType.String(), workflow.opName, err.Error())
 	}
 	klog.Infof("Wait for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
 
@@ -314,7 +314,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "wait on share expansion op %q failed with error: %v", workflow.opName, err)
+		return nil, status.Errorf(codes.Internal, "wait on share expansion op %q failed with error: %v", workflow.opName, err.Error())
 	}
 
 	return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
@@ -376,7 +376,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		case paramConnectMode:
 			connectMode = v
 			if connectMode != directPeering && connectMode != privateServiceAccess {
-				return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess))
+				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
 		case paramInstanceEncryptionKmsKey:
 			kmsKeyName = v
@@ -390,12 +390,12 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
-			return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("invalid parameter %q", k))
+			return nil, status.Errorf(codes.InvalidArgument, "invalid parameter %q", k)
 		}
 	}
 
 	if tier != enterpriseTier {
-		return nil, status.Errorf(codes.InvalidArgument, fmt.Sprintf("tier %q not supported for multishare volumes", tier))
+		return nil, status.Errorf(codes.InvalidArgument, "tier %q not supported for multishare volumes", tier)
 	}
 
 	location := m.cloud.Zone

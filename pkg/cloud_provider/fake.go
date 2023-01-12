@@ -25,7 +25,7 @@ import (
 func NewFakeCloud() (*Cloud, error) {
 	file, err := file.NewFakeService()
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize Filestore service: %v", err)
+		return nil, fmt.Errorf("failed to initialize Filestore service: %w", err)
 	}
 
 	return &Cloud{

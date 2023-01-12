@@ -19,7 +19,7 @@ package main
 import (
 	"flag"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	webhook "sigs.k8s.io/gcp-filestore-csi-driver/pkg/webhook"
 )
 
