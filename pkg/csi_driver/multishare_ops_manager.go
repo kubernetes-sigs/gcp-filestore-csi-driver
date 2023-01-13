@@ -356,13 +356,13 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 	// An instance is considered as non-ready if any of the following conditions are met:
 	// 1. The instance state is "CREATING" or "REPAIRING".
 	// 2. The instance state is 'READY', but running ops are found on it.
-	nonReadyInstanceCount := 0
+	var nonReadyEligibleInstances []*file.MultishareInstance
 
 	for _, instance := range instances {
 		klog.Infof("Found multishare instance %s/%s/%s with state %s.", instance.Project, instance.Location, instance.Name, instance.State)
 		if instance.State == "CREATING" || instance.State == "REPAIRING" {
 			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
-			nonReadyInstanceCount += 1
+			nonReadyEligibleInstances = append(nonReadyEligibleInstances, instance)
 			continue
 		}
 		if instance.State != "READY" {
@@ -393,11 +393,26 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 		}
 
 		klog.Infof("Instance %s/%s/%s with state %s is not ready with ongoing operation %s type %s", instance.Project, instance.Location, instance.Name, instance.State, op.Id, op.Type.String())
-		nonReadyInstanceCount += 1
+		nonReadyEligibleInstances = append(nonReadyEligibleInstances, instance)
+
 		// TODO: If we see > 1 instances with 0 shares (these could be possibly leaked instances where the driver hit timeout during creation op was in progress), should we trigger delete op for such instances? Possibly yes. Given that instance create/delete and share create/delete is serialized, maybe yes.
 	}
 
-	return readyEligibleInstances, nonReadyInstanceCount, nil
+	if len(readyEligibleInstances) == 0 && len(nonReadyEligibleInstances) > 0 {
+		errorString := "All eligible instances are busy.\n"
+
+		for _, instance := range nonReadyEligibleInstances {
+			op, _ := containsOpWithInstanceTargetPrefix(instance, ops) // Error for this call is already checked above
+			errorString = fmt.Sprintf("%s Instance %s busy with operation type %s\n", errorString, instance.Name, op.Type)
+
+		}
+
+		errorString = errorString + "Waiting for instance..."
+		return nil, len(nonReadyEligibleInstances), status.Errorf(codes.Aborted, errorString)
+
+	}
+
+	return readyEligibleInstances, len(nonReadyEligibleInstances), nil
 }
 
 func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *file.Share, capacityNeeded int64) (bool, int64, error) {
