@@ -99,7 +99,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	}
 
 	// No share or running share create op found. Proceed to eligible instance check.
-	eligible, numIneligible, err := m.runEligibleInstanceCheck(ctx, req, ops, instance, regions)
+	eligible, err := m.runEligibleInstanceCheck(ctx, req, ops, instance, regions)
 	if err != nil {
 		return nil, nil, status.Error(codes.Aborted, err.Error())
 	}
@@ -126,11 +126,6 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 		w, err := m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareCreate}, ops)
 		return w, nil, err
-	}
-
-	if numIneligible > 0 {
-		// some instances not ready yet. wait for more instances to be ready.
-		return nil, nil, status.Errorf(codes.Aborted, " %d non-ready instances detected. No ready instance found. \n --- Most likely a long process is still running to completion. Retrying.", numIneligible)
 	}
 
 	param := req.GetParameters()
@@ -344,11 +339,11 @@ func (m *MultishareOpsManager) verifyNoRunningInstanceOrShareOpsForInstance(inst
 }
 
 // runEligibleInstanceCheck returns a list of ready and non-ready instances.
-func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req *csi.CreateVolumeRequest, ops []*OpInfo, target *file.MultishareInstance, regions []string) ([]*file.MultishareInstance, int, error) {
+func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req *csi.CreateVolumeRequest, ops []*OpInfo, target *file.MultishareInstance, regions []string) ([]*file.MultishareInstance, error) {
 	klog.Infof("ListMultishareInstances call initiated for request %+v.", req)
 	instances, err := m.listMatchedInstances(ctx, req, target, regions)
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	klog.Infof("ListMultishareInstances call returned successfully with %d instances for request %+v.", len(instances), req)
 	// An instance is considered as eligible if and only if the state is 'READY', and there's no ops running against it.
@@ -374,14 +369,14 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 		op, err := containsOpWithInstanceTargetPrefix(instance, ops)
 		if err != nil {
 			klog.Errorf("failed to check eligibility of instance %s", instance.Name)
-			return nil, 0, err
+			return nil, err
 		}
 
 		if op == nil {
 			shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
 			if err != nil {
 				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err.Error())
-				return nil, 0, err
+				return nil, err
 			}
 			if len(shares) >= util.MaxSharesPerInstance {
 				continue
@@ -399,20 +394,26 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 	}
 
 	if len(readyEligibleInstances) == 0 && len(nonReadyEligibleInstances) > 0 {
-		errorString := "All eligible instances are busy.\n"
+		errorString := "All eligible filestore instances are busy.\n"
 
 		for _, instance := range nonReadyEligibleInstances {
-			op, _ := containsOpWithInstanceTargetPrefix(instance, ops) // Error for this call is already checked above
-			errorString = fmt.Sprintf("%s Instance %s busy with operation type %s\n", errorString, instance.Name, op.Type)
-
+			op, err := containsOpWithInstanceTargetPrefix(instance, ops) // Error for this call is already checked above
+			if err != nil {
+				klog.Errorf("failed to check eligibility of instance %s", instance.Name)
+				return nil, err
+			}
+			if op != nil {
+				errorString = fmt.Sprintf("%s Instance %s busy with operation type %s\n", errorString, instance.Name, op.Type)
+			} else {
+				errorString = fmt.Sprintf("%s Instance %s is in state %s\n", errorString, instance.Name, instance.State)
+			}
 		}
 
-		errorString = errorString + "Waiting for instance..."
-		return nil, len(nonReadyEligibleInstances), status.Errorf(codes.Aborted, errorString)
+		return nil, status.Errorf(codes.Aborted, errorString)
 
 	}
 
-	return readyEligibleInstances, len(nonReadyEligibleInstances), nil
+	return readyEligibleInstances, nil
 }
 
 func (m *MultishareOpsManager) instanceNeedsExpand(ctx context.Context, share *file.Share, capacityNeeded int64) (bool, int64, error) {
