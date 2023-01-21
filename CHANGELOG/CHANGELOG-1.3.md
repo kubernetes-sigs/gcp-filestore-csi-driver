@@ -5,6 +5,8 @@
 
 - Update golang version ([#400](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/400), [@saikat-royc](https://github.com/saikat-royc))
 
+- Some more release notes
+
 
 # v1.3.9 - Changelog since v1.3.5
 
