@@ -55,12 +55,62 @@ preprov-pvc   Bound    my-pre-pv   1Ti        RWX            csi-filestore   76s
 ```bash
 $ kubectl get pods
 NAME           READY   STATUS    RESTARTS   AGE
-web-server-1   1/1     Running   0          119s
+web-server     1/1     Running   0          119s
 ```
 
 4. Verify contents of the mounted volume
 
 ```bash
-kubectl exec web-server-1 -- ls /usr/share/nginx/html
+kubectl exec web-server -- ls /usr/share/nginx/html
 lost+found
 ```
+
+5. The PV was created with a "Retain" persistentVolumeReclaimPolicy. This means the deletion of PVC will not trigger the deletion of PV and the underlying storage.
+
+```bash
+$ kubectl delete pod web-server
+pod "web-server" deleted
+
+$ kubectl delete pvc preprov-pvc
+persistentvolumeclaim "preprov-pvc" deleted
+```
+
+6. Check the state of the PV after the Pod and PVC are successfully deleted. It should report a `Released` state
+
+```bash
+$ kubectl get pv
+NAME        CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS     CLAIM                 STORAGECLASS   REASON   AGE
+my-pre-pv   1Ti        RWX            Retain           Released   default/preprov-pvc                           2m28s
+```
+
+7. Verify the underlying filestore instance exists
+
+```
+$ gcloud filestore instances list  --project=<your-gcp-project> --zone=<filestore-location>
+```
+
+For regional Filestore instances (e.g enterprise tier), replace "--zone" with "--region"
+
+8. To reuse the PV again edit the PV and delete the claimRef.
+
+```bash
+$ kubectl patch pv my-pre-pv --type json -p '[{"op": "remove", "path": "/spec/claimRef"}]'
+persistentvolume/my-pre-pv patched
+```
+
+9. PV will now report an `Available` status and ready to be bound again to a PVC as indicated in steps above.
+
+```bash
+$ kubectl get pv
+NAME        CAPACITY   ACCESS MODES   RECLAIM POLICY   STATUS      CLAIM   STORAGECLASS   REASON   AGE
+my-pre-pv   1Ti        RWX            Retain           Available                                   19m
+```
+
+10. If the PV is no longer needed it can be deleted too. The underlying filestore instance will not be deleted.
+
+```
+$ kubectl delete pv my-pre-pv
+persistentvolume "my-pre-pv" deleted
+```
+
+11. Verify Filestore instance still exists as shown in step 7 above
