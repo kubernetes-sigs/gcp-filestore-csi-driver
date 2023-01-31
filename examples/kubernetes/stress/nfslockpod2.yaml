@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Pod 
+metadata:
+  name: stress-pod-2
+spec:
+  nodeName: gke-nfs-rpc-poc-default-pool-a74d3aa6-9hds
+  containers:
+   - name: stress
+     imagePullPolicy: Always
+     image: gcr.io/saikatroyc-test/stress:v2
+     args:
+       - "--mem-alloc-size=1Mi"
+       - "--mem-alloc-sleep=20s"
+       - "--mem-total=20Mi"
+       - "--check-lock=false"
+     resources:
+      requests:
+        memory: "9Mi"
+     volumeMounts:
+       - mountPath: /mnt/mydir
+         name: mypvc
+  volumes:
+   - name: mypvc
+     persistentVolumeClaim:
+       claimName: preprov-pvc
