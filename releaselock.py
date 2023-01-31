@@ -1,8 +1,8 @@
 from pyNfsClient import (Portmap, RPC, Mount)
 import socket
 
-host = "10.247.138.194" # Filestore instance Ip
-clientNodeIp = "10.128.0.27" # GKE Node Ip
+host = "10.129.116.194" # Filestore instance Ip
+clientNodeIp = "10.128.0.152" # GKE Node Ip for gke-nfs-rpc-poc-default-pool-a74d3aa6-1rgg
 timeout = 60 # seconds
 
 
