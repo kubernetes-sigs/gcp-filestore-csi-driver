@@ -659,6 +659,38 @@ func IsUserError(err error) *codes.Code {
 	return nil
 }
 
+// IsContextError returns a pointer to the grpc error code DeadlineExceeded
+// if the passed in error contains the "context deadline exceeded" string and returns
+// the grpc error code Canceled if the error contains the "context canceled" string.
+func IsContextError(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
+
+	errStr := err.Error()
+	if strings.Contains(errStr, context.DeadlineExceeded.Error()) {
+		return util.ErrCodePtr(codes.DeadlineExceeded)
+	}
+	if strings.Contains(errStr, context.Canceled.Error()) {
+		return util.ErrCodePtr(codes.Canceled)
+	}
+	return nil
+}
+
+// PollOpErrorCode returns a pointer to the grpc error code that maps to the http
+// error code for passed in googleapi error. Returns grpc DeadlineExceeded if the
+// given error contains the "context deadline exceeded" string. Returns the grpc Internal error
+// code if the passed in error is neither a user error or a deadline exceeded error.
+func PollOpErrorCode(err error) *codes.Code {
+	if errCode := IsUserError(err); errCode != nil {
+		return errCode
+	}
+	if errCode := IsContextError(err); errCode != nil {
+		return errCode
+	}
+	return util.ErrCodePtr(codes.Internal)
+}
+
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
 func CreateBackpURI(obj *ServiceInstance, backupName, backupLocation string) (string, string, error) {
 	region := backupLocation

@@ -1,9 +1,14 @@
 package file
 
 import (
+	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
+	"google.golang.org/api/googleapi"
+	"google.golang.org/grpc/codes"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -477,5 +482,157 @@ func TestCreateFilestoreEndpointUrlBasePath(t *testing.T) {
 				t.Errorf("got %s, want %s", url, tc.opurl)
 			}
 		})
+	}
+}
+
+func TestIsContextError(t *testing.T) {
+	cases := []struct {
+		name            string
+		err             error
+		expectedErrCode *codes.Code
+	}{
+		{
+			name:            "deadline exceeded error",
+			err:             context.DeadlineExceeded,
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name:            "contains 'context deadline exceeded'",
+			err:             fmt.Errorf("got error: %w", context.DeadlineExceeded),
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name:            "context canceled error",
+			err:             context.Canceled,
+			expectedErrCode: util.ErrCodePtr(codes.Canceled),
+		},
+		{
+			name:            "contains 'context canceled'",
+			err:             fmt.Errorf("got error: %w", context.Canceled),
+			expectedErrCode: util.ErrCodePtr(codes.Canceled),
+		},
+		{
+			name:            "does not contain 'context canceled' or 'context deadline exceeded'",
+			err:             fmt.Errorf("unknown error"),
+			expectedErrCode: nil,
+		},
+		{
+			name:            "nil error",
+			err:             nil,
+			expectedErrCode: nil,
+		},
+	}
+
+	for _, test := range cases {
+		errCode := IsContextError(test.err)
+		if (test.expectedErrCode == nil) != (errCode == nil) {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+	}
+}
+
+func TestPollOpErrorCode(t *testing.T) {
+	cases := []struct {
+		name            string
+		err             error
+		expectedErrCode *codes.Code
+	}{
+		{
+			name:            "deadline exceeded error",
+			err:             context.DeadlineExceeded,
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name:            "contains 'context deadline exceeded'",
+			err:             fmt.Errorf("got error: %w", context.DeadlineExceeded),
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name:            "context canceled error",
+			err:             context.Canceled,
+			expectedErrCode: util.ErrCodePtr(codes.Canceled),
+		},
+		{
+			name:            "contains 'context canceled'",
+			err:             fmt.Errorf("got error: %w", context.Canceled),
+			expectedErrCode: util.ErrCodePtr(codes.Canceled),
+		},
+		{
+			name:            "does not contain 'context canceled' or 'context deadline exceeded'",
+			err:             fmt.Errorf("unknown error"),
+			expectedErrCode: util.ErrCodePtr(codes.Internal),
+		},
+		{
+			name:            "404 googleapi error",
+			err:             &googleapi.Error{Code: http.StatusNotFound},
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "wrapped 404 googleapi error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusNotFound}),
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+	}
+
+	for _, test := range cases {
+		errCode := PollOpErrorCode(test.err)
+		if (test.expectedErrCode == nil) != (errCode == nil) {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+	}
+}
+
+func TestIsUserError(t *testing.T) {
+	cases := []struct {
+		name            string
+		err             error
+		expectedErrCode *codes.Code
+	}{
+		{
+			name:            "nil error",
+			err:             nil,
+			expectedErrCode: nil,
+		},
+		{
+			name:            "404 http error",
+			err:             &googleapi.Error{Code: http.StatusNotFound},
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "wrapped 404 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusNotFound}),
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "wrapped 429 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusTooManyRequests}),
+			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
+		},
+		{
+			name:            "wrapped 400 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusBadRequest}),
+			expectedErrCode: util.ErrCodePtr(codes.InvalidArgument),
+		},
+		{
+			name:            "wrapped 403 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusForbidden}),
+			expectedErrCode: util.ErrCodePtr(codes.PermissionDenied),
+		},
+	}
+
+	for _, test := range cases {
+		errCode := IsUserError(test.err)
+		if (test.expectedErrCode == nil) != (errCode == nil) {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
 	}
 }
