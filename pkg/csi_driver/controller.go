@@ -267,8 +267,8 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 		if createErr != nil {
 			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
-			if errCode := file.IsUserError(err); errCode != nil {
-				return nil, status.Error(*errCode, err.Error())
+			if errCode := file.IsUserError(createErr); errCode != nil {
+				return nil, status.Error(*errCode, createErr.Error())
 			}
 			return nil, status.Error(codes.Internal, createErr.Error())
 		}
