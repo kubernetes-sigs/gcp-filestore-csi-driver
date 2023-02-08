@@ -1606,6 +1606,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 		expectedReadyInstance []*file.MultishareInstance
 		req                   *csi.CreateVolumeRequest
 		target                *file.MultishareInstance
+		expectError           bool
 	}{
 		{
 			name: "no instances",
@@ -1675,6 +1676,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					State: "READY",
 				},
 			},
+			expectError: false,
 		},
 		{
 			name: "non-ready instances (instance update)",
@@ -1714,6 +1716,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.InstanceUpdate,
 				},
 			},
+			expectError: true,
 		},
 		{
 			name: "non-ready instances (share create)",
@@ -1753,6 +1756,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.ShareCreate,
 				},
 			},
+			expectError: true,
 		},
 		{
 			name: "non-ready instances (share update)",
@@ -1792,6 +1796,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.ShareUpdate,
 				},
 			},
+			expectError: true,
 		},
 		{
 			name: "non-ready instances (share delete)",
@@ -1831,6 +1836,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.ShareDelete,
 				},
 			},
+			expectError: true,
 		},
 		{
 			name: "non-ready instances 0, instance delete not counted as ready",
@@ -1932,6 +1938,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.ShareDelete,
 				},
 			},
+			expectError: false,
 		},
 		{
 			name: "no ready instance, no non-ready instance, instance with 10 shares not eligible",
@@ -2095,6 +2102,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					},
 				},
 			},
+			expectError: false,
 		},
 		{
 			name: "ready instance, non-ready instances, other instance state not count",
@@ -2202,6 +2210,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					Type:   util.ShareDelete,
 				},
 			},
+			expectError: false,
 		},
 		{
 			name: "creating instance count as non-ready",
@@ -2245,6 +2254,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 				},
 			},
 			expectedNonReadyCount: 1,
+			expectError:           true,
 			ops: []*OpInfo{
 				{
 					Id:     "op1",
@@ -2263,13 +2273,17 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
 			manager := NewMultishareOpsManager(cloudProvider)
-			ready, nonReady, err := manager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target, testRegions)
-			if err != nil {
+			ready, err := manager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target, testRegions)
+			if err != nil && !tc.expectError {
 				t.Errorf("unexpected error")
 			}
-			if nonReady != tc.expectedNonReadyCount {
-				t.Errorf("got %d, want %d", nonReady, tc.expectedNonReadyCount)
+
+			if tc.expectError && err == nil {
+				t.Errorf("expected error")
 			}
+			//if nonReady != tc.expectedNonReadyCount {
+			//t.Errorf("got %d, want %d", nonReady, tc.expectedNonReadyCount)
+			//}
 			for _, r := range ready {
 				if !found(tc.expectedReadyInstance, r) {
 					t.Errorf("expected instance not ready")
