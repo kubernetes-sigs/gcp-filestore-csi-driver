@@ -173,6 +173,9 @@ github.com/onsi/gomega/matchers/support/goraph/edge
 github.com/onsi/gomega/matchers/support/goraph/node
 github.com/onsi/gomega/matchers/support/goraph/util
 github.com/onsi/gomega/types
+# github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
+## explicit
+github.com/prashanthpai/sunrpc
 # github.com/prometheus/client_golang v1.12.2
 ## explicit; go 1.13
 github.com/prometheus/client_golang/prometheus
@@ -191,6 +194,9 @@ github.com/prometheus/common/model
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
+# github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93
+## explicit
+github.com/rasky/go-xdr/xdr2
 # github.com/sirupsen/logrus v1.8.1
 ## explicit; go 1.13
 github.com/sirupsen/logrus

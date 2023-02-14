@@ -32,6 +32,8 @@ require (
 	sigs.k8s.io/controller-runtime v0.12.1
 )
 
+require github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
+
 require (
 	cloud.google.com/go/compute v1.15.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -64,6 +66,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
+	github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
 	github.com/prometheus/client_golang v1.12.2 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.34.0 // indirect
