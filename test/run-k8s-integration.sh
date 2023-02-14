@@ -31,7 +31,7 @@ readonly parallel_run=${PARALLEL:-}
 
 make -C "${PKGDIR}" test-k8s-integration
 
-# Choose an older Kubetest2 commit version instead of using @latest 
+# Choose an older Kubetest2 commit version instead of using @latest
 # because of a regression in https://github.com/kubernetes-sigs/kubetest2/pull/183.
 # Contact engprod oncall and ask about what is the version they are using for internal jobs.
 go install sigs.k8s.io/kubetest2@0e09086b60c122e1084edd2368d3d27fe36f384f;
