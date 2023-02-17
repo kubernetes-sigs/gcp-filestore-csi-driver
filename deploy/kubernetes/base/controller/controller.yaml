@@ -23,7 +23,7 @@ spec:
       priorityClassName: csi-gcp-fs-controller
       containers:
         - name: csi-external-provisioner
-          image: k8s.gcr.io/sig-storage/csi-provisioner
+          image: registry.k8s.io/sig-storage/csi-provisioner
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -55,7 +55,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-external-resizer
-          image: k8s.gcr.io/sig-storage/csi-resizer
+          image: registry.k8s.io/sig-storage/csi-resizer
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -84,7 +84,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: csi-external-snapshotter
-          image: k8s.gcr.io/sig-storage/csi-snapshotter
+          image: registry.k8s.io/sig-storage/csi-snapshotter
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -104,7 +104,7 @@ spec:
             - name: socket-dir
               mountPath: /csi
         - name: gcp-filestore-driver
-          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
+          image: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
           args:
             - "--v=4"
             - "--endpoint=unix:/csi/csi.sock"
