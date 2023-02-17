@@ -38,7 +38,7 @@ import (
 )
 
 const (
-	testNamespace = "gke-managed-filestorecsi"
+	testNamespace = "gcp-filestore-csi-driver"
 )
 
 var (
