@@ -572,7 +572,8 @@ func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi
 			VolumeId:      volId,
 			CapacityBytes: s.CapacityBytes,
 			VolumeContext: map[string]string{
-				attrIP: s.Parent.Network.Ip,
+				attrIP:                 s.Parent.Network.Ip,
+				attrSupportLockRelease: "true",
 			},
 		},
 	}

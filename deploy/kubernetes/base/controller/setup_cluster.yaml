@@ -149,32 +149,32 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 ---
 
+kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
 metadata:
-  name: gcp-filestore-csi-controller-deploy-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gcp-filestore-csi-controller-deploy
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-controller-sa
-    namespace: gcp-filestore-csi-driver
+  name: filestorecsi-node-driver-role
+  namespace: gcp-filestore-csi-driver
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "delete", "update", "create"]
+
 ---
 
+kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
 metadata:
-  name: gcp-filestore-csi-node-deploy-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gcp-filestore-csi-node-deploy
+  name: filestorecsi-node-driver-role
+  namespace: gcp-filestore-csi-driver
 subjects:
   - kind: ServiceAccount
     name: gcp-filestore-csi-node-sa
     namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: Role
+  name: filestorecsi-node-driver-role
+  apiGroup: rbac.authorization.k8s.io
+
 ---
 
 kind: Role

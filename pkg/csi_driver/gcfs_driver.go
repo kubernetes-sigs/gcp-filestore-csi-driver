@@ -22,6 +22,8 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -31,19 +33,20 @@ import (
 )
 
 type GCFSDriverConfig struct {
-	Name             string          // Driver name
-	Version          string          // Driver version
-	NodeID           string          // Node name
-	RunController    bool            // Run CSI controller service
-	RunNode          bool            // Run CSI node service
-	Mounter          mount.Interface // Mount library
-	Cloud            *cloud.Cloud    // Cloud provider
-	MetadataService  metadataservice.Service
-	EnableMultishare bool
-	Metrics          *metrics.MetricsManager
-	EcfsDescription  string
-	IsRegional       bool
-	ClusterName      string
+	Name               string          // Driver name
+	Version            string          // Driver version
+	NodeName           string          // Node name
+	RunController      bool            // Run CSI controller service
+	RunNode            bool            // Run CSI node service
+	Mounter            mount.Interface // Mount library
+	Cloud              *cloud.Cloud    // Cloud provider
+	MetadataService    metadataservice.Service
+	EnableMultishare   bool
+	Metrics            *metrics.MetricsManager
+	EcfsDescription    string
+	IsRegional         bool
+	ClusterName        string
+	SupportLockRelease bool
 }
 
 type GCFSDriver struct {
@@ -85,6 +88,19 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 	}
 	driver.addVolumeCapabilityAccessModes(vcam)
 
+	// Create the client which can talk to kube api server.
+	var client kubernetes.Interface
+	if config.SupportLockRelease {
+		config, err := rest.InClusterConfig()
+		if err != nil {
+			return nil, err
+		}
+		client, err = kubernetes.NewForConfig(config)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Setup RPC servers
 	driver.ids = newIdentityServer(driver)
 	if config.RunNode {
@@ -92,7 +108,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 			csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		}
-		driver.ns = newNodeServer(driver, config.Mounter, config.MetadataService)
+		driver.ns = newNodeServer(driver, config.Mounter, config.MetadataService, client)
 		driver.addNodeServiceCapabilities(nscap)
 	}
 	if config.RunController {

@@ -21,12 +21,14 @@ import (
 	"net"
 	"os"
 	"runtime"
+	"strings"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -49,14 +51,16 @@ type nodeServer struct {
 	mounter     mount.Interface
 	metaService metadata.Service
 	volumeLocks *util.VolumeLocks
+	kubeClient  kubernetes.Interface
 }
 
-func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service) csi.NodeServer {
+func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service, client kubernetes.Interface) csi.NodeServer {
 	return &nodeServer{
 		driver:      driver,
 		mounter:     mounter,
 		metaService: metaService,
 		volumeLocks: util.NewVolumeLocks(),
+		kubeClient:  client,
 	}
 }
 
@@ -167,7 +171,7 @@ func (s *nodeServer) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpub
 
 func (s *nodeServer) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
 	return &csi.NodeGetInfoResponse{
-		NodeId: s.driver.config.NodeID,
+		NodeId: s.driver.config.NodeName,
 		AccessibleTopology: &csi.Topology{
 			Segments: map[string]string{TopologyKeyZone: s.metaService.GetZone()},
 		},
@@ -277,6 +281,9 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if mounted {
 		// Already mounted
 		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
+		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
+			return nil, status.Errorf(codes.Internal, "update lock info configmap failed after NodeStageVolume succeeded on volume %v to staging target path %s: %v", volumeID, stagingTargetPath, err.Error())
+		}
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
 
@@ -305,6 +312,9 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	}
 
 	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
+	if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
+		return nil, status.Errorf(codes.Internal, "update lock info configmap failed after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
+	}
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -329,6 +339,9 @@ func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 	}
 
 	klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s", volumeID, stagingTargetPath)
+	if err := s.nodeUnstageVolumeUpdateLockInfo(ctx, req); err != nil {
+		return nil, status.Errorf(codes.Internal, "update lock info configmap failed after NodeUnstageVolume succeeded on volume %v from staging target path %s: %v", volumeID, stagingTargetPath, err.Error())
+	}
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
@@ -449,4 +462,115 @@ func getFSStat(path string) (available, capacity, used, inodesFree, inodes, inod
 	inodesFree = int64(statfs.Ffree)
 	inodesUsed = inodes - inodesFree
 	return
+}
+
+// nodeStageVolumeUpdateLockInfo updates lock info after NodeStageVolume succeed.
+func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi.NodeStageVolumeRequest) error {
+	volumeID := req.GetVolumeId()
+	// No-op if driver does not support lock release.
+	if s.kubeClient == nil {
+		klog.Infof("kubeClient is nil, skip lock release for volume %s", volumeID)
+		return nil
+	}
+	// No-op if filestore instance not support lock release.
+	attr := req.GetVolumeContext()
+	if val, ok := attr[attrSupportLockRelease]; !ok || strings.ToLower(val) != "true" {
+		klog.Infof("[NodeStageVolume] Lock release is not support for volume %s", volumeID)
+		return nil
+	}
+
+	// Update the configMap after successful nfs mount operation.
+	klog.Infof("[NodeStageVolume] Updating lock info for volume %s", volumeID)
+	nodeName := s.driver.config.NodeName
+	configmapName := util.ConfigMapNamePrefix + nodeName
+	klog.Infof("[NodeStageVolume] Getting configmap %s/%s for volume %s", util.ConfigMapNamespace, configmapName, volumeID)
+	cm, err := util.GetConfigMap(ctx, configmapName, util.ConfigMapNamespace, s.kubeClient)
+	if err != nil {
+		return err
+	}
+
+	klog.Infof("[NodeStageVolume] Generating configmap key for volume %s", volumeID)
+	lockInfoKey, err := s.generateConfigMapKeyFromVolumeID(volumeID)
+	if err != nil {
+		return err
+	}
+
+	// Create or update the configmap with lock info.
+	filestoreIP := attr[attrIP]
+	if cm == nil {
+		klog.Infof("[NodeStageVolume] Updating lock info %s:%s by creating configmap %s/%s", lockInfoKey, filestoreIP, util.ConfigMapNamespace, configmapName)
+		cm, err := util.CreateConfigMapWithData(ctx, configmapName, util.ConfigMapNamespace, map[string]string{lockInfoKey: filestoreIP}, s.kubeClient)
+		if err != nil {
+			return err
+		}
+		klog.Infof("[NodeStageVolume] Lock info %s:%s updated in configmap %s/%s", lockInfoKey, filestoreIP, cm.Namespace, cm.Name)
+		return nil
+	}
+
+	klog.Infof("[NodeStageVolume] Updating lock info %s:%s in configmap %s/%s", lockInfoKey, filestoreIP, cm.Namespace, cm.Name)
+	cm, err = util.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP, s.kubeClient)
+	if err != nil {
+		return err
+	}
+
+	klog.Infof("[NodeStageVolume] Lock info %s:%s updated in configmap %s/%s", lockInfoKey, filestoreIP, cm.Namespace, cm.Name)
+	return nil
+}
+
+// nodeUnstageVolumeUpdateLockInfo updates lock info after NodeUnStageVolume succeed.
+func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *csi.NodeUnstageVolumeRequest) error {
+	volumeID := req.GetVolumeId()
+	// No-op if lock release is not supported by the driver.
+	if s.kubeClient == nil {
+		klog.Infof("kubeClient is nil, skip lock release for volume %s", volumeID)
+		return nil
+	}
+
+	klog.Infof("[NodeUnstageVolume] Updating lock info for volume %s", volumeID)
+	nodeName := s.driver.config.NodeName
+	configmapName := util.ConfigMapNamePrefix + nodeName
+	klog.Infof("[NodeUnstageVolume] Getting configmap %s/%s for volume %s", util.ConfigMapNamespace, configmapName, volumeID)
+	cm, err := util.GetConfigMap(ctx, configmapName, util.ConfigMapNamespace, s.kubeClient)
+	if err != nil {
+		return err
+	}
+	if cm == nil {
+		klog.Infof("[NodeUnstageVolume] Configmap %s/%s not found for volume %s", util.ConfigMapNamespace, configmapName, volumeID)
+		return nil
+	}
+
+	klog.Infof("[NodeUnstageVolume] Generating configmap key for volume %s", volumeID)
+	lockInfoKey, err := s.generateConfigMapKeyFromVolumeID(volumeID)
+	if err != nil {
+		return err
+	}
+	klog.Infof("[NodeUnstageVolume] Removing key %s from configmap %s/%s", lockInfoKey, cm.Namespace, cm.Name)
+	if _, err := util.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey, s.kubeClient); err != nil {
+		return err
+	}
+	return nil
+}
+
+// generateConfigMapKeyFromVolumeID generates a configmap key for the given volumeID.
+// The configmap will store key-value pairs in format:
+// {projectID}.{location}.{filestoreName}.{shareName}.{gkeNodeID}.{gkeNodeInternalIP}: <filestoreIP>
+func (s *nodeServer) generateConfigMapKeyFromVolumeID(volumeID string) (string, error) {
+	var lockInfoKey string
+	nodeID := s.metaService.GetInstanceID()
+	nodeInternalIP := s.metaService.GetInternalIP()
+	if isMultishareVolId(volumeID) {
+		_, project, location, filestoreName, shareName, err := parseMultishareVolId(volumeID)
+		if err != nil {
+			return "", err
+		}
+		lockInfoKey = util.GenerateConfigMapKey(project, location, filestoreName, shareName, nodeID, nodeInternalIP)
+	} else {
+		filestoreInstance, _, err := getFileInstanceFromID(volumeID)
+		if err != nil {
+			return "", err
+		}
+		project := s.metaService.GetProject()
+		lockInfoKey = util.GenerateConfigMapKey(project, filestoreInstance.Location, filestoreInstance.Name, filestoreInstance.Volume.Name, nodeID, nodeInternalIP)
+	}
+	return lockInfoKey, nil
 }

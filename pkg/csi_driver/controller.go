@@ -62,8 +62,9 @@ const (
 
 // Volume attributes
 const (
-	attrIP     = "ip"
-	attrVolume = "volume"
+	attrIP                 = "ip"
+	attrVolume             = "volume"
+	attrSupportLockRelease = "supportLockRelease"
 )
 
 // CreateVolume parameters
@@ -616,6 +617,9 @@ func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapsho
 			},
 		}
 		resp.ContentSource = contentSource
+	}
+	if strings.ToLower(instance.Tier) == enterpriseTier {
+		resp.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	return resp
 }

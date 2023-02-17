@@ -65,7 +65,7 @@ func TestSanity(t *testing.T) {
 	driverConfig := &driver.GCFSDriverConfig{
 		Name:            driverName,
 		Version:         driverVersion,
-		NodeID:          nodeID,
+		NodeName:        nodeID,
 		RunController:   true,
 		RunNode:         true,
 		Mounter:         mounter,

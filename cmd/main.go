@@ -44,6 +44,7 @@ var (
 	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	supportLockRelease              = flag.Bool("support-lock-release", false, "if set to true, the node driver will support NFSv3 lock release.")
 
 	// This is set at compile time
 	version = "unknown"
@@ -93,19 +94,20 @@ func main() {
 
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
-		Name:             driverName,
-		Version:          version,
-		NodeID:           *nodeID,
-		RunController:    *runController,
-		RunNode:          *runNode,
-		Mounter:          mounter,
-		Cloud:            provider,
-		MetadataService:  meta,
-		EnableMultishare: *enableMultishare,
-		Metrics:          mm,
-		EcfsDescription:  *ecfsDescription,
-		IsRegional:       *isRegional,
-		ClusterName:      *gkeClusterName,
+		Name:               driverName,
+		Version:            version,
+		NodeName:           *nodeID,
+		RunController:      *runController,
+		RunNode:            *runNode,
+		Mounter:            mounter,
+		Cloud:              provider,
+		MetadataService:    meta,
+		EnableMultishare:   *enableMultishare,
+		Metrics:            mm,
+		EcfsDescription:    *ecfsDescription,
+		IsRegional:         *isRegional,
+		ClusterName:        *gkeClusterName,
+		SupportLockRelease: *supportLockRelease,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

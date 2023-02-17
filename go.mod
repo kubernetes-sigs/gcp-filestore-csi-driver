@@ -35,6 +35,11 @@ require (
 require github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 
 require (
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
+)
+
+require (
 	cloud.google.com/go/compute v1.15.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect

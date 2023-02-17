@@ -537,7 +537,8 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
 					CapacityBytes: 1 * util.Tb,
 					VolumeContext: map[string]string{
-						attrIP: "1.1.1.1",
+						attrIP:                 "1.1.1.1",
+						attrSupportLockRelease: "true",
 					},
 				},
 			},
@@ -838,7 +839,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:                 testIP,
+						attrSupportLockRelease: "true",
 					},
 				},
 			},
@@ -956,7 +958,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:                 testIP,
+						attrSupportLockRelease: "true",
 					},
 				},
 			},
