@@ -59,18 +59,19 @@ type Share struct {
 }
 
 type MultishareInstance struct {
-	Project            string
-	Name               string
-	Location           string
-	Tier               string
-	Network            Network
-	CapacityBytes      int64
-	MaxCapacityBytes   int64
-	CapacityStepSizeGb int64
-	Labels             map[string]string
-	State              string
-	KmsKeyName         string
-	Description        string
+	Project              string
+	Name                 string
+	Location             string
+	Tier                 string
+	Network              Network
+	CapacityBytes        int64
+	MaxCapacityBytes     int64
+	CapacityStepSizeGb   int64
+	Labels               map[string]string
+	State                string
+	KmsKeyName           string
+	Description          string
+	MaxSharesPerInstance int
 }
 
 func (i *MultishareInstance) String() string {

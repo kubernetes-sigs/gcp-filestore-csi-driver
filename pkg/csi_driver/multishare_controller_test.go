@@ -290,7 +290,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			capacity, err := getShareRequestCapacity(tc.cap)
+			capacity, err := getShareRequestCapacity(tc.cap, util.MinShareSizeBytes, util.MaxShareSizeBytes)
 			if tc.expectErr && err == nil {
 				t.Error("expected error, got none")
 			}
@@ -478,7 +478,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := initTestMultishareController(t)
-			filer, err := m.generateNewMultishareInstance(tc.instanceName, tc.req)
+			filer, err := m.generateNewMultishareInstance(tc.instanceName, tc.req, util.MaxSharesPerInstance)
 			if tc.expectErr && err == nil {
 				t.Error("expected error, got none")
 			}

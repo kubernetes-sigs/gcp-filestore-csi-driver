@@ -28,6 +28,9 @@ const (
 	MaxSharesPerInstance                    = 10
 	NewMultishareInstancePrefix             = "fs-"
 	ParamMultishareInstanceScLabelKey       = "storage_gke_io_storage-class-id"
+
+	// configurable max shares consts
+	MinShareSizeConfigurableBytes int64 = 10 * Gb
 )
 
 type OperationType int

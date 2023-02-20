@@ -44,6 +44,8 @@ type GCFSDriverConfig struct {
 	EcfsDescription  string
 	IsRegional       bool
 	ClusterName      string
+	// feature flags
+	FeatureMaxSharePerInstance bool
 }
 
 type GCFSDriver struct {
@@ -105,15 +107,16 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 
 		// Configure controller server
 		driver.cs = newControllerServer(&controllerServerConfig{
-			driver:           driver,
-			fileService:      config.Cloud.File,
-			cloud:            config.Cloud,
-			volumeLocks:      util.NewVolumeLocks(),
-			enableMultishare: config.EnableMultishare,
-			metricsManager:   config.Metrics,
-			ecfsDescription:  config.EcfsDescription,
-			isRegional:       config.IsRegional,
-			clusterName:      config.ClusterName,
+			driver:                     driver,
+			fileService:                config.Cloud.File,
+			cloud:                      config.Cloud,
+			volumeLocks:                util.NewVolumeLocks(),
+			enableMultishare:           config.EnableMultishare,
+			metricsManager:             config.Metrics,
+			ecfsDescription:            config.EcfsDescription,
+			isRegional:                 config.IsRegional,
+			clusterName:                config.ClusterName,
+			featureMaxSharePerInstance: config.FeatureMaxSharePerInstance,
 		})
 	}
 

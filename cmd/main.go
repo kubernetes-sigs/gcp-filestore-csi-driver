@@ -44,6 +44,7 @@ var (
 	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	featureMaxSharePerInstance      = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 
 	// This is set at compile time
 	version = "unknown"

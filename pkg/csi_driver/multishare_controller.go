@@ -24,6 +24,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -34,34 +35,37 @@ import (
 const (
 	modeMultishare = "modeMultishare"
 
-	methodCreateVolume         = "CreateVolume"
-	methodDeleteVolume         = "DeleteVolume"
-	methodExpandVolume         = "ExpandVolume"
-	ecfsDataPlaneVersionFormat = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
+	methodCreateVolume              = "CreateVolume"
+	methodDeleteVolume              = "DeleteVolume"
+	methodExpandVolume              = "ExpandVolume"
+	ecfsDataPlaneVersionFormat      = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
+	ecfsCustom100sharesConfigFormat = "GoogleReservedOverrides={\"CustomMultiShareConfig\":{\"MaxShareCount\": %d, \"MinShareSizeGB\":10}}"
 )
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareController struct {
-	driver          *GCFSDriver
-	fileService     file.Service
-	cloud           *cloud.Cloud
-	opsManager      *MultishareOpsManager
-	volumeLocks     *util.VolumeLocks
-	ecfsDescription string
-	isRegional      bool
-	clustername     string
+	driver                     *GCFSDriver
+	fileService                file.Service
+	cloud                      *cloud.Cloud
+	opsManager                 *MultishareOpsManager
+	volumeLocks                *util.VolumeLocks
+	ecfsDescription            string
+	isRegional                 bool
+	clustername                string
+	featureMaxSharePerInstance bool
 }
 
 func NewMultishareController(config *controllerServerConfig) *MultishareController {
 	return &MultishareController{
-		opsManager:      NewMultishareOpsManager(config.cloud),
-		driver:          config.driver,
-		fileService:     config.fileService,
-		cloud:           config.cloud,
-		volumeLocks:     config.volumeLocks,
-		ecfsDescription: config.ecfsDescription,
-		isRegional:      config.isRegional,
-		clustername:     config.clusterName,
+		opsManager:                 NewMultishareOpsManager(config.cloud),
+		driver:                     config.driver,
+		fileService:                config.fileService,
+		cloud:                      config.cloud,
+		volumeLocks:                config.volumeLocks,
+		ecfsDescription:            config.ecfsDescription,
+		isRegional:                 config.isRegional,
+		clustername:                config.clusterName,
+		featureMaxSharePerInstance: config.featureMaxSharePerInstance,
 	}
 }
 
@@ -83,7 +87,16 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange())
+	maxSharesPerInstance, maxShareSizeSizeBytes, err := m.parseMaxVolumeSizeParam(req)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	var reqBytes int64
+	if m.featureMaxSharePerInstance {
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeConfigurableBytes, maxShareSizeSizeBytes)
+	} else {
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
+	}
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -96,7 +109,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	defer m.volumeLocks.Release(name)
 
 	// If no eligible instance found, the ops manager may decide to create a new instance. Prepare a multishare instacne object for such a scenario.
-	instance, err := m.generateNewMultishareInstance(util.NewMultishareInstancePrefix+string(uuid.NewUUID()), req)
+	instance, err := m.generateNewMultishareInstance(util.NewMultishareInstancePrefix+string(uuid.NewUUID()), req, maxSharesPerInstance)
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +265,14 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
 	}
 
-	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange())
+	var reqBytes int64
+	var err error
+	if m.featureMaxSharePerInstance {
+		// The max limits are validated in the PVC webhook for configurable max shares
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeConfigurableBytes, util.MaxShareSizeBytes)
+	} else {
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
+	}
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -363,7 +383,7 @@ func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
 	return v, nil
 }
 
-func (m *MultishareController) generateNewMultishareInstance(instanceName string, req *csi.CreateVolumeRequest) (*file.MultishareInstance, error) {
+func (m *MultishareController) generateNewMultishareInstance(instanceName string, req *csi.CreateVolumeRequest, maxSharesPerInstance int) (*file.MultishareInstance, error) {
 	region, err := m.pickRegion(req.GetAccessibilityRequirements())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -416,7 +436,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
-	return &file.MultishareInstance{
+	i := &file.MultishareInstance{
 		Project:       m.cloud.Project,
 		Name:          instanceName,
 		CapacityBytes: util.MinMultishareInstanceSizeBytes,
@@ -426,17 +446,24 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			Name:        network,
 			ConnectMode: connectMode,
 		},
-		KmsKeyName:  kmsKeyName,
-		Labels:      labels,
-		Description: generateInstanceDescFromEcfsDesc(m.ecfsDescription),
-	}, nil
+		KmsKeyName:           kmsKeyName,
+		Labels:               labels,
+		Description:          generateInstanceDescFromEcfsDesc(m.ecfsDescription),
+		MaxSharesPerInstance: maxSharesPerInstance,
+	}
+	if m.featureMaxSharePerInstance && maxSharesPerInstance != util.MaxSharesPerInstance {
+		// TODO: Remove this description override when the API is available
+		i.Description = fmt.Sprintf(ecfsCustom100sharesConfigFormat, maxSharesPerInstance)
+	}
+	return i, nil
 }
 
 func generateNewShare(name string, parent *file.MultishareInstance, req *csi.CreateVolumeRequest) (*file.Share, error) {
 	if parent == nil {
 		return nil, status.Error(codes.Internal, "parent mulishare instance is empty")
 	}
-	targetSizeBytes, err := getShareRequestCapacity(req.CapacityRange)
+	// The requested size limits are already validated in the CSI CreateVolume call.
+	targetSizeBytes, err := getShareRequestCapacity(req.CapacityRange, util.MinShareSizeConfigurableBytes, util.MaxShareSizeBytes)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -515,9 +542,9 @@ func extractShareLabels(parameters map[string]string) map[string]string {
 	return shareLabels
 }
 
-func getShareRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
+func getShareRequestCapacity(capRange *csi.CapacityRange, minShareSizeBytes, maxShareSizeBytes int64) (int64, error) {
 	if capRange == nil {
-		return util.MinShareSizeBytes, nil
+		return minShareSizeBytes, nil
 	}
 
 	rCap := capRange.GetRequiredBytes()
@@ -535,21 +562,21 @@ func getShareRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 
 	// Check bounds of limit and request.
 	if lSet {
-		if lCap < util.MinShareSizeBytes {
+		if lCap < minShareSizeBytes {
 			return 0, status.Errorf(codes.InvalidArgument, "Limit bytes %v is less than minimum share size bytes %v", lCap, util.MinShareSizeBytes)
 		}
 
-		if lCap > util.MaxShareSizeBytes {
+		if lCap > maxShareSizeBytes {
 			return 0, status.Errorf(codes.InvalidArgument, "Limit bytes %v is greater than maximum share size bytes %v", lCap, util.MaxShareSizeBytes)
 		}
 	}
 
 	if rSet {
-		if rCap < util.MinShareSizeBytes {
+		if rCap < minShareSizeBytes {
 			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is less than minimum share size bytes %v", rCap, util.MinShareSizeBytes)
 		}
 
-		if rCap > util.MaxShareSizeBytes {
+		if rCap > maxShareSizeBytes {
 			return 0, status.Errorf(codes.InvalidArgument, "Request bytes %v is greater than maximum share size bytes %v", rCap, util.MaxShareSizeBytes)
 		}
 	}
@@ -624,4 +651,52 @@ func generateInstanceDescFromEcfsDesc(desc string) string {
 	d := fmt.Sprintf(ecfsDataPlaneVersionFormat, imageProjectId, ecfsVersion)
 	klog.V(4).Infof("generated description for multishare instance %s", d)
 	return d
+}
+
+func (m *MultishareController) parseMaxVolumeSizeParam(req *csi.CreateVolumeRequest) (int, int64, error) {
+	params := req.GetParameters()
+	v, ok := params[paramMaxVolumeSize]
+	if !m.featureMaxSharePerInstance && ok {
+		return 0, 0, fmt.Errorf("configurable max shares per instance feature not enabled")
+	}
+	if !ok {
+		return util.MaxSharesPerInstance, util.MaxShareSizeBytes, nil
+	}
+
+	if v == "" {
+		return 0, 0, fmt.Errorf("max-volume-size value is empty")
+	}
+
+	val, err := resource.ParseQuantity(v)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	valBytes := val.Value()
+	sharePerInstance, err := getSharesPerInstance(valBytes)
+	if err != nil {
+		return 0, 0, err
+	}
+	return sharePerInstance, valBytes, nil
+}
+
+func getSharesPerInstance(volSizeBytes int64) (int, error) {
+	if !isValidMaxVolSize(volSizeBytes) {
+		return 0, fmt.Errorf("unsupported max volume size %d, supported sizes: '128Gi', '256Gi', '512Gi', '1024Gi'", volSizeBytes)
+	}
+	return int(util.MaxMultishareInstanceSizeBytes / volSizeBytes), nil
+}
+
+func isValidMaxVolSize(val int64) bool {
+	switch val {
+	case 128 * util.Gb:
+		return true
+	case 256 * util.Gb:
+		return true
+	case 512 * util.Gb:
+		return true
+	case util.Tb:
+		return true
+	}
+	return false
 }
