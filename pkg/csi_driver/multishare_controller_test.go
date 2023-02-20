@@ -1620,3 +1620,217 @@ func TestMultishareControllerExpandVolume(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMaxVolumeSizeParam(t *testing.T) {
+	type params struct {
+		shares  int
+		volSize int64
+	}
+	tests := []struct {
+		name                       string
+		featureMaxSharePerInstance bool
+		errorExpected              bool
+		expected                   params
+		req                        *csi.CreateVolumeRequest
+	}{
+		{
+			name:          "feature disabled, key set, value empty, error expected",
+			errorExpected: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "",
+				},
+			},
+		},
+		{
+			name:          "feature disabled, key set, value non-empty, error expected",
+			errorExpected: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "10Gi",
+				},
+			},
+		},
+		{
+			name:                       "feature enabled, key not set, defaults returned",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{},
+			},
+			expected: params{
+				shares:  util.MaxSharesPerInstance,
+				volSize: util.MaxShareSizeBytes,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, empty value, error expected",
+			featureMaxSharePerInstance: true,
+			errorExpected:              true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "",
+				},
+			},
+		},
+		{
+			name:                       "feature enabled, key set, invalid value, error expected - tc1",
+			featureMaxSharePerInstance: true,
+			errorExpected:              true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "-10",
+				},
+			},
+		},
+		{
+			name:                       "feature enabled, key set, invalid value, error expected - tc2",
+			featureMaxSharePerInstance: true,
+			errorExpected:              true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "10Gi",
+				},
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value parse error, error expected",
+			featureMaxSharePerInstance: true,
+			errorExpected:              true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "10xy",
+				},
+			},
+		},
+		// Success cases
+		{
+			name:                       "feature enabled, key set, value set in Gi, tc-1",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "128Gi",
+				},
+			},
+			expected: params{
+				shares:  80,
+				volSize: 128 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in Gi, tc-2",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "256Gi",
+				},
+			},
+			expected: params{
+				shares:  40,
+				volSize: 256 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in Gi, tc-3",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "512Gi",
+				},
+			},
+			expected: params{
+				shares:  20,
+				volSize: 512 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in Gi, tc-4",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "1024Gi",
+				},
+			},
+			expected: params{
+				shares:  10,
+				volSize: 1024 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in bytes, tc-1",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "137438953472",
+				},
+			},
+			expected: params{
+				shares:  80,
+				volSize: 128 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in bytes, tc-2",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "274877906944",
+				},
+			},
+			expected: params{
+				shares:  40,
+				volSize: 256 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in bytes, tc-3",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "549755813888",
+				},
+			},
+			expected: params{
+				shares:  20,
+				volSize: 512 * util.Gb,
+			},
+		},
+		{
+			name:                       "feature enabled, key set, value set in bytes, tc-4",
+			featureMaxSharePerInstance: true,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "1099511627776",
+				},
+			},
+			expected: params{
+				shares:  10,
+				volSize: 1024 * util.Gb,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cloudProvider, err := cloud.NewFakeCloud()
+			if err != nil {
+				t.Fatalf("Failed to get cloud provider: %v", err)
+			}
+			config := &controllerServerConfig{
+				driver:                     initTestDriver(t),
+				cloud:                      cloudProvider,
+				volumeLocks:                util.NewVolumeLocks(),
+				featureMaxSharePerInstance: tc.featureMaxSharePerInstance,
+			}
+			mcs := NewMultishareController(config)
+			shares, volSize, err := mcs.parseMaxVolumeSizeParam(tc.req)
+			if err == nil && tc.errorExpected {
+				t.Errorf("expected error not found")
+			}
+			if err != nil && !tc.errorExpected {
+				t.Errorf("unexpected error")
+			}
+			if tc.expected.shares != shares || tc.expected.volSize != volSize {
+				t.Errorf("got (%d, %d), want (%d, %d), err %v", shares, volSize, tc.expected.shares, tc.expected.volSize, err)
+			}
+		})
+	}
+}
