@@ -33,9 +33,10 @@ import (
 )
 
 var (
-	certFile string
-	keyFile  string
-	port     int
+	certFile                    string
+	keyFile                     string
+	port                        int
+	featureMaxSharesPerInstance bool
 )
 
 // CmdWebhook is used by Cobra.
@@ -54,6 +55,7 @@ func init() {
 		"File containing the x509 private key matching --tls-cert-file. Required.")
 	CmdWebhook.Flags().IntVar(&port, "port", 443,
 		"Secure port that the webhook listens on")
+	CmdWebhook.Flags().BoolVar(&featureMaxSharesPerInstance, "feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 	CmdWebhook.MarkFlagRequired("tls-cert-file")
 	CmdWebhook.MarkFlagRequired("tls-private-key-file")
 }
@@ -148,6 +150,10 @@ func serveStorageClassMutate(w http.ResponseWriter, r *http.Request) {
 	serve(w, r, newDelegateToV1AdmitHandler(mutateStorageClass))
 }
 
+func servePVCAdmit(w http.ResponseWriter, r *http.Request) {
+	serve(w, r, newDelegateToV1AdmitHandler(admitPVC))
+}
+
 func startServer(ctx context.Context, tlsConfig *tls.Config, cw *certwatcher.CertWatcher) error {
 	go func() {
 		if err := cw.Start(ctx); err != nil {
@@ -159,6 +165,10 @@ func startServer(ctx context.Context, tlsConfig *tls.Config, cw *certwatcher.Cer
 	fmt.Println("Starting webhook server")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/storageclasses", serveStorageClassMutate)
+	fmt.Printf("featureMaxSharesPerInstance %v", featureMaxSharesPerInstance)
+	if featureMaxSharesPerInstance {
+		mux.HandleFunc("/persistentvolumeclaims", servePVCAdmit)
+	}
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) { w.Write([]byte("ok")) })
 	srv := &http.Server{
 		Handler:   mux,

@@ -34,6 +34,7 @@ var (
 	TierEnterprise            = "enterprise"
 	InstanceStorageClassLabel = "instance-storageclass-label"
 	Multishare                = "multishare"
+	MaxVolumeSize             = "max-volume-size"
 )
 
 func rejectV1AdmissionResponse(err error) *v1.AdmissionResponse {
