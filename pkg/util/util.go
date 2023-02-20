@@ -260,14 +260,16 @@ func ParseShareURI(shareURI string) (string, string, string, string, error) {
 }
 
 func GetMultishareOpsTimeoutConfig(opType OperationType) (time.Duration, time.Duration, error) {
-	switch opType {
-	case InstanceCreate, ShareDelete:
-		return 1 * time.Hour, 5 * time.Second, nil
-	case InstanceDelete, InstanceUpdate, ShareCreate, ShareUpdate:
-		return 10 * time.Minute, 5 * time.Second, nil
-	default:
-		return 0, 0, fmt.Errorf("unknown op type %v", opType)
-	}
+        switch opType {
+        case InstanceCreate, ShareDelete:
+                return 1 * time.Hour, 60 * time.Second, nil
+	case InstanceUpdate, InstanceDelete:
+		return 10 * time.Minute, 60 * time.Second, nil
+        case ShareCreate, ShareUpdate:
+                return 10 * time.Minute, 5 * time.Second, nil
+        default:
+                return 0, 0, fmt.Errorf("unknown op type %v", opType)
+        }
 }
 
 // Aligns to the next higher multiple of step size. No-op if step size is 0, or already aligned.
