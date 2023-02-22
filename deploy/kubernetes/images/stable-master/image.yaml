@@ -13,7 +13,7 @@ metadata:
   name: imagetag-csi-resize-prow
 imageTag:
   name: k8s.gcr.io/sig-storage/csi-resizer
-  newTag: "v1.2.0"
+  newTag: "v1.4.0"
 ---
 
 apiVersion: builtin
@@ -40,5 +40,5 @@ metadata:
   name: imagetag-gce-fs-driver
 imageTag:
   name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
-  newTag: "v1.3.10"
+  newTag: "v1.4.0"
 ---
