@@ -1,0 +1,23 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: filestorecsi-pvc-validation-webhook.storage.k8s.io
+webhooks:
+- name: filestorecsi-pvc-validation-webhook.storage.k8s.io
+  rules:
+  - apiGroups:   [""]
+    apiVersions: ["v1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources:   ["persistentvolumeclaims"]
+    scope:       "*"
+  clientConfig:
+    caBundle: ${CA_BUNDLE}
+    service:
+      namespace: gcp-filestore-csi-driver
+      name: "fs-validation"
+      path: "/persistentvolumeclaims"
+      port: 443
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+  failurePolicy: Ignore
+  timeoutSeconds: 5

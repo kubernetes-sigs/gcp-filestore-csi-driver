@@ -12,11 +12,12 @@ spec:
       labels:
         app: filestorecsi-validation
     spec:
+      serviceAccount: gcp-filestore-csi-webhook-sa
       containers:
       - name: filestorecsi-validation
         image: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver-webhook
         imagePullPolicy: Always
-        args: ['--tls-cert-file=/etc/filestorecsi-validation-webhook/certs/cert.pem', '--tls-private-key-file=/etc/filestorecsi-validation-webhook/certs/key.pem']
+        args: ['--tls-cert-file=/etc/filestorecsi-validation-webhook/certs/cert.pem', '--tls-private-key-file=/etc/filestorecsi-validation-webhook/certs/key.pem', '--feature-max-shares-per-instance=true']
         ports:
         - containerPort: 443 # change the port as needed
         volumeMounts:

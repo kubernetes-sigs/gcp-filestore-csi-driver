@@ -34,6 +34,11 @@ if [ "${DEPLOY_VERSION}" == multishare ]; then
   cat $mydir/mutation-webhook-configuration-template | $mydir/webhook-example/patch-ca-bundle.sh > $webhook_config
   kubectl apply -f $webhook_config
   rm $webhook_config
+
+  webhook_config="$mydir/overlays/${DEPLOY_VERSION}/validation-configuration.yaml"
+  cat $mydir/validation-webhook-configuration-pvc-template | $mydir/webhook-example/patch-ca-bundle.sh > $webhook_config
+  kubectl apply -f $webhook_config
+  rm $webhook_config
 fi
 
 readonly tmp_spec=/tmp/gcp-filestore-csi-driver-specs-generated.yaml

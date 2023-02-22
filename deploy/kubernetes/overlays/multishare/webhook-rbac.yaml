@@ -1,0 +1,28 @@
+##### Controller Service Account, Roles, Rolebindings
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gcp-filestore-csi-webhook-sa
+  namespace: gcp-filestore-csi-driver
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-webhook-role
+rules:
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: gcp-filestore-csi-webhook-binding
+subjects:
+  - kind: ServiceAccount
+    name: gcp-filestore-csi-webhook-sa
+    namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: ClusterRole
+  name: gcp-filestore-csi-webhook-role
+  apiGroup: rbac.authorization.k8s.io
