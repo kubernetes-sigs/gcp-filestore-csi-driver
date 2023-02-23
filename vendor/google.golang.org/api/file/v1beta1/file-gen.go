@@ -8,31 +8,31 @@
 //
 // For product documentation, see: https://cloud.google.com/filestore/
 //
-// Creating a client
+// # Creating a client
 //
 // Usage example:
 //
-//   import "google.golang.org/api/file/v1beta1"
-//   ...
-//   ctx := context.Background()
-//   fileService, err := file.NewService(ctx)
+//	import "google.golang.org/api/file/v1beta1"
+//	...
+//	ctx := context.Background()
+//	fileService, err := file.NewService(ctx)
 //
 // In this example, Google Application Default Credentials are used for authentication.
 //
 // For information on how to create and obtain Application Default Credentials, see https://developers.google.com/identity/protocols/application-default-credentials.
 //
-// Other authentication options
+// # Other authentication options
 //
 // To use an API key for authentication (note: some APIs do not support API keys), use option.WithAPIKey:
 //
-//   fileService, err := file.NewService(ctx, option.WithAPIKey("AIza..."))
+//	fileService, err := file.NewService(ctx, option.WithAPIKey("AIza..."))
 //
 // To use an OAuth token (e.g., a user token obtained via a three-legged OAuth flow), use option.WithTokenSource:
 //
-//   config := &oauth2.Config{...}
-//   // ...
-//   token, err := config.Exchange(ctx, ...)
-//   fileService, err := file.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, token)))
+//	config := &oauth2.Config{...}
+//	// ...
+//	token, err := config.Exchange(ctx, ...)
+//	fileService, err := file.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, token)))
 //
 // See https://godoc.org/google.golang.org/api/option/ for details on options.
 package file // import "google.golang.org/api/file/v1beta1"
@@ -218,7 +218,7 @@ type ProjectsLocationsOperationsService struct {
 	s *Service
 }
 
-// Backup: A Cloud Filestore backup.
+// Backup: A Filestore backup.
 type Backup struct {
 	// CapacityGb: Output only. Capacity of the source file share when the
 	// backup was created.
@@ -248,17 +248,17 @@ type Backup struct {
 	// SatisfiesPzs: Output only. Reserved for future use.
 	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
 
-	// SourceFileShare: Name of the file share in the source Cloud Filestore
+	// SourceFileShare: Name of the file share in the source Filestore
 	// instance that the backup is created from.
 	SourceFileShare string `json:"sourceFileShare,omitempty"`
 
-	// SourceInstance: The resource name of the source Cloud Filestore
-	// instance, in the format
+	// SourceInstance: The resource name of the source Filestore instance,
+	// in the format
 	// `projects/{project_id}/locations/{location_id}/instances/{instance_id}
 	// `, used to create this backup.
 	SourceInstance string `json:"sourceInstance,omitempty"`
 
-	// SourceInstanceTier: Output only. The service tier of the source Cloud
+	// SourceInstanceTier: Output only. The service tier of the source
 	// Filestore instance that this backup is created from.
 	//
 	// Possible values:
@@ -464,8 +464,8 @@ type Empty struct {
 
 // FileShareConfig: File share configuration for the instance.
 type FileShareConfig struct {
-	// CapacityGb: File share capacity in gigabytes (GB). Cloud Filestore
-	// defines 1 GB as 1024^3 bytes.
+	// CapacityGb: File share capacity in gigabytes (GB). Filestore defines
+	// 1 GB as 1024^3 bytes.
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
 
 	// Name: The name of the file share (must be 32 characters or less for
@@ -960,7 +960,7 @@ func (s *GoogleCloudSaasacceleratorManagementProvidersV1SloMetadata) MarshalJSON
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// Instance: A Cloud Filestore instance.
+// Instance: A Filestore instance.
 type Instance struct {
 	// CapacityGb: The storage capacity of the instance in gigabytes (GB =
 	// 1024^3 bytes). This capacity can be increased up to `max_capacity_gb`
@@ -1035,6 +1035,9 @@ type Instance struct {
 	// details from the `suspension_reasons` field of the `Instance`
 	// resource.
 	//   "REVERTING" - The instance is reverting to a snapshot.
+	//   "SUSPENDING" - The instance is in the process of becoming
+	// suspended.
+	//   "RESUMING" - The instance is in the process of becoming active.
 	State string `json:"state,omitempty"`
 
 	// StatusMessage: Output only. Additional information about the instance
@@ -1529,8 +1532,8 @@ type NetworkConfig struct {
 	// that identifies the range of IP addresses reserved for this instance.
 	// For example, 10.0.0.0/29, 192.168.0.0/24, or 192.168.0.0/26,
 	// respectively. The range you specify can't overlap with either
-	// existing subnets or assigned IP address ranges for other Cloud
-	// Filestore instances in the selected VPC network.
+	// existing subnets or assigned IP address ranges for other Filestore
+	// instances in the selected VPC network.
 	ReservedIpRange string `json:"reservedIpRange,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "ConnectMode") to
@@ -1742,8 +1745,8 @@ func (s *OperationMetadata) MarshalJSON() ([]byte, error) {
 // RestoreInstanceRequest: RestoreInstanceRequest restores an existing
 // instance's file share from a snapshot or backup.
 type RestoreInstanceRequest struct {
-	// FileShare: Required. Name of the file share in the Cloud Filestore
-	// instance that the snapshot is being restored to.
+	// FileShare: Required. Name of the file share in the Filestore instance
+	// that the snapshot is being restored to.
 	FileShare string `json:"fileShare,omitempty"`
 
 	// SourceBackup: The resource name of the backup, in the format
@@ -1857,10 +1860,10 @@ func (s *Schedule) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// Share: A Cloud Filestore share.
+// Share: A Filestore share.
 type Share struct {
-	// CapacityGb: File share capacity in gigabytes (GB). Cloud Filestore
-	// defines 1 GB as 1024^3 bytes. Must be greater than 0.
+	// CapacityGb: File share capacity in gigabytes (GB). Filestore defines
+	// 1 GB as 1024^3 bytes. Must be greater than 0.
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
 
 	// CreateTime: Output only. The time when the share was created.
@@ -1923,7 +1926,7 @@ func (s *Share) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// Snapshot: A Cloud Filestore snapshot.
+// Snapshot: A Filestore snapshot.
 type Snapshot struct {
 	// CreateTime: Output only. The time when the snapshot was created.
 	CreateTime string `json:"createTime,omitempty"`
@@ -2076,6 +2079,20 @@ type UpdatePolicy struct {
 	//   "UPDATE_CHANNEL_UNSPECIFIED" - Unspecified channel.
 	//   "EARLIER" - Early channel within a customer project.
 	//   "LATER" - Later channel within a customer project.
+	//   "WEEK1" - ! ! The follow channels can ONLY be used if you adopt the
+	// new MW system! ! ! NOTE: all WEEK channels are assumed to be under a
+	// weekly window. ! There is currently no dedicated channel definitions
+	// for Daily windows. ! If you use Daily window, the system will assume
+	// a 1d (24Hours) advanced ! notification period b/w EARLY and LATER. !
+	// We may consider support more flexible daily channel specifications in
+	// ! the future. WEEK1 == EARLIER with minimum 7d advanced notification.
+	// {7d, 14d} The system will treat them equally and will use WEEK1
+	// whenever it can. New customers are encouraged to use this channel
+	// annotation.
+	//   "WEEK2" - WEEK2 == LATER with minimum 14d advanced notification
+	// {14d, 21d}.
+	//   "WEEK5" - WEEK5 == 40d support. minimum 35d advanced notification
+	// {35d, 42d}.
 	Channel string `json:"channel,omitempty"`
 
 	// DenyMaintenancePeriods: Deny Maintenance Period that is applied to
@@ -2235,17 +2252,17 @@ func (c *ProjectsLocationsGetCall) Do(opts ...googleapi.CallOption) (*Location, 
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Location{
 		ServerResponse: googleapi.ServerResponse{
@@ -2300,8 +2317,8 @@ type ProjectsLocationsListCall struct {
 // List: Lists information about the supported locations for this
 // service.
 //
-// - name: The resource that owns the locations collection, if
-//   applicable.
+//   - name: The resource that owns the locations collection, if
+//     applicable.
 func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall {
 	c := &ProjectsLocationsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2415,17 +2432,17 @@ func (c *ProjectsLocationsListCall) Do(opts ...googleapi.CallOption) (*ListLocat
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListLocationsResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -2521,9 +2538,9 @@ type ProjectsLocationsBackupsCreateCall struct {
 
 // Create: Creates a backup.
 //
-// - parent: The backup's project and location, in the format
-//   `projects/{project_id}/locations/{location}`. In Cloud Filestore,
-//   backup locations map to GCP regions, for example **us-west1**.
+//   - parent: The backup's project and location, in the format
+//     `projects/{project_id}/locations/{location}`. In Filestore, backup
+//     locations map to GCP regions, for example **us-west1**.
 func (r *ProjectsLocationsBackupsService) Create(parent string, backup *Backup) *ProjectsLocationsBackupsCreateCall {
 	c := &ProjectsLocationsBackupsCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -2608,17 +2625,17 @@ func (c *ProjectsLocationsBackupsCreateCall) Do(opts ...googleapi.CallOption) (*
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -2646,7 +2663,7 @@ func (c *ProjectsLocationsBackupsCreateCall) Do(opts ...googleapi.CallOption) (*
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The backup's project and location, in the format `projects/{project_id}/locations/{location}`. In Cloud Filestore, backup locations map to GCP regions, for example **us-west1**.",
+	//       "description": "Required. The backup's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to GCP regions, for example **us-west1**.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -2679,8 +2696,8 @@ type ProjectsLocationsBackupsDeleteCall struct {
 
 // Delete: Deletes a backup.
 //
-// - name: The backup resource name, in the format
-//   `projects/{project_id}/locations/{location}/backups/{backup_id}`.
+//   - name: The backup resource name, in the format
+//     `projects/{project_id}/locations/{location}/backups/{backup_id}`.
 func (r *ProjectsLocationsBackupsService) Delete(name string) *ProjectsLocationsBackupsDeleteCall {
 	c := &ProjectsLocationsBackupsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2749,17 +2766,17 @@ func (c *ProjectsLocationsBackupsDeleteCall) Do(opts ...googleapi.CallOption) (*
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -2813,8 +2830,8 @@ type ProjectsLocationsBackupsGetCall struct {
 
 // Get: Gets the details of a specific backup.
 //
-// - name: The backup resource name, in the format
-//   `projects/{project_id}/locations/{location}/backups/{backup_id}`.
+//   - name: The backup resource name, in the format
+//     `projects/{project_id}/locations/{location}/backups/{backup_id}`.
 func (r *ProjectsLocationsBackupsService) Get(name string) *ProjectsLocationsBackupsGetCall {
 	c := &ProjectsLocationsBackupsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -2896,17 +2913,17 @@ func (c *ProjectsLocationsBackupsGetCall) Do(opts ...googleapi.CallOption) (*Bac
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Backup{
 		ServerResponse: googleapi.ServerResponse{
@@ -2961,12 +2978,12 @@ type ProjectsLocationsBackupsListCall struct {
 // List: Lists all backups in a project for either a specified location
 // or for all locations.
 //
-// - parent: The project and location for which to retrieve backup
-//   information, in the format
-//   `projects/{project_id}/locations/{location}`. In Cloud Filestore,
-//   backup locations map to GCP regions, for example **us-west1**. To
-//   retrieve backup information for all locations, use "-" for the
-//   `{location}` value.
+//   - parent: The project and location for which to retrieve backup
+//     information, in the format
+//     `projects/{project_id}/locations/{location}`. In Filestore, backup
+//     locations map to GCP regions, for example **us-west1**. To retrieve
+//     backup information for all locations, use "-" for the `{location}`
+//     value.
 func (r *ProjectsLocationsBackupsService) List(parent string) *ProjectsLocationsBackupsListCall {
 	c := &ProjectsLocationsBackupsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3076,17 +3093,17 @@ func (c *ProjectsLocationsBackupsListCall) Do(opts ...googleapi.CallOption) (*Li
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListBackupsResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -3130,7 +3147,7 @@ func (c *ProjectsLocationsBackupsListCall) Do(opts ...googleapi.CallOption) (*Li
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The project and location for which to retrieve backup information, in the format `projects/{project_id}/locations/{location}`. In Cloud Filestore, backup locations map to GCP regions, for example **us-west1**. To retrieve backup information for all locations, use \"-\" for the `{location}` value.",
+	//       "description": "Required. The project and location for which to retrieve backup information, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to GCP regions, for example **us-west1**. To retrieve backup information for all locations, use \"-\" for the `{location}` value.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -3182,8 +3199,8 @@ type ProjectsLocationsBackupsPatchCall struct {
 
 // Patch: Updates the settings of a specific backup.
 //
-// - name: Output only. The resource name of the backup, in the format
-//   `projects/{project_id}/locations/{location_id}/backups/{backup_id}`.
+//   - name: Output only. The resource name of the backup, in the format
+//     `projects/{project_id}/locations/{location_id}/backups/{backup_id}`.
 func (r *ProjectsLocationsBackupsService) Patch(name string, backup *Backup) *ProjectsLocationsBackupsPatchCall {
 	c := &ProjectsLocationsBackupsPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3266,17 +3283,17 @@ func (c *ProjectsLocationsBackupsPatchCall) Do(opts ...googleapi.CallOption) (*O
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -3342,9 +3359,9 @@ type ProjectsLocationsInstancesCreateCall struct {
 // capacity of the backup (and also equal to or larger than the minimum
 // capacity of the tier).
 //
-// - parent: The instance's project and location, in the format
-//   `projects/{project_id}/locations/{location}`. In Cloud Filestore,
-//   locations map to GCP zones, for example **us-west1-b**.
+//   - parent: The instance's project and location, in the format
+//     `projects/{project_id}/locations/{location}`. In Filestore,
+//     locations map to GCP zones, for example **us-west1-b**.
 func (r *ProjectsLocationsInstancesService) Create(parent string, instance *Instance) *ProjectsLocationsInstancesCreateCall {
 	c := &ProjectsLocationsInstancesCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3429,17 +3446,17 @@ func (c *ProjectsLocationsInstancesCreateCall) Do(opts ...googleapi.CallOption) 
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -3467,7 +3484,7 @@ func (c *ProjectsLocationsInstancesCreateCall) Do(opts ...googleapi.CallOption) 
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The instance's project and location, in the format `projects/{project_id}/locations/{location}`. In Cloud Filestore, locations map to GCP zones, for example **us-west1-b**.",
+	//       "description": "Required. The instance's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, locations map to GCP zones, for example **us-west1-b**.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -3500,8 +3517,8 @@ type ProjectsLocationsInstancesDeleteCall struct {
 
 // Delete: Deletes an instance.
 //
-// - name: The instance resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`.
+//   - name: The instance resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`.
 func (r *ProjectsLocationsInstancesService) Delete(name string) *ProjectsLocationsInstancesDeleteCall {
 	c := &ProjectsLocationsInstancesDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3578,17 +3595,17 @@ func (c *ProjectsLocationsInstancesDeleteCall) Do(opts ...googleapi.CallOption) 
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -3647,9 +3664,9 @@ type ProjectsLocationsInstancesGetCall struct {
 
 // Get: Gets the details of a specific instance.
 //
-// - name: The instance resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`
-//   .
+//   - name: The instance resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`
+//     .
 func (r *ProjectsLocationsInstancesService) Get(name string) *ProjectsLocationsInstancesGetCall {
 	c := &ProjectsLocationsInstancesGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -3731,17 +3748,17 @@ func (c *ProjectsLocationsInstancesGetCall) Do(opts ...googleapi.CallOption) (*I
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Instance{
 		ServerResponse: googleapi.ServerResponse{
@@ -3796,12 +3813,12 @@ type ProjectsLocationsInstancesListCall struct {
 // List: Lists all instances in a project for either a specified
 // location or for all locations.
 //
-// - parent: The project and location for which to retrieve instance
-//   information, in the format
-//   `projects/{project_id}/locations/{location}`. In Cloud Filestore,
-//   locations map to GCP zones, for example **us-west1-b**. To retrieve
-//   instance information for all locations, use "-" for the
-//   `{location}` value.
+//   - parent: The project and location for which to retrieve instance
+//     information, in the format
+//     `projects/{project_id}/locations/{location}`. In Cloud Filestore,
+//     locations map to GCP zones, for example **us-west1-b**. To retrieve
+//     instance information for all locations, use "-" for the
+//     `{location}` value.
 func (r *ProjectsLocationsInstancesService) List(parent string) *ProjectsLocationsInstancesListCall {
 	c := &ProjectsLocationsInstancesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3911,17 +3928,17 @@ func (c *ProjectsLocationsInstancesListCall) Do(opts ...googleapi.CallOption) (*
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListInstancesResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -4017,9 +4034,9 @@ type ProjectsLocationsInstancesPatchCall struct {
 
 // Patch: Updates the settings of a specific instance.
 //
-// - name: Output only. The resource name of the instance, in the format
-//   `projects/{project_id}/locations/{location_id}/instances/{instance_i
-//   d}`.
+//   - name: Output only. The resource name of the instance, in the format
+//     `projects/{project_id}/locations/{location_id}/instances/{instance_i
+//     d}`.
 func (r *ProjectsLocationsInstancesService) Patch(name string, instance *Instance) *ProjectsLocationsInstancesPatchCall {
 	c := &ProjectsLocationsInstancesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4103,17 +4120,17 @@ func (c *ProjectsLocationsInstancesPatchCall) Do(opts ...googleapi.CallOption) (
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -4179,9 +4196,9 @@ type ProjectsLocationsInstancesRestoreCall struct {
 // capacity of the backup (and also equal to or larger than the minimum
 // capacity of the tier).
 //
-// - name: The resource name of the instance, in the format
-//   `projects/{project_id}/locations/{location_id}/instances/{instance_i
-//   d}`.
+//   - name: The resource name of the instance, in the format
+//     `projects/{project_id}/locations/{location_id}/instances/{instance_i
+//     d}`.
 func (r *ProjectsLocationsInstancesService) Restore(name string, restoreinstancerequest *RestoreInstanceRequest) *ProjectsLocationsInstancesRestoreCall {
 	c := &ProjectsLocationsInstancesRestoreCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4256,17 +4273,17 @@ func (c *ProjectsLocationsInstancesRestoreCall) Do(opts ...googleapi.CallOption)
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -4324,9 +4341,9 @@ type ProjectsLocationsInstancesRevertCall struct {
 // Revert: Revert an existing instance's file system to a specified
 // snapshot.
 //
-// - name:
-//   projects/{project_id}/locations/{location_id}/instances/{instance_id
-//   }. The resource name of the instance, in the format.
+//   - name:
+//     projects/{project_id}/locations/{location_id}/instances/{instance_id
+//     }. The resource name of the instance, in the format.
 func (r *ProjectsLocationsInstancesService) Revert(name string, revertinstancerequest *RevertInstanceRequest) *ProjectsLocationsInstancesRevertCall {
 	c := &ProjectsLocationsInstancesRevertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4401,17 +4418,17 @@ func (c *ProjectsLocationsInstancesRevertCall) Do(opts ...googleapi.CallOption) 
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -4468,9 +4485,9 @@ type ProjectsLocationsInstancesSharesCreateCall struct {
 
 // Create: Creates a share.
 //
-// - parent: The Filestore Instance to create the share for, in the
-//   format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`.
+//   - parent: The Filestore Instance to create the share for, in the
+//     format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`.
 func (r *ProjectsLocationsInstancesSharesService) Create(parent string, share *Share) *ProjectsLocationsInstancesSharesCreateCall {
 	c := &ProjectsLocationsInstancesSharesCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -4555,17 +4572,17 @@ func (c *ProjectsLocationsInstancesSharesCreateCall) Do(opts ...googleapi.CallOp
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -4626,9 +4643,9 @@ type ProjectsLocationsInstancesSharesDeleteCall struct {
 
 // Delete: Deletes a share.
 //
-// - name: The share resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}/
-//   share/{share_id}`.
+//   - name: The share resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}/
+//     share/{share_id}`.
 func (r *ProjectsLocationsInstancesSharesService) Delete(name string) *ProjectsLocationsInstancesSharesDeleteCall {
 	c := &ProjectsLocationsInstancesSharesDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4697,17 +4714,17 @@ func (c *ProjectsLocationsInstancesSharesDeleteCall) Do(opts ...googleapi.CallOp
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -4761,9 +4778,9 @@ type ProjectsLocationsInstancesSharesGetCall struct {
 
 // Get: Gets the details of a specific share.
 //
-// - name: The share resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}/
-//   shares/{share_id}`.
+//   - name: The share resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}/
+//     shares/{share_id}`.
 func (r *ProjectsLocationsInstancesSharesService) Get(name string) *ProjectsLocationsInstancesSharesGetCall {
 	c := &ProjectsLocationsInstancesSharesGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4845,17 +4862,17 @@ func (c *ProjectsLocationsInstancesSharesGetCall) Do(opts ...googleapi.CallOptio
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Share{
 		ServerResponse: googleapi.ServerResponse{
@@ -4909,10 +4926,10 @@ type ProjectsLocationsInstancesSharesListCall struct {
 
 // List: Lists all shares for a specified instance.
 //
-// - parent: The instance for which to retrieve share information, in
-//   the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`
-//   .
+//   - parent: The instance for which to retrieve share information, in
+//     the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`
+//     .
 func (r *ProjectsLocationsInstancesSharesService) List(parent string) *ProjectsLocationsInstancesSharesListCall {
 	c := &ProjectsLocationsInstancesSharesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -5022,17 +5039,17 @@ func (c *ProjectsLocationsInstancesSharesListCall) Do(opts ...googleapi.CallOpti
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListSharesResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -5128,9 +5145,9 @@ type ProjectsLocationsInstancesSharesPatchCall struct {
 
 // Patch: Updates the settings of a specific share.
 //
-// - name: Output only. The resource name of the share, in the format
-//   `projects/{project_id}/locations/{location_id}/instances/{instance_i
-//   d}/shares/{share_id}`.
+//   - name: Output only. The resource name of the share, in the format
+//     `projects/{project_id}/locations/{location_id}/instances/{instance_i
+//     d}/shares/{share_id}`.
 func (r *ProjectsLocationsInstancesSharesService) Patch(name string, share *Share) *ProjectsLocationsInstancesSharesPatchCall {
 	c := &ProjectsLocationsInstancesSharesPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -5215,17 +5232,17 @@ func (c *ProjectsLocationsInstancesSharesPatchCall) Do(opts ...googleapi.CallOpt
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -5288,9 +5305,9 @@ type ProjectsLocationsInstancesSnapshotsCreateCall struct {
 
 // Create: Creates a snapshot.
 //
-// - parent: The Filestore Instance to create the snapshots of, in the
-//   format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`.
+//   - parent: The Filestore Instance to create the snapshots of, in the
+//     format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`.
 func (r *ProjectsLocationsInstancesSnapshotsService) Create(parent string, snapshot *Snapshot) *ProjectsLocationsInstancesSnapshotsCreateCall {
 	c := &ProjectsLocationsInstancesSnapshotsCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -5375,17 +5392,17 @@ func (c *ProjectsLocationsInstancesSnapshotsCreateCall) Do(opts ...googleapi.Cal
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -5446,9 +5463,9 @@ type ProjectsLocationsInstancesSnapshotsDeleteCall struct {
 
 // Delete: Deletes a snapshot.
 //
-// - name: The snapshot resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}/
-//   snapshots/{snapshot_id}`.
+//   - name: The snapshot resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}/
+//     snapshots/{snapshot_id}`.
 func (r *ProjectsLocationsInstancesSnapshotsService) Delete(name string) *ProjectsLocationsInstancesSnapshotsDeleteCall {
 	c := &ProjectsLocationsInstancesSnapshotsDeleteCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -5517,17 +5534,17 @@ func (c *ProjectsLocationsInstancesSnapshotsDeleteCall) Do(opts ...googleapi.Cal
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -5581,9 +5598,9 @@ type ProjectsLocationsInstancesSnapshotsGetCall struct {
 
 // Get: Gets the details of a specific snapshot.
 //
-// - name: The snapshot resource name, in the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}/
-//   snapshots/{snapshot_id}`.
+//   - name: The snapshot resource name, in the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}/
+//     snapshots/{snapshot_id}`.
 func (r *ProjectsLocationsInstancesSnapshotsService) Get(name string) *ProjectsLocationsInstancesSnapshotsGetCall {
 	c := &ProjectsLocationsInstancesSnapshotsGetCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -5665,17 +5682,17 @@ func (c *ProjectsLocationsInstancesSnapshotsGetCall) Do(opts ...googleapi.CallOp
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Snapshot{
 		ServerResponse: googleapi.ServerResponse{
@@ -5730,10 +5747,10 @@ type ProjectsLocationsInstancesSnapshotsListCall struct {
 // List: Lists all snapshots in a project for either a specified
 // location or for all locations.
 //
-// - parent: The instance for which to retrieve snapshot information, in
-//   the format
-//   `projects/{project_id}/locations/{location}/instances/{instance_id}`
-//   .
+//   - parent: The instance for which to retrieve snapshot information, in
+//     the format
+//     `projects/{project_id}/locations/{location}/instances/{instance_id}`
+//     .
 func (r *ProjectsLocationsInstancesSnapshotsService) List(parent string) *ProjectsLocationsInstancesSnapshotsListCall {
 	c := &ProjectsLocationsInstancesSnapshotsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -5843,17 +5860,17 @@ func (c *ProjectsLocationsInstancesSnapshotsListCall) Do(opts ...googleapi.CallO
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListSnapshotsResponse{
 		ServerResponse: googleapi.ServerResponse{
@@ -5949,9 +5966,9 @@ type ProjectsLocationsInstancesSnapshotsPatchCall struct {
 
 // Patch: Updates the settings of a specific snapshot.
 //
-// - name: Output only. The resource name of the snapshot, in the format
-//   `projects/{project_id}/locations/{location_id}/instances/{instance_i
-//   d}/snapshots/{snapshot_id}`.
+//   - name: Output only. The resource name of the snapshot, in the format
+//     `projects/{project_id}/locations/{location_id}/instances/{instance_i
+//     d}/snapshots/{snapshot_id}`.
 func (r *ProjectsLocationsInstancesSnapshotsService) Patch(name string, snapshot *Snapshot) *ProjectsLocationsInstancesSnapshotsPatchCall {
 	c := &ProjectsLocationsInstancesSnapshotsPatchCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -6034,17 +6051,17 @@ func (c *ProjectsLocationsInstancesSnapshotsPatchCall) Do(opts ...googleapi.Call
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -6191,17 +6208,17 @@ func (c *ProjectsLocationsOperationsCancelCall) Do(opts ...googleapi.CallOption)
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Empty{
 		ServerResponse: googleapi.ServerResponse{
@@ -6329,17 +6346,17 @@ func (c *ProjectsLocationsOperationsDeleteCall) Do(opts ...googleapi.CallOption)
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Empty{
 		ServerResponse: googleapi.ServerResponse{
@@ -6477,17 +6494,17 @@ func (c *ProjectsLocationsOperationsGetCall) Do(opts ...googleapi.CallOption) (*
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &Operation{
 		ServerResponse: googleapi.ServerResponse{
@@ -6653,17 +6670,17 @@ func (c *ProjectsLocationsOperationsListCall) Do(opts ...googleapi.CallOption) (
 		if res.Body != nil {
 			res.Body.Close()
 		}
-		return nil, &googleapi.Error{
+		return nil, gensupport.WrapError(&googleapi.Error{
 			Code:   res.StatusCode,
 			Header: res.Header,
-		}
+		})
 	}
 	if err != nil {
 		return nil, err
 	}
 	defer googleapi.CloseBody(res)
 	if err := googleapi.CheckResponse(res); err != nil {
-		return nil, err
+		return nil, gensupport.WrapError(err)
 	}
 	ret := &ListOperationsResponse{
 		ServerResponse: googleapi.ServerResponse{

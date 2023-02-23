@@ -284,3 +284,7 @@ func IsAligned(curSizeBytes int64, expectedBytes int64) bool {
 	}
 	return false
 }
+
+func ErrCodePtr(code codes.Code) *codes.Code {
+	return &code
+}
