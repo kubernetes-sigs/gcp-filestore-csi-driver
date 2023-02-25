@@ -17,6 +17,7 @@ limitations under the License.
 package driver
 
 import (
+	"context"
 	"fmt"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -29,6 +30,7 @@ import (
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
+	rpc "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -56,6 +58,9 @@ type GCFSDriver struct {
 	ids csi.IdentityServer
 	ns  csi.NodeServer
 	cs  csi.ControllerServer
+
+	// Node controller
+	nc *rpc.LockReleaseController
 
 	// Plugin capabilities
 	vcap  map[csi.VolumeCapability_AccessMode_Mode]*csi.VolumeCapability_AccessMode
@@ -131,6 +136,14 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			isRegional:       config.IsRegional,
 			clusterName:      config.ClusterName,
 		})
+	}
+
+	if config.RunNode && config.SupportLockRelease {
+		nc, err := rpc.NewLockReleaseController(client)
+		if err != nil {
+			return nil, err
+		}
+		driver.nc = nc
 	}
 
 	return driver, nil
@@ -229,5 +242,8 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	//Start the nonblocking GRPC
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
+	if driver.nc != nil {
+		driver.nc.Run(context.Background())
+	}
 	s.Wait()
 }

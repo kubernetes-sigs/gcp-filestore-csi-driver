@@ -41,8 +41,9 @@ const (
 
 const (
 	ConfigMapNamePrefix = "fscsi-"
-	ConfigMapNamespace  = "gcp-filestore-csi-driver"
-	ConfigMapFinalzer   = "filestore.csi.storage.gke.io/lock-release"
+	// ConfigMapNamespace  = "gcp-filestore-csi-driver"
+	ConfigMapNamespace = "gke-managed-filestorecsi"
+	ConfigMapFinalizer  = "filestore.csi.storage.gke.io/lock-release"
 
 	// Concatenation in configmap.
 	dot        = "."
@@ -116,7 +117,7 @@ func CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, da
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       cmName,
 			Namespace:  cmNamespace,
-			Finalizers: []string{ConfigMapFinalzer},
+			Finalizers: []string{ConfigMapFinalizer},
 		},
 		Data: data,
 	}
@@ -148,7 +149,7 @@ func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key,
 
 // UpdateConfigMapWithData sets configmap.data to the given map, and updates the configmap in the api server.
 // No-op if no changes to configmap.data.
-// Returns the server's representation of the configMap, and an error, if there is any.
+// Returns the server's representation of the configmap, and an error, if there is any.
 func UpdateConfigMapWithData(ctx context.Context, cm *corev1.ConfigMap, data map[string]string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
 	// No-op if no changes to configmap.data.
 	if reflect.DeepEqual(cm.Data, data) {
@@ -164,8 +165,8 @@ func UpdateConfigMapWithData(ctx context.Context, cm *corev1.ConfigMap, data map
 
 // DeleteConfigMap removes the finalizer, and deletes the configmap from the api server.
 func DeleteConfigMap(ctx context.Context, cm *corev1.ConfigMap, client kubernetes.Interface) error {
-	if containsFinalizer(cm, ConfigMapFinalzer) {
-		removeFinalizer(cm, ConfigMapFinalzer)
+	if containsFinalizer(cm, ConfigMapFinalizer) {
+		removeFinalizer(cm, ConfigMapFinalizer)
 		if _, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
 			if apiError.IsNotFound(err) {
 				return nil

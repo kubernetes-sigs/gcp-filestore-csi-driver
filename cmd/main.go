@@ -115,6 +115,8 @@ func main() {
 		klog.Fatalf("Failed to initialize Cloud Filestore CSI Driver: %v", err)
 	}
 
+	// gcfsDriver.RunNodeController(ctx)
+
 	klog.Infof("Running Google Cloud Filestore CSI driver version %v", version)
 	gcfsDriver.Run(*endpoint)
 
