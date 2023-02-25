@@ -49,6 +49,7 @@ spec:
             - "--endpoint=unix:/csi/csi.sock"
             - "--nodeid=$(KUBE_NODE_NAME)"
             - "--node=true"
+            - --support-lock-release=true
           env:
             - name: KUBE_NODE_NAME
               valueFrom:

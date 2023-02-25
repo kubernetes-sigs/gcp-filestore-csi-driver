@@ -158,6 +158,7 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 		}
 		klog.Infof("Verifying GKE node %s with nodeId %s nodeInternalIP %s exists or not", nodeName, gkeNodeID, gkeNodeInternalIP)
 		if c.verifyNodeExists(node, gkeNodeID, gkeNodeInternalIP) {
+			klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s still exists in API server, skip lock info reconciliation", nodeName, gkeNodeID, gkeNodeInternalIP)
 			continue
 		}
 		klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s no longer exists, releasing lock for GKE node IP %s Filestore IP %s", nodeName, gkeNodeID, gkeNodeInternalIP, gkeNodeInternalIP, filestoreIP)
@@ -172,7 +173,6 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 		klog.Infof("Deleting configmap %s/%s since remaining configmap.data is empty", cm.Namespace, cm.Name)
 		return util.DeleteConfigMap(ctx, cm, c.client)
 	}
-	klog.Infof("Updating configmap %s/%s with data %v", cm.Namespace, cm.Name, remainingData)
 	if _, err := util.UpdateConfigMapWithData(ctx, cm, remainingData, c.client); err != nil {
 		return err
 	}

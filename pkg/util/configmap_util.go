@@ -24,6 +24,7 @@ import (
 	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
 )
 
 // Ordering of elements in configmap key
@@ -43,7 +44,7 @@ const (
 	ConfigMapNamePrefix = "fscsi-"
 	// ConfigMapNamespace  = "gcp-filestore-csi-driver"
 	ConfigMapNamespace = "gke-managed-filestorecsi"
-	ConfigMapFinalizer  = "filestore.csi.storage.gke.io/lock-release"
+	ConfigMapFinalizer = "filestore.csi.storage.gke.io/lock-release"
 
 	// Concatenation in configmap.
 	dot        = "."
@@ -153,8 +154,11 @@ func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key,
 func UpdateConfigMapWithData(ctx context.Context, cm *corev1.ConfigMap, data map[string]string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
 	// No-op if no changes to configmap.data.
 	if reflect.DeepEqual(cm.Data, data) {
+		klog.Infof("Skip updating configmap %s/%s since configmap.data not changed", cm.Namespace, cm.Name)
 		return cm, nil
 	}
+
+	klog.Infof("Updating configmap %s/%s with data %v", cm.Namespace, cm.Name, data)
 	cm.Data = data
 	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {

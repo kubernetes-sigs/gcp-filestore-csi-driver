@@ -40,5 +40,6 @@ metadata:
   name: imagetag-gce-fs-driver
 imageTag:
   name: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
-  newTag: "v1.3.10"
+  newName: gcr.io/tyuchn-test/gcp-filestore-csi-driver
+  newTag: "le-10"
 ---

@@ -59,16 +59,10 @@ roleRef:
 
 --- 
 
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
-metadata:
- annotations:                                       
-   components.gke.io/layer: addon                  
- labels:
-   k8s-app: gcp-filestore-csi-driver
-   addonmanager.kubernetes.io/mode: Reconcile       
- name: filestorecsi-node-leaderelection-role
- namespace: gke-managed-filestorecsi                     
+metadata:     
+ name: filestorecsi-node-leaderelection-role                  
 rules:                                              
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
@@ -91,7 +85,8 @@ metadata:
 subjects:
 - kind: ServiceAccount
   name: gcp-filestore-csi-node-sa
+  namespace: gcp-filestore-csi-driver
 roleRef:
- kind: Role
+ kind: ClusterRole
  name: filestorecsi-node-leaderelection-role
  apiGroup: rbac.authorization.k8s.io

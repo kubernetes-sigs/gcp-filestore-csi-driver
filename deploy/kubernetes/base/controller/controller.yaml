@@ -98,8 +98,9 @@ spec:
                 fieldRef:
                   fieldPath: metadata.namespace
           ports:
-            - containerPort: 22023
-              name: metrics
+          - name: http-endpoint
+            containerPort: 22023
+            protocol: TCP
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
@@ -110,6 +111,10 @@ spec:
             - "--endpoint=unix:/csi/csi.sock"
             - "--nodeid=$(KUBE_NODE_NAME)"
             - "--controller=true"
+            - --http-endpoint=:22024
+            - --gke-cluster-name=test-nfs
+            - --enable-multishare=true
+            - --filestore-service-endpoint=staging-file.sandbox.googleapis.com
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -117,6 +122,12 @@ spec:
                   fieldPath: spec.nodeName
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/etc/cloud_sa/gcp_filestore_csi_driver_sa.json"
+            - name: GKE_FILESTORECSI_VERSION
+              value: "1234567"
+          ports:
+            - containerPort: 22024
+              name: http-endpoint
+              protocol: TCP
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
