@@ -14,21 +14,7 @@ rules:
   resources: ["configmaps"]
   verbs: ["get", "list", "delete", "update", "create"]
 
----
 
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: filestorecsi-node-driver-role
-  namespace: gke-managed-filestorecsi
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
-roleRef:
-  kind: ClusterRole
-  name: filestorecsi-node-driver-role
-  apiGroup: rbac.authorization.k8s.io
 
 ---
 
@@ -44,6 +30,21 @@ rules:
 
 ---
 
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:     
+ name: filestorecsi-node-leaderelection-role                  
+rules:                                              
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    resourceNames: ["filestore-csi-storage-gke-io-node"]
+    verbs: ["delete", "update", "create"]
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "watch", "list"]
+
+---
+
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
@@ -56,17 +57,6 @@ roleRef:
   kind: ClusterRole
   name: filestorecsi-node-driver-cluster-role
   apiGroup: rbac.authorization.k8s.io
-
---- 
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:     
- name: filestorecsi-node-leaderelection-role                  
-rules:                                              
-- apiGroups: ["coordination.k8s.io"]
-  resources: ["leases"]
-  verbs: ["get", "watch", "list", "delete", "update", "create"]
 
 
 ---
@@ -90,3 +80,19 @@ roleRef:
  kind: ClusterRole
  name: filestorecsi-node-leaderelection-role
  apiGroup: rbac.authorization.k8s.io
+
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: filestorecsi-node-driver-role
+  namespace: gke-managed-filestorecsi
+subjects:
+  - kind: ServiceAccount
+    name: gcp-filestore-csi-node-sa
+    namespace: gcp-filestore-csi-driver
+roleRef:
+  kind: ClusterRole
+  name: filestorecsi-node-driver-role
+  apiGroup: rbac.authorization.k8s.io
