@@ -8,7 +8,7 @@ spec:
       containers:
         - $patch: delete
           name: csi-external-snapshotter
-          image: k8s.gcr.io/sig-storage/csi-snapshotter
+          image: registry.k8s.io/sig-storage/csi-snapshotter
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"

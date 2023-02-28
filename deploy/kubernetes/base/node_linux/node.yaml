@@ -25,7 +25,7 @@ spec:
         kubernetes.io/os: linux
       containers:
         - name: csi-driver-registrar
-          image: k8s.gcr.io/sig-storage/csi-node-driver-registrar
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar
           args:
             - "--v=5"
             - "--csi-address=/csi/csi.sock"
@@ -43,7 +43,7 @@ spec:
         - name: gcp-filestore-driver
           securityContext:
             privileged: true
-          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
+          image: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
           args:
             - "--v=5"
             - "--endpoint=unix:/csi/csi.sock"
@@ -61,7 +61,7 @@ spec:
             - name: plugin-dir
               mountPath: /csi
         - name: nfs-services
-          image: k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver
+          image: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
           command: ["/nfs_services_start.sh"]
       volumes:
         - name: registration-dir

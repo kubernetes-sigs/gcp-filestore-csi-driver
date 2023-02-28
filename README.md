@@ -14,7 +14,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: GA
 
-Latest image: `k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.3.11`
+Latest image: `registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.3.11`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
@@ -23,7 +23,7 @@ This plugin is compatible with CSI version 1.3.0.
 
 ### Kubernetes Compatibility
 The following table captures the compatibility matrix of the core filestore driver binary
-`k8s.gcr.io/cloud-provider-gcp/gcp-filestore-csi-driver`
+`registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver`
 
 | Filestore CSI Driver\Kubernetes Version | 1.16 | 1.17+ |
 | --------------------------------------- | ---- | ----- |
