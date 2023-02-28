@@ -24,7 +24,6 @@
 ### Uncategorized
 
 - Improve error messaging during common retries. ([#404](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/404), [@hsadoyan](https://github.com/hsadoyan))
-- Node driver will call the ReleaseLock function to release all locks on a GKE node during reconciliation. ([#416](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/416), [@tyuchn](https://github.com/tyuchn))
 - Return DeadlineExceeded / Canceled or respective user error code instead of Internal error code when the create/delete filestore instance/share context times out / gets canceled or encounters a user error during polling. ([#417](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/417), [@amacaskill](https://github.com/amacaskill))
 
 ## Dependencies
