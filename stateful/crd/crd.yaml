@@ -1,0 +1,103 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: shareinfos.multishare.filestore.csi.storage.gke.io
+spec:
+  group: multishare.filestore.csi.storage.gke.io
+  names:
+    kind: ShareInfo
+    plural: shareinfos
+    singular: shareinfo
+    shortNames:
+    - si
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        # schema used for validation
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                # instancePoolTag is equivalent to the instance-storageclass-label tag in multishare storage classes
+                instancePoolTag:
+                  type: string
+                shareName:
+                  type: string
+                capacityBytes:
+                  type: integer
+            status:
+              type: object
+              properties:
+                # instanceHandle is in the form of projects/PROJECT/locations/LOCATION/instances/INSTANCE_NAME
+                instanceHandle:
+                  type: string
+                capacityBytes:
+                  type: integer
+                # ONE OF CREATING, READY, UPDATING, DELETED
+                shareStatus:
+                  type: string
+                error:
+                  type: string
+      # subresources for the custom resource
+      subresources:
+        # enables the status subresource
+        status: {}
+
+---
+
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: instanceinfos.multishare.filestore.csi.storage.gke.io
+spec:
+  group: multishare.filestore.csi.storage.gke.io
+  names:
+    kind: InstanceInfo
+    plural: instanceinfos
+    singular: instanceinfo
+    shortNames:
+    - ii
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      schema:
+        # schema used for validation
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                storageClassName:
+                  type: string
+                capacityBytes:
+                  type: integer
+            status:
+              type: object
+              properties:
+                # ONE OF CREATING, READY, UPDATING, DELETED
+                instanceStatus:
+                  type: string
+                capacityBytes:
+                  type: integer
+                capacityStepSizeGb:
+                  type: integer
+                cidr:
+                  type: string
+                shareNames:
+                  type: array
+                  items:
+                    type: string
+                error:
+                  type: string
+      # subresources for the custom resource
+      subresources:
+        # enables the status subresource
+        status: {}

@@ -11,6 +11,7 @@ require (
 	github.com/kubernetes-csi/csi-test/v3 v3.1.1
 	github.com/onsi/ginkgo v1.16.5
 	github.com/onsi/gomega v1.18.1
+	github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
 	golang.org/x/net v0.5.0
@@ -31,8 +32,6 @@ require (
 	sigs.k8s.io/boskos v0.0.0-20201002225104-ae3497d24cd7
 	sigs.k8s.io/controller-runtime v0.12.1
 )
-
-require github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 
 require (
 	cloud.google.com/go/compute v1.15.0 // indirect
@@ -66,11 +65,12 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nxadm/tail v1.4.8 // indirect
-	github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/prometheus/client_golang v1.12.2 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.34.0 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/term v0.4.0 // indirect
