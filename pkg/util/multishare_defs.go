@@ -28,6 +28,8 @@ const (
 	MaxSharesPerInstance                    = 10
 	NewMultishareInstancePrefix             = "fs-"
 	ParamMultishareInstanceScLabelKey       = "storage_gke_io_storage-class-id"
+
+	FilestoreResourceCleanupFinalizer = "multishare.filestore.csi.storage.gke.io/resource-cleanup-protection"
 )
 
 type OperationType int
