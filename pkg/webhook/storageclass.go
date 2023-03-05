@@ -23,8 +23,14 @@ import (
 
 	v1 "k8s.io/api/admission/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
+)
+
+const (
+	Gi int64 = 1024 * 1024 * 1024
+	Ti int64 = 1024 * Gi
 )
 
 var (
@@ -34,6 +40,7 @@ var (
 	TierEnterprise            = "enterprise"
 	InstanceStorageClassLabel = "instance-storageclass-label"
 	Multishare                = "multishare"
+	MaxVolumeSize             = "max-volume-size"
 )
 
 func rejectV1AdmissionResponse(err error) *v1.AdmissionResponse {
@@ -74,6 +81,33 @@ func mutateStorageClass(ar v1.AdmissionReview) *v1.AdmissionResponse {
 	}
 }
 
+func validateMaxVolumeSizeParam(sc *storagev1.StorageClass) error {
+	v, ok := sc.Parameters[MaxVolumeSize]
+	if !ok {
+		return nil
+	}
+	if !featureMaxSharesPerInstance {
+		return fmt.Errorf("'max-volume-size' parameter is not supported")
+	}
+
+	val, err := resource.ParseQuantity(v)
+	if err != nil {
+		return err
+	}
+	valBytes := val.Value()
+	switch valBytes {
+	case 128 * Gi:
+		return nil
+	case 256 * Gi:
+		return nil
+	case 512 * Gi:
+		return nil
+	case 1024 * Gi:
+		return nil
+	}
+	return fmt.Errorf("invalid 'max-volume-size' %s, allowed sizes are '128Gi', '256Gi', '512Gi', '1Ti'", v)
+}
+
 func applyV1StorageClassPatch(sc *storagev1.StorageClass) *v1.AdmissionResponse {
 	reviewResponse := &v1.AdmissionResponse{
 		Allowed: true,
@@ -96,6 +130,11 @@ func applyV1StorageClassPatch(sc *storagev1.StorageClass) *v1.AdmissionResponse 
 	tier, ok := sc.Parameters["tier"]
 	if !ok || tier != TierEnterprise {
 		return rejectV1AdmissionResponse(fmt.Errorf("mutlishare is only supported on %q tier instances", TierEnterprise))
+	}
+
+	err := validateMaxVolumeSizeParam(sc)
+	if err != nil {
+		return rejectV1AdmissionResponse(err)
 	}
 
 	if instanceLabel, ok := sc.Parameters[InstanceStorageClassLabel]; ok {
