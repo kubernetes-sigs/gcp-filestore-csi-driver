@@ -33,9 +33,10 @@ import (
 )
 
 var (
-	certFile string
-	keyFile  string
-	port     int
+	certFile                    string
+	keyFile                     string
+	port                        int
+	featureMaxSharesPerInstance bool
 )
 
 // CmdWebhook is used by Cobra.
@@ -54,6 +55,7 @@ func init() {
 		"File containing the x509 private key matching --tls-cert-file. Required.")
 	CmdWebhook.Flags().IntVar(&port, "port", 443,
 		"Secure port that the webhook listens on")
+	CmdWebhook.Flags().BoolVar(&featureMaxSharesPerInstance, "feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 	CmdWebhook.MarkFlagRequired("tls-cert-file")
 	CmdWebhook.MarkFlagRequired("tls-private-key-file")
 }
