@@ -114,7 +114,7 @@ spec:
             - --http-endpoint=:22024
             - --gke-cluster-name=test-nfs
             - --enable-multishare=true
-            - --filestore-service-endpoint=staging-file.sandbox.googleapis.com
+            - --filestore-service-endpoint=test-file.sandbox.googleapis.com
           env:
             - name: KUBE_NODE_NAME
               valueFrom:

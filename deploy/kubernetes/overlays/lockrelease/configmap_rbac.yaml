@@ -10,9 +10,9 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: filestorecsi-node-driver-role
 rules:
-- apiGroups: [""]
-  resources: ["configmaps"]
-  verbs: ["get", "list", "delete", "update", "create"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "delete", "update", "create"]
 
 
 
@@ -35,13 +35,16 @@ apiVersion: rbac.authorization.k8s.io/v1
 metadata:     
  name: filestorecsi-node-leaderelection-role                  
 rules:                                              
+  # - apiGroups: ["coordination.k8s.io"]
+  #   resources: ["leases"]
+  #   resourceNames: ["filestore-csi-storage-gke-io-node"]
+  #   verbs: ["delete", "update", "create"]
+  # - apiGroups: ["coordination.k8s.io"]
+  #   resources: ["leases"]
+  #   verbs: ["get", "watch", "list"]
   - apiGroups: ["coordination.k8s.io"]
     resources: ["leases"]
-    resourceNames: ["filestore-csi-storage-gke-io-node"]
-    verbs: ["delete", "update", "create"]
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "watch", "list"]
+    verbs: ["get", "list", "delete", "update", "create"]
 
 ---
 

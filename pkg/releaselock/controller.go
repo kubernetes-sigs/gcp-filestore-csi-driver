@@ -65,13 +65,13 @@ type LockReleaseController struct {
 func NewLockReleaseController(client kubernetes.Interface) (*LockReleaseController, error) {
 	// Register rpc procedure for lock release.
 	if err := RegisterLockReleaseProcedure(); err != nil {
-		klog.Errorf("Error initializing lock release controller: %v", err)
+		klog.Errorf("Error initializing lockrelease controller: %v", err)
 		return nil, err
 	}
 
 	id, err := os.Hostname()
 	if err != nil {
-		klog.Errorf("Error getting hostname: %v", err)
+		klog.Errorf("Failed to get hostname for lockrelease controller: %v", err)
 		return nil, err
 	}
 	// Add a uniquifier so that two processes on the same host don't accidentally both become active.
@@ -91,7 +91,7 @@ func NewLockReleaseController(client kubernetes.Interface) (*LockReleaseControll
 
 func (c *LockReleaseController) Run(ctx context.Context) {
 	run := func(ctx context.Context) {
-		klog.Infof("Starting lock release controller %s", c.id)
+		klog.Infof("Lock release controller %s started leading", c.id)
 		wait.Forever(func() {
 			cmList, err := c.client.CoreV1().ConfigMaps(util.ConfigMapNamespace).List(ctx, metav1.ListOptions{})
 			if err != nil {
@@ -120,7 +120,7 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 			Identity: c.id,
 		})
 	if err != nil {
-		klog.Fatalf("Error creating lock: %v", err)
+		klog.Fatalf("Error creating resourcelock: %v", err)
 	}
 
 	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
@@ -140,12 +140,14 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap) error {
 	nodeName, err := util.GKENodeNameFromConfigMap(cm)
 	if err != nil {
+		klog.Errorf("Failed to get GKE node name from configmap %s/%s: %v", cm.Namespace, cm.Name, err)
 		return err
 	}
 
 	klog.Infof("Getting GKE Node %s from API Server", nodeName)
 	node, err := c.client.CoreV1().Nodes().Get(ctx, nodeName, metav1.GetOptions{})
 	if err != nil && !apiError.IsNotFound(err) {
+		klog.Error("Failed to get node %s: %v", nodeName, err)
 		return err
 	}
 
@@ -174,6 +176,7 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 		return util.DeleteConfigMap(ctx, cm, c.client)
 	}
 	if _, err := util.UpdateConfigMapWithData(ctx, cm, remainingData, c.client); err != nil {
+		klog.Errorf("Failed to update configmap %s/%s with data %v: %v", cm.Namespace, cm.Name, remainingData, err)
 		return err
 	}
 	return nil
