@@ -33,7 +33,7 @@ import (
 type GCFSDriverConfig struct {
 	Name             string          // Driver name
 	Version          string          // Driver version
-	NodeID           string          // Node name
+	NodeName         string          // Node name
 	RunController    bool            // Run CSI controller service
 	RunNode          bool            // Run CSI node service
 	Mounter          mount.Interface // Mount library
@@ -44,6 +44,7 @@ type GCFSDriverConfig struct {
 	EcfsDescription  string
 	IsRegional       bool
 	ClusterName      string
+	FeatureOptions   *GCFSDriverFeatureOptions
 }
 
 type GCFSDriver struct {
@@ -58,6 +59,11 @@ type GCFSDriver struct {
 	vcap  map[csi.VolumeCapability_AccessMode_Mode]*csi.VolumeCapability_AccessMode
 	cscap []*csi.ControllerServiceCapability
 	nscap []*csi.NodeServiceCapability
+}
+
+type GCFSDriverFeatureOptions struct {
+	// FeatureLockRelease will enable the NFS lock release feature if sets to true.
+	FeatureLockRelease bool
 }
 
 func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
@@ -92,7 +98,11 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 			csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		}
-		driver.ns = newNodeServer(driver, config.Mounter, config.MetadataService)
+		ns, err := newNodeServer(driver, config.Mounter, config.MetadataService, config.FeatureOptions)
+		if err != nil {
+			return nil, err
+		}
+		driver.ns = ns
 		driver.addNodeServiceCapabilities(nscap)
 	}
 	if config.RunController {
@@ -114,6 +124,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			ecfsDescription:  config.EcfsDescription,
 			isRegional:       config.IsRegional,
 			clusterName:      config.ClusterName,
+			features:         config.FeatureOptions,
 		})
 	}
 

@@ -545,7 +545,8 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp, err := generateCSICreateVolumeResponse(tc.prefix, tc.share)
+			m := initTestMultishareController(t)
+			resp, err := m.generateCSICreateVolumeResponse(tc.prefix, tc.share)
 			if tc.expectError && err == nil {
 				t.Error("expected error, got none")
 			}

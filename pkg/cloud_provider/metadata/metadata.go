@@ -25,12 +25,16 @@ import (
 type Service interface {
 	GetZone() string
 	GetProject() string
+	GetInternalIP() string
+	GetInstanceID() string
 }
 
 type metadataServiceManager struct {
 	// Current zone the driver is running in
-	zone    string
-	project string
+	zone       string
+	project    string
+	instanceID string
+	internalIP string
 }
 
 var _ Service = &metadataServiceManager{}
@@ -44,10 +48,20 @@ func NewMetadataService() (Service, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
+	instanceID, err := metadata.InstanceID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get instance id: %w", err)
+	}
+	internalIP, err := metadata.InternalIP()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get internal IP: %w", err)
+	}
 
 	return &metadataServiceManager{
-		project: projectID,
-		zone:    zone,
+		project:    projectID,
+		zone:       zone,
+		instanceID: instanceID,
+		internalIP: internalIP,
 	}, nil
 }
 
@@ -57,4 +71,12 @@ func (manager *metadataServiceManager) GetZone() string {
 
 func (manager *metadataServiceManager) GetProject() string {
 	return manager.project
+}
+
+func (manager *metadataServiceManager) GetInstanceID() string {
+	return manager.instanceID
+}
+
+func (manager *metadataServiceManager) GetInternalIP() string {
+	return manager.internalIP
 }
