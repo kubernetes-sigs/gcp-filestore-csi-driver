@@ -1,9 +1,9 @@
 apiVersion: multishare.filestore.csi.storage.gke.io/v1alpha1
 kind: InstanceInfo
 metadata:
-  name: fs-abcd-efgh-qwer-yyuc
+  name: projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi
   labels:
-    storageClassTag: enterprise-multishare
+    instance-storageclass-label: enterprise-multishare
 spec:
   storageClassName: enterprise-multishare
   capacityBytes: 107374182400

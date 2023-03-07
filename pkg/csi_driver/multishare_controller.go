@@ -390,7 +390,7 @@ func (m *MultishareController) waitOnWorkflow(ctx context.Context, workflow *Wor
 
 func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
 	params := req.GetParameters()
-	v, ok := params[paramMultishareInstanceScLabel]
+	v, ok := params[ParamMultishareInstanceScLabel]
 	if !ok {
 		return "", fmt.Errorf("failed to find instance prefix key")
 	}
@@ -418,19 +418,19 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			tier = v
 		case paramNetwork:
 			network = v
-		case paramConnectMode:
+		case ParamConnectMode:
 			connectMode = v
 			if connectMode != directPeering && connectMode != privateServiceAccess {
 				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
-		case paramInstanceEncryptionKmsKey:
+		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
-		case paramReservedIPV4CIDR, paramReservedIPRange:
+		case ParamReservedIPV4CIDR, ParamReservedIPRange:
 			continue
-		case paramMultishareInstanceScLabel:
+		case ParamMultishareInstanceScLabel:
 			continue
 		case paramMaxVolumeSize:
 			continue
@@ -447,7 +447,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 
 	location := m.cloud.Zone
 	if m.isRegional {
-		location, _ = util.GetRegionFromZone(location)
+		location, err = util.GetRegionFromZone(location)
 		if err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to get region for regional cluster: %v", err.Error())
 		}
@@ -527,7 +527,7 @@ func extractInstanceLabels(parameters map[string]string, driverName, clusterName
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
 			}
-		case paramMultishareInstanceScLabel:
+		case ParamMultishareInstanceScLabel:
 			err := util.CheckLabelValueRegex(v)
 			if err != nil {
 				return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -537,8 +537,8 @@ func extractInstanceLabels(parameters map[string]string, driverName, clusterName
 	}
 
 	instanceLabels[tagKeyCreatedBy] = strings.ReplaceAll(driverName, ".", "_")
-	instanceLabels[tagKeyClusterName] = clusterName
-	instanceLabels[tagKeyClusterLocation] = location
+	instanceLabels[TagKeyClusterName] = clusterName
+	instanceLabels[TagKeyClusterLocation] = location
 	finalInstanceLabels, err := mergeLabels(userProvidedLabels, instanceLabels)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())

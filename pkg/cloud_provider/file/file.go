@@ -339,7 +339,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 }
 
 func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceInstance, error) {
-	project, location, name, err := getInstanceNameFromURI(instance.Name)
+	project, location, name, err := GetInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +610,7 @@ func backupURI(project, location, name string) string {
 	return fmt.Sprintf(backupURIFmt, project, location, name)
 }
 
-func getInstanceNameFromURI(uri string) (project, location, name string, err error) {
+func GetInstanceNameFromURI(uri string) (project, location, name string, err error) {
 	var uriRegex = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)$`)
 
 	substrings := uriRegex.FindStringSubmatch(uri)
@@ -955,6 +955,8 @@ func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListF
 			return nil, err
 		}
 
+		klog.V(6).Infof("List Share API call returned %d results in resp.Shares with unreachable %v", len(resp.Shares), resp.Unreachable)
+
 		for _, sobj := range resp.Shares {
 			project, location, instanceName, shareName, err := util.ParseShareURI(sobj.Name)
 			if err != nil {
@@ -1064,7 +1066,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 	if instance == nil {
 		return nil, fmt.Errorf("nil instance")
 	}
-	project, location, name, err := getInstanceNameFromURI(instance.Name)
+	project, location, name, err := GetInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -1155,10 +1157,10 @@ func GenerateMultishareInstanceURI(m *MultishareInstance) (string, error) {
 	}
 
 	if m.Project == "" || m.Location == "" || m.Name == "" {
-		return "", fmt.Errorf("missing parent, project or location in instance")
+		return "", fmt.Errorf("missing project, name or location in instance")
 	}
 
-	return fmt.Sprintf(instanceURIFmt, m.Project, m.Location, m.Name), nil
+	return instanceURI(m.Project, m.Location, m.Name), nil
 }
 
 func GenerateShareURI(s *Share) (string, error) {
@@ -1167,8 +1169,8 @@ func GenerateShareURI(s *Share) (string, error) {
 	}
 
 	if s.Parent.Project == "" || s.Parent.Location == "" || s.Parent.Name == "" || s.Name == "" {
-		return "", fmt.Errorf("missing parent, project or location in share parent")
+		return "", fmt.Errorf("missing parent, project, name or location in share parent")
 	}
 
-	return fmt.Sprintf(shareURIFmt, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+	return shareURI(s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
 }

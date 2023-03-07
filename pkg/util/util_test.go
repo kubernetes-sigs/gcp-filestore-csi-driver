@@ -534,3 +534,82 @@ func TestIsAligned(t *testing.T) {
 	}
 
 }
+
+func TestInstanceURIToInstanceInfoName(t *testing.T) {
+	tests := []struct {
+		name           string
+		inputString    string
+		expectedOutput string
+	}{
+		{
+			name:           "empty string",
+			inputString:    "",
+			expectedOutput: "",
+		},
+		{
+			name:           "instanceURI normal",
+			inputString:    "projects/test-project/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+		},
+		{
+			name:           "instance info Name input",
+			inputString:    "projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+		},
+		{
+			name:           "input with special char",
+			inputString:    "projects/test pro'ject-!/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects.test pro'ject-!.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+		},
+		{
+			name:           "missing pieces",
+			inputString:    "projects//locations//instances/",
+			expectedOutput: "projects..locations..instances.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := InstanceURIToInstanceInfoName(tc.inputString)
+			if got != tc.expectedOutput {
+				t.Errorf("got %q, expected %q", got, tc.expectedOutput)
+			}
+		})
+	}
+}
+
+func TestIINameToInstanceURI(t *testing.T) {
+	tests := []struct {
+		name           string
+		inputString    string
+		expectedOutput string
+	}{
+		{
+			name:           "empty string",
+			inputString:    "",
+			expectedOutput: "",
+		},
+		{
+			name:           "iiName normal",
+			inputString:    "projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects/test-project/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+		},
+		{
+			name:           "instanceURI input",
+			inputString:    "projects/test-project/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects/test-project/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+		},
+		{
+			name:           "input with special char",
+			inputString:    "projects.test pro'ject-!.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi",
+			expectedOutput: "projects/test pro'ject-!/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := InstanceInfoNameToInstanceURI(tc.inputString)
+			if got != tc.expectedOutput {
+				t.Errorf("got %q, expected %q", got, tc.expectedOutput)
+			}
+		})
+	}
+}

@@ -134,13 +134,13 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
 	// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 	if instance.Network.ConnectMode == privateServiceAccess {
-		if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+		if reservedIPRange, ok := param[ParamReservedIPRange]; ok {
 			if IsCIDR(reservedIPRange) {
 				return nil, nil, status.Error(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value")
 			}
 			instance.Network.ReservedIpRange = reservedIPRange
 		}
-	} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
+	} else if reservedIPV4CIDR, ok := param[ParamReservedIPV4CIDR]; ok {
 		reservedIPRange, err := m.controllerServer.reserveIPRange(ctx, &file.ServiceInstance{
 			Project:  instance.Project,
 			Name:     instance.Name,
@@ -721,7 +721,7 @@ func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *cs
 //  10. Both source and target instance should have a label with key
 //     "gke_cluster_name", and the value should be the same.
 func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
-	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, tagKeyClusterLocation, tagKeyClusterName}
+	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, TagKeyClusterLocation, TagKeyClusterName}
 	for _, labelKey := range matchLabels {
 		if _, ok := target.Labels[labelKey]; !ok {
 			return false, fmt.Errorf("label %q missing in target instance %+v", labelKey, target)
@@ -731,7 +731,7 @@ func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateV
 		}
 	}
 	params := req.GetParameters()
-	if instanceCIDR, ok := params[paramReservedIPV4CIDR]; ok {
+	if instanceCIDR, ok := params[ParamReservedIPV4CIDR]; ok {
 		withinRange, err := IsIpWithinRange(source.Network.Ip, instanceCIDR)
 		if err != nil {
 			return false, err

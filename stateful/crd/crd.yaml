@@ -28,6 +28,8 @@ spec:
                   type: string
                 shareName:
                   type: string
+                region:
+                  type: string
                 capacityBytes:
                   type: integer
             status:
@@ -41,6 +43,8 @@ spec:
                 # ONE OF CREATING, READY, UPDATING, DELETED
                 shareStatus:
                   type: string
+                capacityStepSizeGb:
+                  type: integer
                 error:
                   type: string
       # subresources for the custom resource

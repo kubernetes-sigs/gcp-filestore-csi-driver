@@ -656,7 +656,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			params: map[string]string{
 				paramTier:                       "foo-tier",
 				paramNetwork:                    "foo-network",
-				paramConnectMode:                privateServiceAccess,
+				ParamConnectMode:                privateServiceAccess,
 				"csiProvisionerSecretName":      "foo-secret",
 				"csiProvisionerSecretNamespace": "foo-namespace",
 			},
@@ -679,7 +679,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			name: "custom params, customer kms key",
 			params: map[string]string{
 				paramTier:                       enterpriseTier,
-				paramInstanceEncryptionKmsKey:   "foo-key",
+				ParamInstanceEncryptionKmsKey:   "foo-key",
 				"csiProvisionerSecretName":      "foo-secret",
 				"csiProvisionerSecretNamespace": "foo-namespace",
 			},
@@ -703,7 +703,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			name: "non-enterprise tier, customer kms key",
 			params: map[string]string{
 				paramTier:                     "foo-tier",
-				paramInstanceEncryptionKmsKey: "foo-key",
+				ParamInstanceEncryptionKmsKey: "foo-key",
 			},
 			expectErr: true,
 		},
@@ -717,7 +717,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 		{
 			name: "invalid connect mode",
 			params: map[string]string{
-				paramConnectMode: "CONNECT_MODE_UNSPECIFIED",
+				ParamConnectMode: "CONNECT_MODE_UNSPECIFIED",
 			},
 			expectErr: true,
 		},
