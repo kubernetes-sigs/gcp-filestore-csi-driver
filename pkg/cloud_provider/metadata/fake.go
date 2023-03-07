@@ -31,3 +31,11 @@ func (manager *fakeServiceManager) GetZone() string {
 func (manager *fakeServiceManager) GetProject() string {
 	return "test-project"
 }
+
+func (manager *fakeServiceManager) GetInstanceID() string {
+	return "123456"
+}
+
+func (manager *fakeServiceManager) GetInternalIP() string {
+	return "127.0.0.1"
+}
