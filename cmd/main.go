@@ -44,6 +44,7 @@ var (
 	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	featureLockRelease              = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
 
 	// This is set at compile time
 	version = "unknown"
@@ -85,17 +86,21 @@ func main() {
 		if err != nil {
 			klog.Fatalf("Failed to set up metadata service: %v", err)
 		}
+		klog.Infof("Metadata service setup: %+v", meta)
 	}
 
 	if err != nil {
 		klog.Fatalf("Failed to initialize cloud provider: %v", err)
 	}
 
+	featureOptions := &driver.GCFSDriverFeatureOptions{
+		FeatureLockRelease: *featureLockRelease,
+	}
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
 		Name:             driverName,
 		Version:          version,
-		NodeID:           *nodeID,
+		NodeName:         *nodeID,
 		RunController:    *runController,
 		RunNode:          *runNode,
 		Mounter:          mounter,
@@ -106,6 +111,7 @@ func main() {
 		EcfsDescription:  *ecfsDescription,
 		IsRegional:       *isRegional,
 		ClusterName:      *gkeClusterName,
+		FeatureOptions:   featureOptions,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)
