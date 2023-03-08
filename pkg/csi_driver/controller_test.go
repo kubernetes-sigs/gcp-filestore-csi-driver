@@ -1048,22 +1048,99 @@ func ValidateExpectedError(t *testing.T, errResp <-chan error, operationUnblocke
 }
 
 func TestCreateSnapshot(t *testing.T) {
+	type BackupInfo struct {
+		s              *file.ServiceInstance
+		backupName     string
+		backupLocation string
+	}
+	backupName := "mybackup"
+	project := "test-project"
+	zone := "us-central1-c"
+	region := "us-central1"
+	instanceName := "myinstance"
+	shareName := "myshare"
 	cases := []struct {
-		name      string
-		req       *csi.CreateSnapshotRequest
-		expectErr bool
+		name          string
+		req           *csi.CreateSnapshotRequest
+		initialBackup *BackupInfo
+		expectErr     bool
 	}{
+		// Failure test cases
 		{
 			name: "Create snapshot request for multishare backed volumes",
 			req: &csi.CreateSnapshotRequest{
-				SourceVolumeId: "modeMultishare/mysc/myproject/location/instancename/sharename",
+				SourceVolumeId: "modeMultishare/mysc/test-project/location/myinstance/myshare",
 			},
 			expectErr: true,
 		},
+		{
+			name: "Existing backup found, with different volume Id (source zonal filestore instance), error expected",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1-c/myinstance1/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			initialBackup: &BackupInfo{
+				s: &file.ServiceInstance{
+					Project:  project,
+					Location: zone,
+					Name:     instanceName,
+					Volume: file.Volume{
+						Name: shareName,
+					},
+				},
+				backupName:     backupName,
+				backupLocation: region,
+			},
+			expectErr: true,
+		},
+		// Success test cases
+		{
+			name: "Existing backup found, with same source volume Id (source zonal filestore instance)",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			initialBackup: &BackupInfo{
+				s: &file.ServiceInstance{
+					Project:  project,
+					Location: zone,
+					Name:     instanceName,
+					Volume: file.Volume{
+						Name: shareName,
+					},
+				},
+				backupName:     backupName,
+				backupLocation: region,
+			},
+		},
 	}
 	for _, test := range cases {
-		cs := initTestController(t)
-		_, err := cs.CreateSnapshot(context.TODO(), test.req)
+		fileService, err := file.NewFakeService()
+		if err != nil {
+			t.Fatalf("failed to initialize GCFS service: %v", err)
+		}
+
+		cloudProvider, err := cloud.NewFakeCloud()
+		if err != nil {
+			t.Fatalf("Failed to get cloud provider: %v", err)
+		}
+		cs := newControllerServer(&controllerServerConfig{
+			driver:      initTestDriver(t),
+			fileService: fileService,
+			cloud:       cloudProvider,
+			volumeLocks: util.NewVolumeLocks(),
+		})
+
+		if test.initialBackup != nil {
+			fileService.CreateBackup(context.TODO(), test.initialBackup.s, test.initialBackup.backupName, test.initialBackup.backupLocation)
+		}
+		_, err = cs.CreateSnapshot(context.TODO(), test.req)
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}
