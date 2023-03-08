@@ -108,8 +108,9 @@ type Network struct {
 }
 
 type BackupInfo struct {
-	Backup             *filev1beta1.Backup
-	SourceVolumeHandle string
+	Backup         *filev1beta1.Backup
+	SourceInstance string
+	SourceShare    string
 }
 
 type Service interface {
@@ -496,8 +497,9 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 		return nil, err
 	}
 	return &BackupInfo{
-		Backup:             backup,
-		SourceVolumeHandle: backup.SourceInstance,
+		Backup:         backup,
+		SourceInstance: backup.SourceInstance,
+		SourceShare:    backup.SourceFileShare,
 	}, nil
 }
 
