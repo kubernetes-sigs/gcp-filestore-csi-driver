@@ -1,0 +1,31 @@
+StorageClass:
+  FromFile: /usr/local/google/home/judemars/go/src/sigs.k8s.io/gcp-filestore-csi-driver/test/k8s-integration/config/fs-sc-basic-hdd-default-network.yaml
+
+SnapshotClass:
+  FromFile: /usr/local/google/home/judemars/go/src/sigs.k8s.io/gcp-filestore-csi-driver/test/k8s-integration/config/fs-backup-volumesnapshotclass.yaml
+
+
+Timeouts:
+  ClaimProvision: 600s
+  PVDelete: 600s
+  PodStart: 600s
+  
+
+DriverInfo:
+  Name: csi-gcpfs-fs-sc-basic-hdd-default-network
+
+  Capabilities:
+    persistence: true
+    exec: true
+    RWX: true
+    multipods: true
+    controllerExpansion: true
+    snapshotDataSource: true
+    fsGroup: true
+  
+  StressTestOptions:
+    NumPods: 10
+    NumRestarts: 10
+  SupportedSizeRange:
+    Min: 1Ti
+    Max: 64Ti

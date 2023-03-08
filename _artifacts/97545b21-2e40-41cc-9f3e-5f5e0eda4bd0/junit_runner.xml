@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8"?><testsuite name="kubetest2" failures="1" tests="1" time="3865.297799994">
+    <testcase name="Test" classname="kubetest2" time="3865.29745717">
+        <failure>exit status 255</failure>
+    </testcase>
+</testsuite>
