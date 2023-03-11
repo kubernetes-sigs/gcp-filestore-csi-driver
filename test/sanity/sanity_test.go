@@ -71,7 +71,7 @@ func TestSanity(t *testing.T) {
 		Mounter:         mounter,
 		Cloud:           cloudProvider,
 		MetadataService: meta,
-		FeatureOptions:  &driver.GCFSDriverFeatureOptions{},
+		FeatureOptions:  &driver.GCFSDriverFeatureOptions{FeatureLockRelease: &driver.FeatureLockRelease{}},
 	}
 	gcfsDriver, err := driver.NewGCFSDriver(driverConfig)
 	if err != nil {

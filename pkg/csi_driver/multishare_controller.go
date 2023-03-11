@@ -576,7 +576,7 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 			},
 		},
 	}
-	if m.driver.config.FeatureOptions.FeatureLockRelease {
+	if m.driver.config.FeatureOptions.FeatureLockRelease.Enabled {
 		resp.Volume.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	klog.Infof("CreateVolume resp: %+v", resp)

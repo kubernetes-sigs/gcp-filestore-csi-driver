@@ -35,7 +35,7 @@ func initTestDriver(t *testing.T) *GCFSDriver {
 		Version:        "test-version",
 		RunNode:        true,
 		Cloud:          c,
-		FeatureOptions: &GCFSDriverFeatureOptions{},
+		FeatureOptions: &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
 	}
 	driver, err := NewGCFSDriver(config)
 	if err != nil {
