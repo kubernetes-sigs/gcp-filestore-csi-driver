@@ -84,7 +84,7 @@ func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
-	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{})
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
 	if err != nil {
 		t.Fatalf("Failed to create node server: %v", err)
 	}
@@ -106,7 +106,7 @@ func initTestNodeServerWithKubeClient(t *testing.T, client kubernetes.Interface)
 		metaService: metaserice,
 		volumeLocks: util.NewVolumeLocks(),
 		kubeClient:  client,
-		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: true},
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{Enabled: true}},
 	}
 }
 
@@ -733,7 +733,7 @@ func initBlockingTestNodeServer(t *testing.T, operationUnblocker chan chan struc
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
-	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{})
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
 	if err != nil {
 		t.Fatalf("Failed to create node server: %v", err)
 	}
@@ -986,35 +986,6 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			},
 		},
 		{
-			name: "configmap for the current node exists, but missing finalizer",
-			req: &csi.NodeStageVolumeRequest{
-				VolumeId:          testVolumeID, //us-central1-c/test-csi/vol1
-				StagingTargetPath: stagingTargetPath,
-				VolumeCapability:  testVolumeCapability,
-				VolumeContext:     testLockReleaseVolumeAttributes,
-			},
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-test-node",
-					Namespace: util.ConfigMapNamespace,
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1":             "1.1.1.1",
-				},
-			},
-		},
-		{
 			name: "configmap for the current node exists, key already exists",
 			req: &csi.NodeStageVolumeRequest{
 				VolumeId:          testVolumeID, //us-central1-c/test-csi/vol1
@@ -1083,8 +1054,9 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			},
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-test-node",
-					Namespace: util.ConfigMapNamespace,
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.2",
@@ -1110,8 +1082,9 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			},
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-test-node",
-					Namespace: util.ConfigMapNamespace,
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1119,8 +1092,9 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			},
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-test-node",
-					Namespace: util.ConfigMapNamespace,
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1142,6 +1116,14 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
 				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{},
 			},
 		},
 	}

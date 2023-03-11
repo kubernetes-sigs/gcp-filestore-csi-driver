@@ -17,13 +17,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"reflect"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 )
 
@@ -44,10 +44,7 @@ const (
 	ConfigMapNamePrefix = "fscsi-"
 	ConfigMapNamespace  = "gke-managed-filestorecsi"
 
-	// If the configmap object is not being deleted and does not have the finalizer registered,
-	// then add the finalizer and update the object in Kubernetes.
-	// If the configmap object is being deleted and the finalizer is still present in finalizers list,
-	// then execute the pre-delete logic and remove the finalizer and update the object.
+	// ConfigMapFinalzer is the finalizer which will be added during configmap creation.
 	ConfigMapFinalzer = "filestore.csi.storage.gke.io/lock-release"
 
 	// Concatenation in configmap.
@@ -136,133 +133,59 @@ func CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, da
 // UpdateConfigMapWithKeyValue adds a key value pair into configmap.data, and updates the configmap in the api server.
 // No-op if the key already exists in configmap.data.
 // Returns the server's representation of the configMap, and an error, if there is any.
-func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key, value string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
+func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key, value string, client kubernetes.Interface) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
-	_, keyExists := cm.Data[key]
-	// If the configmap is not being deleted and does not have the finalizer registered, then add the finalizer and update the configmap.
-	if keyExists && !containsFinalizer(cm, ConfigMapFinalzer) {
-		klog.Infof("NodeStageVolume skippped storing lock info {%s: %s} in configmap %s/%s since key %s already exists in configmap.data %v, adding finalizer to configmap", key, value, cm.Namespace, cm.Name, cm.Data)
-		addFinalizer(cm, ConfigMapFinalzer)
-		updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
-		if err != nil {
-			return nil, err
-		}
-		return updatedCM, nil
-	}
 	// No-op if lock info key already exists in configmap.
-	if keyExists {
+	if _, keyExists := cm.Data[key]; keyExists {
 		klog.Infof("NodeStageVolume skippped storing lock info {%s: %s} in configmap %s/%s since key %s already exists in configmap.data %v", key, value, cm.Namespace, cm.Name, cm.Data)
-		return cm, nil
+		return nil
 	}
-
 	klog.Infof("NodeStageVolume storing lock info {%s: %s} in configmap %s/%s with data %v", key, value, cm.Namespace, cm.Name, cm.Data)
 	cm.Data[key] = value
-	addFinalizer(cm, ConfigMapFinalzer)
 	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	klog.Infof("NodeStageVolume successfully stored lock info {%s: %s} in configmap %s/%s with new data %v", key, value, updatedCM.Namespace, updatedCM.Name, updatedCM.Data)
-	return updatedCM, nil
-}
-
-// UpdateConfigMapWithData sets configmap.data to the given map, and updates the configmap in the api server.
-// No-op if no changes to configmap.data.
-// Returns the server's representation of the configMap, and an error, if there is any.
-func UpdateConfigMapWithData(ctx context.Context, cm *corev1.ConfigMap, data map[string]string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
-	// No-op if no changes to configmap.
-	if reflect.DeepEqual(cm.Data, data) && containsFinalizer(cm, ConfigMapFinalzer) {
-		return cm, nil
-	}
-	cm.Data = data
-	addFinalizer(cm, ConfigMapFinalzer)
-	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
-	if err != nil {
-		return nil, err
-	}
-	return updatedCM, nil
-}
-
-// DeleteConfigMap removes the finalizer, and deletes the configmap from the api server.
-func DeleteConfigMap(ctx context.Context, cm *corev1.ConfigMap, client kubernetes.Interface) error {
-	if containsFinalizer(cm, ConfigMapFinalzer) {
-		removeFinalizer(cm, ConfigMapFinalzer)
-		if _, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{}); err != nil {
-			if apiError.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-	}
-	if cm.DeletionTimestamp == nil {
-		if err := client.CoreV1().ConfigMaps(cm.Namespace).Delete(ctx, cm.Name, metav1.DeleteOptions{}); err != nil {
-			if apiError.IsNotFound(err) {
-				return nil
-			}
-			return err
-		}
-	}
 	return nil
 }
 
-// RemoveKeyFromConfigMap deletes the key from configmap.data.
+// RemoveKeyFromConfigMap deletes the key from configmap.data, then updates the configmap.
 // No-op if the key does not exist.
-// Delete the configmap from api server if configmap.data is an empty map.
-// Otherwise, update the configmap.
-func RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
-	_, cmNeedsUpdate := cm.Data[key]
-	if !cmNeedsUpdate {
+func RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key string, client kubernetes.Interface) error {
+	if _, keyExists := cm.Data[key]; !keyExists {
 		klog.Infof("NodeUnstageVolume skipped updating configmap %s/%s since key %s not found in configmap.data", cm.Namespace, cm.Name, key)
-		return cm, nil
+		return nil
 	}
 
 	klog.Infof("NodeUnstageVolume removing key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
 	delete(cm.Data, key)
-	if len(cm.Data) == 0 {
-		klog.Infof("NodeUnstageVolume deleting configmap %s/%s since configmap.data is empty", cm.Namespace, cm.Name)
-		return nil, DeleteConfigMap(ctx, cm, client)
-	}
-	addFinalizer(cm, ConfigMapFinalzer)
 	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
 	if err != nil {
-		return nil, err
+		return err
 	}
-	klog.Infof("NodeUnstageVolume successfully removed key %s from configmap %s/%s, remaning data: %v", key, cm.Namespace, cm.Name, cm.Data)
-	return updatedCM, nil
+	klog.Infof("NodeUnstageVolume successfully removed key %s from configmap %s/%s, remaning data: %v", key, updatedCM.Namespace, updatedCM.Name, updatedCM.Data)
+	return nil
 }
 
-// containsFinalizer checks an object that the provided finalizer is present.
-func containsFinalizer(obj metav1.Object, finalizer string) bool {
-	f := obj.GetFinalizers()
-	for _, e := range f {
-		if e == finalizer {
-			return true
+// RemoveKeyFromConfigMapWithRetry gets the latest configmap from the api server,
+// removes the key from configmap.data, and update the configmap.
+// Keeps retrying until configmap successfully update or timeout.
+// No-op if the key does not exist.
+func RemoveKeyFromConfigMapWithRetry(ctx context.Context, cm *corev1.ConfigMap, key string, client kubernetes.Interface) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latestCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Get(ctx, cm.Name, metav1.GetOptions{})
+		if err != nil {
+			return err
 		}
-	}
-	return false
-}
-
-// removeFinalizer accepts an object and removes the provided finalizer if present.
-func removeFinalizer(obj metav1.Object, finalizer string) {
-	f := obj.GetFinalizers()
-	for i := 0; i < len(f); i++ {
-		if f[i] == finalizer {
-			f = append(f[:i], f[i+1:]...)
-			i--
+		if _, keyExists := cm.Data[key]; !keyExists {
+			klog.Infof("Skip updating configmap %s/%s: key %s not found in configmap.data", cm.Namespace, cm.Name, key)
+			return nil
 		}
-	}
-	obj.SetFinalizers(f)
-}
-
-// addFinalizer accepts an object and adds the provided finalizer if not present.
-func addFinalizer(obj metav1.Object, finalizer string) {
-	f := obj.GetFinalizers()
-	for _, e := range f {
-		if e == finalizer {
-			return
-		}
-	}
-	obj.SetFinalizers(append(f, finalizer))
+		delete(latestCM.Data, key)
+		_, updateErr := client.CoreV1().ConfigMaps(latestCM.Namespace).Update(ctx, latestCM, metav1.UpdateOptions{})
+		return updateErr
+	})
 }

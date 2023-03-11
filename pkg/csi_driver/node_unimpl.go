@@ -24,5 +24,5 @@ import (
 )
 
 func (s *nodeServer) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandVolumeRequest) (*csi.NodeExpandVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "NodeUnStageVolume unsupported")
+	return nil, status.Error(codes.Unimplemented, "NodeExpandVolume unsupported")
 }
