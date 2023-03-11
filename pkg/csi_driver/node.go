@@ -33,6 +33,7 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -48,12 +49,13 @@ var (
 
 // nodeServer handles mounting and unmounting of GCFS volumes on a node
 type nodeServer struct {
-	driver      *GCFSDriver
-	mounter     mount.Interface
-	metaService metadata.Service
-	volumeLocks *util.VolumeLocks
-	kubeClient  kubernetes.Interface
-	features    *GCFSDriverFeatureOptions
+	driver                *GCFSDriver
+	mounter               mount.Interface
+	metaService           metadata.Service
+	volumeLocks           *util.VolumeLocks
+	lockReleaseController *lockrelease.LockReleaseController
+	kubeClient            kubernetes.Interface
+	features              *GCFSDriverFeatureOptions
 }
 
 func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service, featureOptions *GCFSDriverFeatureOptions) (csi.NodeServer, error) {
@@ -64,7 +66,7 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		volumeLocks: util.NewVolumeLocks(),
 		features:    featureOptions,
 	}
-	if ns.features.FeatureLockRelease {
+	if ns.features.FeatureLockRelease.Enabled {
 		config, err := rest.InClusterConfig()
 		if err != nil {
 			return nil, err
@@ -74,6 +76,11 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 			return nil, err
 		}
 		ns.kubeClient = client
+		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config)
+		if err != nil {
+			return nil, err
+		}
+		ns.lockReleaseController = lc
 	}
 	return ns, nil
 }
@@ -292,16 +299,13 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		}
 	}
 
-	if mounted && s.features.FeatureLockRelease {
-		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists. Proceed to lock info configmap updates", volumeID, stagingTargetPath)
-		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
-		}
-		return &csi.NodeStageVolumeResponse{}, nil
-	}
-
 	if mounted {
-		// Already mounted
+		if s.features.FeatureLockRelease.Enabled {
+			klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists. Proceed to lock info configmap updates", volumeID, stagingTargetPath)
+			if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
+			}
+		}
 		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
@@ -330,7 +334,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", stagingTargetPath, err.Error())
 	}
 
-	if s.features.FeatureLockRelease {
+	if s.features.FeatureLockRelease.Enabled {
 		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, proceed to lock info configmap updates.", volumeID, stagingTargetPath)
 		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
@@ -361,7 +365,7 @@ func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 
-	if s.features.FeatureLockRelease {
+	if s.features.FeatureLockRelease.Enabled {
 		klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s, proceed to lock info configmap updates", volumeID, stagingTargetPath)
 		if err := s.nodeUnstageVolumeUpdateLockInfo(ctx, req); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to update lock info after NodeUnstageVolume succeeded on volume %v from staging target path %s: %v", volumeID, stagingTargetPath, err.Error())
@@ -531,8 +535,7 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 		return nil
 	}
 
-	_, err = util.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP, s.kubeClient)
-	if err != nil {
+	if err := util.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP, s.kubeClient); err != nil {
 		klog.Errorf("NodeStageVolume failed to update configmap %s/%s with lock info {%s: %s} for volume %s: %v", util.ConfigMapNamespace, configmapName, volumeID, err)
 		return err
 	}
@@ -562,7 +565,7 @@ func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *c
 		return err
 	}
 
-	if _, err := util.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey, s.kubeClient); err != nil {
+	if err := util.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey, s.kubeClient); err != nil {
 		klog.Infof("NodeUnstageVolume failed to remove key %s from configmap %s/%s for volume %s: %v", lockInfoKey, cm.Namespace, cm.Name, volumeID, err)
 		return err
 	}

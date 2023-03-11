@@ -619,7 +619,7 @@ func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstanc
 		}
 		resp.ContentSource = contentSource
 	}
-	if s.config.features.FeatureLockRelease && strings.ToLower(instance.Tier) == enterpriseTier {
+	if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
 		resp.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	return resp

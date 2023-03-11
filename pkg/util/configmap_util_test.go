@@ -20,7 +20,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
-	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 )
@@ -228,8 +227,9 @@ func TestUpdateConfigMapWithKeyValue(t *testing.T) {
 			name: "key already exist in configmap.data, configmap missing finalizer",
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
@@ -273,150 +273,17 @@ func TestUpdateConfigMapWithKeyValue(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		updatedCM, err := UpdateConfigMapWithKeyValue(context.Background(), test.existingCM, test.key, test.value, client)
-		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
-			t.Fatal(gotExpected)
-		}
-		if diff := cmp.Diff(test.expectedCM, updatedCM); diff != "" {
-			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
-		}
-	}
-}
-
-func TestUpdateConfigMapWithData(t *testing.T) {
-	cases := []struct {
-		name       string
-		existingCM *corev1.ConfigMap
-		data       map[string]string
-		expectedCM *corev1.ConfigMap
-		expectErr  bool
-	}{
-		{
-			name: "no changes of configmap.data, finalizer exists",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-			data: map[string]string{"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0"},
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-		},
-		{
-			name: "no changes of configmap.data, finalizer not exists",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-			data: map[string]string{"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0"},
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-		},
-		{
-			name: "remove element from configmap.data without finalizer",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-			data: map[string]string{},
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{},
-			},
-		},
-	}
-	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		updatedCM, err := UpdateConfigMapWithData(context.Background(), test.existingCM, test.data, client)
-		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
-			t.Fatal(gotExpected)
-		}
-		if diff := cmp.Diff(test.expectedCM, updatedCM); diff != "" {
-			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
-		}
-	}
-}
-
-func TestDeleteConfigMap(t *testing.T) {
-	cases := []struct {
-		name       string
-		existingCM *corev1.ConfigMap
-		expectErr  bool
-	}{
-		{
-			name: "configmap has finalizer",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{"filestore.csi.storage.gke.io/lock-release"},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-		},
-		{
-			name: "configmap does not have finalizer",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-		},
-	}
-	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
 		ctx := context.Background()
-		err := DeleteConfigMap(ctx, test.existingCM, client)
+		err := UpdateConfigMapWithKeyValue(ctx, test.existingCM, test.key, test.value, client)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		cm, err := client.CoreV1().ConfigMaps(test.existingCM.Namespace).Get(ctx, test.existingCM.Name, metav1.GetOptions{})
-		if !apiError.IsNotFound(err) {
-			t.Errorf("test %q failed: unexpected error %v", test.name, err)
+		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		if err != nil {
+			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
 		}
-		if cm != nil {
-			t.Errorf("test %q failed: %v should have been deleted", test.name, *cm)
+		if diff := cmp.Diff(test.expectedCM, updatedCM); diff != "" {
+			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
 		}
 	}
 }
@@ -436,30 +303,6 @@ func TestRemoveKeyFromConfigMap(t *testing.T) {
 					Name:       "fscsi-node-name",
 					Namespace:  "gcp-filestore-csi-driver",
 					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_2": "192.168.92.1",
-				},
-			},
-			key: "test-project.us-central1.test-filestore.test-share.123456.192_168_1_2",
-			expectedCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:       "fscsi-node-name",
-					Namespace:  "gcp-filestore-csi-driver",
-					Finalizers: []string{ConfigMapFinalzer},
-				},
-				Data: map[string]string{
-					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
-				},
-			},
-		},
-		{
-			name: "key exists in configmap.data, finalier not exists",
-			existingCM: &corev1.ConfigMap{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
 				},
 				Data: map[string]string{
 					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
@@ -506,21 +349,132 @@ func TestRemoveKeyFromConfigMap(t *testing.T) {
 			name: "configmap.data becomes empty after removing key",
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      "fscsi-node-name",
-					Namespace: "gcp-filestore-csi-driver",
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
 				},
 			},
 			key: "test-project.us-central1.test-filestore.test-share.123456.192_168_1_1",
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{},
+			},
 		},
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		updatedCM, err := RemoveKeyFromConfigMap(context.Background(), test.existingCM, test.key, client)
+		ctx := context.Background()
+		err := RemoveKeyFromConfigMap(ctx, test.existingCM, test.key, client)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
+		}
+		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		if err != nil {
+			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
+		}
+		if diff := cmp.Diff(test.expectedCM, updatedCM); diff != "" {
+			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
+		}
+	}
+}
+
+func TestRemoveKeyFromConfigMapWithRetry(t *testing.T) {
+	cases := []struct {
+		name       string
+		existingCM *corev1.ConfigMap
+		key        string
+		expectedCM *corev1.ConfigMap
+		expectErr  bool
+	}{
+		{
+			name: "key exists in configmap.data, finalier exists",
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_2": "192.168.92.1",
+				},
+			},
+			key: "test-project.us-central1.test-filestore.test-share.123456.192_168_1_2",
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+				},
+			},
+		},
+		{
+			name: "key not exist in configmap.data",
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+				},
+			},
+			key: "test-project.us-central1.test-filestore.test-share.123456.192_168_1_2",
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+				},
+			},
+		},
+		{
+			name: "configmap.data becomes empty after removing key",
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+				},
+			},
+			key: "test-project.us-central1.test-filestore.test-share.123456.192_168_1_1",
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-node-name",
+					Namespace:  "gcp-filestore-csi-driver",
+					Finalizers: []string{ConfigMapFinalzer},
+				},
+				Data: map[string]string{},
+			},
+		},
+	}
+	for _, test := range cases {
+		client := fake.NewSimpleClientset(test.existingCM)
+		ctx := context.Background()
+		err := RemoveKeyFromConfigMapWithRetry(ctx, test.existingCM, test.key, client)
+		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
+			t.Fatal(gotExpected)
+		}
+		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		if err != nil {
+			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
 		}
 		if diff := cmp.Diff(test.expectedCM, updatedCM); diff != "" {
 			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)

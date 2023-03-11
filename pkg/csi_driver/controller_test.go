@@ -58,7 +58,7 @@ func initTestController(t *testing.T) csi.ControllerServer {
 		fileService: fileService,
 		cloud:       cloudProvider,
 		volumeLocks: util.NewVolumeLocks(),
-		features:    &GCFSDriverFeatureOptions{},
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
 	})
 }
 
@@ -77,7 +77,7 @@ func initBlockingTestController(t *testing.T, operationUnblocker chan chan struc
 		fileService: fileService,
 		cloud:       cloudProvider,
 		volumeLocks: util.NewVolumeLocks(),
-		features:    &GCFSDriverFeatureOptions{},
+		features:    &GCFSDriverFeatureOptions{&FeatureLockRelease{}},
 	})
 }
 
