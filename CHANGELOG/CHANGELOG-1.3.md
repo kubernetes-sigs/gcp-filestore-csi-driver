@@ -16,6 +16,7 @@
 ### Bug or Regression
 
 - Update golang version for Filestore container and webhook container ([#433](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/433), [@saikat-royc](https://github.com/saikat-royc))
+- Change IpRangeSizeEnterprise to 26 and updating parameter doc ([#403](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/403), [@leiyiz](https://github.com/leiyiz))
 
 ### Other (Cleanup or Flake)
 
