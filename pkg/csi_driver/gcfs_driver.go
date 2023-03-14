@@ -17,6 +17,7 @@ limitations under the License.
 package driver
 
 import (
+	"context"
 	"fmt"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -27,13 +28,14 @@ import (
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
+	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 type GCFSDriverConfig struct {
 	Name             string          // Driver name
 	Version          string          // Driver version
-	NodeID           string          // Node name
+	NodeName         string          // Node name
 	RunController    bool            // Run CSI controller service
 	RunNode          bool            // Run CSI node service
 	Mounter          mount.Interface // Mount library
@@ -44,6 +46,7 @@ type GCFSDriverConfig struct {
 	EcfsDescription  string
 	IsRegional       bool
 	ClusterName      string
+	FeatureOptions   *GCFSDriverFeatureOptions
 }
 
 type GCFSDriver struct {
@@ -58,6 +61,16 @@ type GCFSDriver struct {
 	vcap  map[csi.VolumeCapability_AccessMode_Mode]*csi.VolumeCapability_AccessMode
 	cscap []*csi.ControllerServiceCapability
 	nscap []*csi.NodeServiceCapability
+}
+
+type GCFSDriverFeatureOptions struct {
+	// FeatureLockRelease will enable the NFS lock release feature if sets to true.
+	FeatureLockRelease *FeatureLockRelease
+}
+
+type FeatureLockRelease struct {
+	Enabled bool
+	Config  *lockrelease.LockReleaseControllerConfig
 }
 
 func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
@@ -92,7 +105,11 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
 			csi.NodeServiceCapability_RPC_GET_VOLUME_STATS,
 		}
-		driver.ns = newNodeServer(driver, config.Mounter, config.MetadataService)
+		ns, err := newNodeServer(driver, config.Mounter, config.MetadataService, config.FeatureOptions)
+		if err != nil {
+			return nil, err
+		}
+		driver.ns = ns
 		driver.addNodeServiceCapabilities(nscap)
 	}
 	if config.RunController {
@@ -114,6 +131,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			ecfsDescription:  config.EcfsDescription,
 			isRegional:       config.IsRegional,
 			clusterName:      config.ClusterName,
+			features:         config.FeatureOptions,
 		})
 	}
 
@@ -210,8 +228,12 @@ func (driver *GCFSDriver) ValidateControllerServiceRequest(c csi.ControllerServi
 func (driver *GCFSDriver) Run(endpoint string) {
 	klog.Infof("Running driver: %v", driver.config.Name)
 
-	//Start the nonblocking GRPC
+	// Start the nonblocking GRPC.
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
+	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled {
+		// Start the lock release controller on node driver.
+		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
+	}
 	s.Wait()
 }

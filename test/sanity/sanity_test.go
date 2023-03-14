@@ -65,12 +65,13 @@ func TestSanity(t *testing.T) {
 	driverConfig := &driver.GCFSDriverConfig{
 		Name:            driverName,
 		Version:         driverVersion,
-		NodeID:          nodeID,
+		NodeName:        nodeID,
 		RunController:   true,
 		RunNode:         true,
 		Mounter:         mounter,
 		Cloud:           cloudProvider,
 		MetadataService: meta,
+		FeatureOptions:  &driver.GCFSDriverFeatureOptions{FeatureLockRelease: &driver.FeatureLockRelease{}},
 	}
 	gcfsDriver, err := driver.NewGCFSDriver(driverConfig)
 	if err != nil {

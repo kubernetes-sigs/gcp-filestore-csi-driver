@@ -156,7 +156,7 @@ func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx co
 	if share.State != "READY" {
 		return nil, status.Errorf(codes.Aborted, "share %s not ready, state %s", share.Name, share.State)
 	}
-	return generateCSICreateVolumeResponse(instancePrefix, share)
+	return m.generateCSICreateVolumeResponse(instancePrefix, share)
 }
 
 func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -561,7 +561,7 @@ func getShareRequestCapacity(capRange *csi.CapacityRange) (int64, error) {
 	return rCap, nil
 }
 
-func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi.CreateVolumeResponse, error) {
 	volId, err := generateMultishareVolumeIdFromShare(instancePrefix, s)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
@@ -575,6 +575,9 @@ func generateCSICreateVolumeResponse(instancePrefix string, s *file.Share) (*csi
 				attrIP: s.Parent.Network.Ip,
 			},
 		},
+	}
+	if m.driver.config.FeatureOptions.FeatureLockRelease.Enabled {
+		resp.Volume.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	klog.Infof("CreateVolume resp: %+v", resp)
 	return resp, nil

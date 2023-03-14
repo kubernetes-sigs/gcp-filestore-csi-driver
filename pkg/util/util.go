@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
 )
 
 const (
@@ -225,7 +226,7 @@ func CheckLabelValueRegex(value string) error {
 }
 
 func ParseInstanceURI(instanceURI string) (string, string, string, error) {
-	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>/shares/<share-name>
+	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>
 	splitStr := strings.Split(instanceURI, "/")
 	if len(splitStr) != InstanceURISplitLen {
 		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
@@ -287,4 +288,30 @@ func IsAligned(curSizeBytes int64, expectedBytes int64) bool {
 
 func ErrCodePtr(code codes.Code) *codes.Code {
 	return &code
+}
+
+func ShareStateToCRDStatus(state string) (v1alpha1.FilestoreStatus, error) {
+	switch state {
+	case "CREATING":
+		return v1alpha1.CREATING, nil
+	case "READY":
+		return v1alpha1.READY, nil
+	case "DELETING", "STATE_UNSPECIFIED":
+		return v1alpha1.UPDATING, nil
+	default:
+		return "", fmt.Errorf("Unknown share state: %q", state)
+	}
+}
+
+func InstanceStateToCRDStatus(state string) (v1alpha1.FilestoreStatus, error) {
+	switch state {
+	case "CREATING":
+		return v1alpha1.CREATING, nil
+	case "READY":
+		return v1alpha1.READY, nil
+	case "DELETING", "STATE_UNSPECIFIED", "REPAIRING", "ERROR", "RESTORING", "SUSPENDED", "REVERTING", "RESUMING":
+		return v1alpha1.UPDATING, nil
+	default:
+		return "", fmt.Errorf("Unknown share state: %q", state)
+	}
 }

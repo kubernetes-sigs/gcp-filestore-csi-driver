@@ -147,34 +147,7 @@ roleRef:
   kind: ClusterRole
   name: gcp-filestore-csi-snapshotter-role
   apiGroup: rbac.authorization.k8s.io
----
 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: gcp-filestore-csi-controller-deploy-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gcp-filestore-csi-controller-deploy
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-controller-sa
-    namespace: gcp-filestore-csi-driver
----
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: gcp-filestore-csi-node-deploy-binding
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gcp-filestore-csi-node-deploy
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
 ---
 
 kind: Role

@@ -205,7 +205,6 @@ func TestMutateStorageClass(t *testing.T) {
 }
 
 func TestValidateInstanceLabel(t *testing.T) {
-
 	testCases := []struct {
 		name    string
 		label   string
@@ -249,6 +248,178 @@ func TestValidateInstanceLabel(t *testing.T) {
 
 			if result != tc.isValid {
 				t.Errorf("expected the validity of label %q to be %t but got %t", tc.label, tc.isValid, result)
+			}
+		})
+	}
+}
+
+func TestValidateMaxVolumeSize(t *testing.T) {
+	storageClassName := "filestore-multishare"
+	tests := []struct {
+		name        string
+		sc          *storagev1.StorageClass
+		errExpected bool
+	}{
+		// Failure cases
+		{
+			name: "max-volume-size key set, value empty",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "",
+				},
+			},
+			errExpected: true,
+		},
+		{
+			name: "max-volume-size key set, negative value",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "-10",
+				},
+			},
+			errExpected: true,
+		},
+		{
+			name: "max-volume-size key set, value invalid - test1",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "100",
+				},
+			},
+			errExpected: true,
+		},
+		{
+			name: "max-volume-size key set, value invalid - test2",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "100Gi",
+				},
+			},
+			errExpected: true,
+		},
+		// Successul cases
+		{
+			name: "max-volume-size key set, value valid - test1",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "128Gi",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid - test2",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "256Gi",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid - test3",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "512Gi",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid - test4",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "1024Gi",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid - test5",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "1Ti",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid in Mi - test6",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "131072Mi",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid in bytes - test7",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "137438953472",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid in bytes - test8",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "274877906944",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid in bytes - test9",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "549755813888",
+				},
+			},
+		},
+		{
+			name: "max-volume-size key set, value valid in bytes - test10",
+			sc: &storagev1.StorageClass{
+				ObjectMeta:  metav1.ObjectMeta{Name: storageClassName},
+				Provisioner: FilestoreCSIDriver,
+				Parameters: map[string]string{
+					"max-volume-size": "1099511627776",
+				},
+			},
+		},
+	}
+	originalfeatureValue := featureMaxSharesPerInstance
+	featureMaxSharesPerInstance = true
+	defer func() {
+		featureMaxSharesPerInstance = originalfeatureValue
+	}()
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateMaxVolumeSizeParam(tc.sc)
+			if err != nil && !tc.errExpected {
+				t.Errorf("got unexpected error %s", err)
+			}
+			if err == nil && tc.errExpected {
+				t.Errorf("expected error got nil")
 			}
 		})
 	}

@@ -30,11 +30,12 @@ func initTestDriver(t *testing.T) *GCFSDriver {
 	}
 
 	config := &GCFSDriverConfig{
-		Name:    "test-driver",
-		NodeID:  "test-node",
-		Version: "test-version",
-		RunNode: true,
-		Cloud:   c,
+		Name:           "test-driver",
+		NodeName:       "test-node",
+		Version:        "test-version",
+		RunNode:        true,
+		Cloud:          c,
+		FeatureOptions: &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
 	}
 	driver, err := NewGCFSDriver(config)
 	if err != nil {

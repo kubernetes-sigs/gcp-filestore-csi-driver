@@ -17,16 +17,24 @@ limitations under the License.
 package driver
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
+	corev1 "k8s.io/api/core/v1"
+	apiError "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 var (
@@ -44,6 +52,15 @@ var (
 	}
 	testMultishareVolumeAttributes = map[string]string{
 		attrIP: "1.1.1.1",
+	}
+	testLockReleaseVolumeAttributes = map[string]string{
+		attrIP:                 "1.1.1.1",
+		attrVolume:             "vol1",
+		attrSupportLockRelease: "true",
+	}
+	testLockReleaseMultishareVolumeAttributes = map[string]string{
+		attrIP:                 "1.1.1.1",
+		attrSupportLockRelease: "true",
 	}
 	testDevice = "1.1.1.1:/test-volume"
 
@@ -67,9 +84,29 @@ func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
+	if err != nil {
+		t.Fatalf("Failed to create node server: %v", err)
+	}
 	return &nodeServerTestEnv{
-		ns: newNodeServer(initTestDriver(t), mounter, metaserice),
+		ns: ns,
 		fm: mounter,
+	}
+}
+
+func initTestNodeServerWithKubeClient(t *testing.T, client kubernetes.Interface) *nodeServer {
+	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	metaserice, err := metadata.NewFakeService()
+	if err != nil {
+		t.Fatalf("Failed to init metadata service")
+	}
+	return &nodeServer{
+		driver:      initTestDriver(t),
+		mounter:     mounter,
+		metaService: metaserice,
+		volumeLocks: util.NewVolumeLocks(),
+		kubeClient:  client,
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{Enabled: true}},
 	}
 }
 
@@ -696,8 +733,12 @@ func initBlockingTestNodeServer(t *testing.T, operationUnblocker chan chan struc
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
+	if err != nil {
+		t.Fatalf("Failed to create node server: %v", err)
+	}
 	return &nodeServerTestEnv{
-		ns: newNodeServer(initTestDriver(t), mounter, metaserice),
+		ns: ns,
 		fm: nil,
 	}
 }
@@ -841,4 +882,287 @@ func TestConcurrentMounts(t *testing.T) {
 	if err := <-targetPath1Publishresp; err != nil {
 		t.Errorf("Unexpected error: %v", err)
 	}
+}
+
+func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
+	basePath, err := ioutil.TempDir("", "node-publish-")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	stagingTargetPath := filepath.Join(basePath, "staging")
+	cases := []struct {
+		name       string
+		req        *csi.NodeStageVolumeRequest
+		existingCM *corev1.ConfigMap
+		expectedCM *corev1.ConfigMap
+		expectErr  bool
+	}{
+		{
+			name: "non enterprise tier filestore instance",
+			req: &csi.NodeStageVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testVolumeAttributes,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+		},
+		{
+			name: "configmap not found for the current node",
+			req: &csi.NodeStageVolumeRequest{
+				VolumeId:          testVolumeID, //us-central1-c/test-csi/vol1
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testLockReleaseVolumeAttributes,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node-1",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.1234567.127_0_0_2": "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+		},
+		{
+			name: "configmap for the current node exists",
+			req: &csi.NodeStageVolumeRequest{
+				VolumeId:          testVolumeID, //us-central1-c/test-csi/vol1
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testLockReleaseVolumeAttributes,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1":             "1.1.1.1",
+				},
+			},
+		},
+		{
+			name: "configmap for the current node exists, key already exists",
+			req: &csi.NodeStageVolumeRequest{
+				VolumeId:          testVolumeID, //us-central1-c/test-csi/vol1
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext:     testLockReleaseVolumeAttributes,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+		},
+	}
+	for _, test := range cases {
+		client := fake.NewSimpleClientset(test.existingCM)
+		server := initTestNodeServerWithKubeClient(t, client)
+		ctx := context.Background()
+		err := server.nodeStageVolumeUpdateLockInfo(ctx, test.req)
+		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
+			t.Fatal(gotExpected)
+		}
+		cm, err := client.CoreV1().ConfigMaps(test.expectedCM.Namespace).Get(ctx, test.expectedCM.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("test %q failed: unexpected error %v", test.name, err)
+		}
+		if diff := cmp.Diff(test.expectedCM, cm); diff != "" {
+			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
+		}
+	}
+}
+
+func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
+	basePath, err := ioutil.TempDir("", "node-publish-")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	stagingTargetPath := filepath.Join(basePath, "staging")
+	cases := []struct {
+		name       string
+		req        *csi.NodeUnstageVolumeRequest
+		existingCM *corev1.ConfigMap
+		expectedCM *corev1.ConfigMap
+		expectErr  bool
+	}{
+		{
+			name: "configmap for the current node exists, key exists in configmap",
+			req: &csi.NodeUnstageVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.2",
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1":       "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.2",
+				},
+			},
+		},
+		{
+			name: "configmap for the current node exists, key not exists in configmap",
+			req: &csi.NodeUnstageVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+		},
+		{
+			name: "configmap exists, key exists, configmap empty after removing the key",
+			req: &csi.NodeUnstageVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+			},
+			existingCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{
+					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
+				},
+			},
+			expectedCM: &corev1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:       "fscsi-test-node",
+					Namespace:  util.ConfigMapNamespace,
+					Finalizers: []string{util.ConfigMapFinalzer},
+				},
+				Data: map[string]string{},
+			},
+		},
+	}
+	for _, test := range cases {
+		client := fake.NewSimpleClientset(test.existingCM)
+		server := initTestNodeServerWithKubeClient(t, client)
+		ctx := context.Background()
+		err := server.nodeUnstageVolumeUpdateLockInfo(ctx, test.req)
+		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
+			t.Fatal(gotExpected)
+		}
+		cm, err := client.CoreV1().ConfigMaps(test.existingCM.Namespace).Get(ctx, test.existingCM.Name, metav1.GetOptions{})
+		if test.expectedCM == nil {
+			if !apiError.IsNotFound(err) {
+				t.Fatalf("test %q failed: unexpected error %v", test.name, err)
+			}
+			if cm != nil {
+				t.Fatalf("test %q failed: expecting %v to be deleted", test.name, *cm)
+			}
+			return
+		}
+		if err != nil {
+			t.Fatalf("test %q failed: unexpected error %v", test.name, err)
+		}
+		if test.expectedCM == nil {
+			t.Fatalf("test %q failed: expecting %v to be deleted", test.name, *cm)
+		}
+		if diff := cmp.Diff(test.expectedCM, cm); diff != "" {
+			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
+		}
+	}
+}
+
+func gotExpectedError(testFunc string, wantErr bool, err error) error {
+	if err != nil && !wantErr {
+		return fmt.Errorf("%s got error %v, want nil", testFunc, err)
+	}
+	if err == nil && wantErr {
+		return fmt.Errorf("%s got nil, want error", testFunc)
+	}
+	return nil
 }

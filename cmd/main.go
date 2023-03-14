@@ -20,6 +20,7 @@ import (
 	"context"
 	"flag"
 	"os"
+	"time"
 
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
@@ -28,6 +29,7 @@ import (
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
+	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 )
 
 var (
@@ -44,6 +46,12 @@ var (
 	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	featureLockRelease              = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
+	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
+	leaderElectionLeaseDuration = flag.Duration("leader-election-lease-duration", 15*time.Second, "Duration, in seconds, that non-leader candidates will wait to force acquire leadership. Defaults to 15 seconds.")
+	leaderElectionRenewDeadline = flag.Duration("leader-election-renew-deadline", 10*time.Second, "Duration, in seconds, that the acting leader will retry refreshing leadership before giving up. Defaults to 10 seconds.")
+	leaderElectionRetryPeriod   = flag.Duration("leader-election-retry-period", 5*time.Second, "Duration, in seconds, the LeaderElector clients should wait between tries of actions. Defaults to 5 seconds.")
+	lockReleaseSyncPeriod       = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
 
 	// This is set at compile time
 	version = "unknown"
@@ -85,17 +93,29 @@ func main() {
 		if err != nil {
 			klog.Fatalf("Failed to set up metadata service: %v", err)
 		}
+		klog.Infof("Metadata service setup: %+v", meta)
 	}
 
 	if err != nil {
 		klog.Fatalf("Failed to initialize cloud provider: %v", err)
 	}
 
+	featureOptions := &driver.GCFSDriverFeatureOptions{
+		FeatureLockRelease: &driver.FeatureLockRelease{
+			Enabled: *featureLockRelease,
+			Config: &lockrelease.LockReleaseControllerConfig{
+				LeaseDuration: *leaderElectionLeaseDuration,
+				RenewDeadline: *leaderElectionRenewDeadline,
+				RetryPeriod:   *leaderElectionRetryPeriod,
+				SyncPeriod:    *lockReleaseSyncPeriod,
+			},
+		},
+	}
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
 		Name:             driverName,
 		Version:          version,
-		NodeID:           *nodeID,
+		NodeName:         *nodeID,
 		RunController:    *runController,
 		RunNode:          *runNode,
 		Mounter:          mounter,
@@ -106,6 +126,7 @@ func main() {
 		EcfsDescription:  *ecfsDescription,
 		IsRegional:       *isRegional,
 		ClusterName:      *gkeClusterName,
+		FeatureOptions:   featureOptions,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

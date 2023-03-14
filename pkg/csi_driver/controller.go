@@ -62,8 +62,9 @@ const (
 
 // Volume attributes
 const (
-	attrIP     = "ip"
-	attrVolume = "volume"
+	attrIP                 = "ip"
+	attrVolume             = "volume"
+	attrSupportLockRelease = "supportLockRelease"
 )
 
 // CreateVolume parameters
@@ -117,6 +118,7 @@ type controllerServerConfig struct {
 	ecfsDescription      string
 	isRegional           bool
 	clusterName          string
+	features             *GCFSDriverFeatureOptions
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
@@ -273,7 +275,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.Internal, createErr.Error())
 		}
 	}
-	resp := &csi.CreateVolumeResponse{Volume: fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
+	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
 	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
 }
@@ -598,7 +600,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapshotId string) *csi.Volume {
+func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapshotId string) *csi.Volume {
 	resp := &csi.Volume{
 		VolumeId:      getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
@@ -616,6 +618,9 @@ func fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapsho
 			},
 		}
 		resp.ContentSource = contentSource
+	}
+	if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
+		resp.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	return resp
 }
