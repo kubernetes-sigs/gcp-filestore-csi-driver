@@ -114,6 +114,7 @@ type controllerServerConfig struct {
 	ipAllocator          *util.IPAllocator
 	volumeLocks          *util.VolumeLocks
 	enableMultishare     bool
+	statefulController   *MultishareStatefulController
 	multiShareController *MultishareController
 	reconciler           *MultishareReconciler
 	metricsManager       *metrics.MetricsManager
@@ -129,6 +130,10 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	if config.enableMultishare {
 		config.multiShareController = NewMultishareController(config)
 		config.multiShareController.opsManager.controllerServer = cs
+		if config.features.FeatureStateful.Enabled {
+			config.statefulController = NewMultishareStatefulController(config)
+			config.statefulController.mc = config.multiShareController
+		}
 	}
 	if config.reconciler != nil {
 		klog.Infof("stateful reconciler enabled, setting its controller server")
@@ -152,7 +157,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
 		}
 		start := time.Now()
-		response, err := s.config.multiShareController.CreateVolume(ctx, req)
+		var response *csi.CreateVolumeResponse
+		var err error
+		if s.config.features.FeatureStateful.Enabled {
+			response, err = s.config.statefulController.CreateVolume(ctx, req)
+		} else {
+			response, err = s.config.multiShareController.CreateVolume(ctx, req)
+		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodCreateVolume, modeMultishare, duration)
 		klog.Infof("CreateVolume response %+v error %v, for request %+v", response, err, req)
@@ -352,7 +363,13 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
 		}
 		start := time.Now()
-		response, err := s.config.multiShareController.DeleteVolume(ctx, req)
+		var response *csi.DeleteVolumeResponse
+		var err error
+		if s.config.features.FeatureStateful.Enabled {
+			response, err = s.config.statefulController.DeleteVolume(ctx, req)
+		} else {
+			response, err = s.config.multiShareController.DeleteVolume(ctx, req)
+		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodDeleteVolume, modeMultishare, duration)
 		klog.Infof("Deletevolume response %+v error %v, for request: %+v", response, err, req)
@@ -649,7 +666,13 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
 		}
 		start := time.Now()
-		response, err := s.config.multiShareController.ControllerExpandVolume(ctx, req)
+		var response *csi.ControllerExpandVolumeResponse
+		var err error
+		if s.config.features.FeatureStateful.Enabled {
+			response, err = s.config.statefulController.ControllerExpandVolume(ctx, req)
+		} else {
+			response, err = s.config.multiShareController.ControllerExpandVolume(ctx, req)
+		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodExpandVolume, modeMultishare, duration)
 		klog.Infof("ControllerExpandVolume response %+v error %v, for request: %+v", response, err, req)
