@@ -199,12 +199,12 @@ func GetBackupLocation(params map[string]string) string {
 	return location
 }
 
-func BackupVolumeSourceToCSIVolumeHandle(backupVolumeSource string) (string, error) {
-	splitId := strings.Split(backupVolumeSource, "/")
+func BackupVolumeSourceToCSIVolumeHandle(sourceInstance, sourceShare string) (string, error) {
+	splitId := strings.Split(sourceInstance, "/")
 	if len(splitId) != volumeTotalElements {
-		return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", backupVolumeSource)
+		return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", sourceInstance)
 	}
-	return fmt.Sprintf("modeInstance/%s/%s/vol1", splitId[3], splitId[5]), nil
+	return fmt.Sprintf("modeInstance/%s/%s/%s", splitId[3], splitId[5], sourceShare), nil
 }
 
 // Multishare util functions.
