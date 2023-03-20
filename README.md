@@ -53,6 +53,7 @@ The following table captures the compatibility matrix of the core filestore driv
 | v1.3.9 (GA)                             |  yes |  yes  |
 | v1.3.10 (GA)                            |  yes |  yes  |
 | v1.3.11 (GA)                            |  yes |  yes  |
+| v1.4.1 (GA)                             |  yes |  yes  |
 | master                                  |  yes |  yes  |
 
 The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar, csi driver object, rbacs, pod security policies etc) can be picked up from the master branch [overlays](deploy/kubernetes/overlays) directory. We structure the overlays directory per minor version of kubernetes because not all driver components can be used with all kubernetes versions. For example volume snapshots are supported 1.17+ kubernetes versions thus [stable-1-16](deploy/kubernetes/overlays/stable-1-16) driver manifests does not contain the snapshotter sidecar. Read more about overlays [here](docs/release/overlays.md).
