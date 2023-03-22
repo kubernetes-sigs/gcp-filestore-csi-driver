@@ -209,7 +209,7 @@ func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*core
 	}
 	nodeMap := map[string]*corev1.Node{}
 	for _, node := range nodeList.Items {
-		nodeMap[node.Name] = &node
+		nodeMap[node.Name] = node.DeepCopy()
 	}
 	return nodeMap, nil
 }
