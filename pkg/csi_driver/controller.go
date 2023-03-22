@@ -78,6 +78,7 @@ const (
 	paramMultishare                = "multishare"
 	paramInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
 	paramMultishareInstanceScLabel = "instance-storageclass-label"
+	paramMaxVolumeSize             = "max-volume-size"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"

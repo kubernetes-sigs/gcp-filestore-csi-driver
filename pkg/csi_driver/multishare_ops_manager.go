@@ -50,14 +50,16 @@ type Workflow struct {
 
 // MultishareOpsManager manages the lifecycle of all instance and share operations.
 type MultishareOpsManager struct {
-	sync.Mutex       // Lock to perform thread safe multishare operations.
-	cloud            *cloud.Cloud
-	controllerServer *controllerServer
+	sync.Mutex         // Lock to perform thread safe multishare operations.
+	cloud              *cloud.Cloud
+	controllerServer   *controllerServer
+	msControllerServer *MultishareController
 }
 
-func NewMultishareOpsManager(cloud *cloud.Cloud) *MultishareOpsManager {
+func NewMultishareOpsManager(cloud *cloud.Cloud, mcs *MultishareController) *MultishareOpsManager {
 	return &MultishareOpsManager{
-		cloud: cloud,
+		cloud:              cloud,
+		msControllerServer: mcs,
 	}
 }
 
