@@ -66,11 +66,19 @@ type GCFSDriver struct {
 type GCFSDriverFeatureOptions struct {
 	// FeatureLockRelease will enable the NFS lock release feature if sets to true.
 	FeatureLockRelease *FeatureLockRelease
+	// FeatureMaxSharesPerInstance will enable CSI driver to pack configurable number of max shares per Filestore instance (multishare)
+	FeatureMaxSharesPerInstance *FeatureMaxSharesPerInstance
 }
 
 type FeatureLockRelease struct {
 	Enabled bool
 	Config  *lockrelease.LockReleaseControllerConfig
+}
+
+type FeatureMaxSharesPerInstance struct {
+	Enabled                          bool
+	DescOverrideMaxSharesPerInstance string
+	DescOverrideMinShareSizeGB       string
 }
 
 func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {

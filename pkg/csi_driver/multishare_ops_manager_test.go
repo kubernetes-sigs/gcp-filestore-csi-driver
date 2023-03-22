@@ -411,12 +411,15 @@ func TestInstanceNeedsExpand(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			opUnblocker := make(chan chan file.Signal, 1)
 			cloudProvider := initCloudProviderWithBlockingFileService(t, opUnblocker)
-			manager := NewMultishareOpsManager(cloudProvider)
-
+			config := &controllerServerConfig{
+				driver: initTestDriver(t),
+				cloud:  cloudProvider,
+			}
+			mcs := NewMultishareController(config)
 			runRequest := func(ctx context.Context, share *file.Share, capNeeded int64) <-chan Response {
 				responseChannel := make(chan Response)
 				go func() {
-					needsExpand, targetBytes, err := manager.instanceNeedsExpand(context.Background(), share, capNeeded)
+					needsExpand, targetBytes, err := mcs.opsManager.instanceNeedsExpand(context.Background(), share, capNeeded)
 					responseChannel <- Response{
 						instanceNeedsExpand: needsExpand,
 						targetBytes:         targetBytes,
@@ -428,9 +431,9 @@ func TestInstanceNeedsExpand(t *testing.T) {
 
 			for _, share := range tc.initShares {
 				if share.Parent != nil {
-					manager.cloud.File.StartCreateMultishareInstanceOp(context.Background(), share.Parent)
+					mcs.opsManager.cloud.File.StartCreateMultishareInstanceOp(context.Background(), share.Parent)
 				}
-				manager.cloud.File.StartCreateShareOp(context.Background(), &share)
+				mcs.opsManager.cloud.File.StartCreateShareOp(context.Background(), &share)
 			}
 
 			respChannel := runRequest(context.Background(), tc.targetShareToAccomodate, tc.targetShareToAccomodate.CapacityBytes)
@@ -979,9 +982,12 @@ func TestListMatchedInstances(t *testing.T) {
 			for _, i := range tc.initInstanceList {
 				cloudProvider.File.StartCreateMultishareInstanceOp(context.Background(), i)
 			}
-
-			manager := NewMultishareOpsManager(cloudProvider)
-			filteredList, err := manager.listMatchedInstances(context.Background(), tc.req, tc.target, testRegions)
+			config := &controllerServerConfig{
+				driver: initTestDriver(t),
+				cloud:  cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			filteredList, err := mcs.opsManager.listMatchedInstances(context.Background(), tc.req, tc.target, testRegions)
 			if tc.expectError && err == nil {
 				t.Errorf("expected error: %v", err)
 			}
@@ -1268,8 +1274,13 @@ func TestListMultishareResourceRunningOps(t *testing.T) {
 			}
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
-			manager := NewMultishareOpsManager(cloudProvider)
-			ops, err := manager.listMultishareResourceRunningOps(context.Background())
+			config := &controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: s,
+				cloud:       cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			ops, err := mcs.opsManager.listMultishareResourceRunningOps(context.Background())
 			if err != nil {
 				t.Fatalf("failed to initialize GCFS service: %v", err)
 			}
@@ -1365,8 +1376,13 @@ func TestVerifyNoRunningInstanceOps(t *testing.T) {
 			}
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
-			manager := NewMultishareOpsManager(cloudProvider)
-			err = manager.verifyNoRunningInstanceOps(tc.instance, tc.ops)
+			config := &controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: s,
+				cloud:       cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			err = mcs.opsManager.verifyNoRunningInstanceOps(tc.instance, tc.ops)
 			if tc.errorExpected && err == nil {
 				t.Errorf("expected error, found none")
 			}
@@ -1465,8 +1481,13 @@ func TestVerifyNoRunningInstanceOrShareOpsForInstance(t *testing.T) {
 			}
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
-			manager := NewMultishareOpsManager(cloudProvider)
-			err = manager.verifyNoRunningInstanceOrShareOpsForInstance(tc.instance, tc.ops)
+			config := &controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: s,
+				cloud:       cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			err = mcs.opsManager.verifyNoRunningInstanceOrShareOpsForInstance(tc.instance, tc.ops)
 			if tc.errorExpected && err == nil {
 				t.Errorf("expected error, found none")
 			}
@@ -1574,10 +1595,16 @@ func TestVerifyNoRunningShareOps(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to fake service: %v", err)
 			}
+
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
-			manager := NewMultishareOpsManager(cloudProvider)
-			err = manager.verifyNoRunningShareOps(tc.share, tc.ops)
+			config := &controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: s,
+				cloud:       cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			err = mcs.opsManager.verifyNoRunningShareOps(tc.share, tc.ops)
 			if tc.errorExpected && err == nil {
 				t.Errorf("expected error, found none")
 			}
@@ -2272,8 +2299,13 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			}
 			cloudProvider, _ := cloud.NewFakeCloud()
 			cloudProvider.File = s
-			manager := NewMultishareOpsManager(cloudProvider)
-			ready, err := manager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target, testRegions)
+			config := &controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: s,
+				cloud:       cloudProvider,
+			}
+			mcs := NewMultishareController(config)
+			ready, err := mcs.opsManager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target, testRegions)
 			if err != nil && !tc.expectError {
 				t.Errorf("unexpected error")
 			}
@@ -2281,9 +2313,6 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 			if tc.expectError && err == nil {
 				t.Errorf("expected error")
 			}
-			//if nonReady != tc.expectedNonReadyCount {
-			//t.Errorf("got %d, want %d", nonReady, tc.expectedNonReadyCount)
-			//}
 			for _, r := range ready {
 				if !found(tc.expectedReadyInstance, r) {
 					t.Errorf("expected instance not ready")

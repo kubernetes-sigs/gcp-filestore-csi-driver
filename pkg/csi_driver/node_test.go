@@ -84,7 +84,7 @@ func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
-	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}})
 	if err != nil {
 		t.Fatalf("Failed to create node server: %v", err)
 	}
@@ -733,7 +733,7 @@ func initBlockingTestNodeServer(t *testing.T, operationUnblocker chan chan struc
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
-	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{&FeatureLockRelease{}})
+	ns, err := newNodeServer(initTestDriver(t), mounter, metaserice, &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}})
 	if err != nil {
 		t.Fatalf("Failed to create node server: %v", err)
 	}

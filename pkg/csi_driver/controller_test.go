@@ -77,7 +77,7 @@ func initBlockingTestController(t *testing.T, operationUnblocker chan chan struc
 		fileService: fileService,
 		cloud:       cloudProvider,
 		volumeLocks: util.NewVolumeLocks(),
-		features:    &GCFSDriverFeatureOptions{&FeatureLockRelease{}},
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
 	})
 }
 

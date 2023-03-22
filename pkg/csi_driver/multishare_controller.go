@@ -34,27 +34,31 @@ import (
 const (
 	modeMultishare = "modeMultishare"
 
-	methodCreateVolume         = "CreateVolume"
-	methodDeleteVolume         = "DeleteVolume"
-	methodExpandVolume         = "ExpandVolume"
-	ecfsDataPlaneVersionFormat = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
+	methodCreateVolume              = "CreateVolume"
+	methodDeleteVolume              = "DeleteVolume"
+	methodExpandVolume              = "ExpandVolume"
+	ecfsDataPlaneVersionFormat      = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
+	ecfsCustom100sharesConfigFormat = "GoogleReservedOverrides={\"CustomMultiShareConfig\":{\"MaxShareCount\": %d, \"MinShareSizeGB\":%d}}"
 )
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareController struct {
-	driver          *GCFSDriver
-	fileService     file.Service
-	cloud           *cloud.Cloud
-	opsManager      *MultishareOpsManager
-	volumeLocks     *util.VolumeLocks
-	ecfsDescription string
-	isRegional      bool
-	clustername     string
+	driver                     *GCFSDriver
+	fileService                file.Service
+	cloud                      *cloud.Cloud
+	opsManager                 *MultishareOpsManager
+	volumeLocks                *util.VolumeLocks
+	ecfsDescription            string
+	isRegional                 bool
+	clustername                string
+	featureMaxSharePerInstance bool
+	// Filestore instance description overrides
+	descOverrideMaxSharesPerInstance string
+	descOverrideMinShareSizeBytes    string
 }
 
 func NewMultishareController(config *controllerServerConfig) *MultishareController {
-	return &MultishareController{
-		opsManager:      NewMultishareOpsManager(config.cloud),
+	c := &MultishareController{
 		driver:          config.driver,
 		fileService:     config.fileService,
 		cloud:           config.cloud,
@@ -63,6 +67,13 @@ func NewMultishareController(config *controllerServerConfig) *MultishareControll
 		isRegional:      config.isRegional,
 		clustername:     config.clusterName,
 	}
+	c.opsManager = NewMultishareOpsManager(config.cloud, c)
+	if config.features != nil && config.features.FeatureMaxSharesPerInstance != nil {
+		c.featureMaxSharePerInstance = config.features.FeatureMaxSharesPerInstance.Enabled
+		c.descOverrideMaxSharesPerInstance = config.features.FeatureMaxSharesPerInstance.DescOverrideMaxSharesPerInstance
+		c.descOverrideMinShareSizeBytes = config.features.FeatureMaxSharesPerInstance.DescOverrideMinShareSizeGB
+	}
+	return c
 }
 
 func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
