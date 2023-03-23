@@ -1,3 +1,11 @@
+# v1.4.2 - Changelog since v1.4.1
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Fix pointer issue in lock release controller ([#458](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/458)), [@tyuchn](https://github.com/tyuchn))
+
 # v1.4.1 - Changelog since v1.4.0
 
 ## Changes by Kind
