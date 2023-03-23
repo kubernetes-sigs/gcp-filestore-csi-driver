@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -62,6 +63,29 @@ func initTestMultishareController(t *testing.T) *MultishareController {
 		ecfsDescription: "",
 		isRegional:      true,
 		clusterName:     testClusterName,
+	}
+	return NewMultishareController(config)
+}
+
+func initTestMultishareControllerWithFeatureOpts(t *testing.T, features *GCFSDriverFeatureOptions) *MultishareController {
+	fileService, err := file.NewFakeService()
+	if err != nil {
+		t.Fatalf("failed to initialize GCFS service: %v", err)
+	}
+
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
+	config := &controllerServerConfig{
+		driver:          initTestDriver(t),
+		fileService:     fileService,
+		cloud:           cloudProvider,
+		volumeLocks:     util.NewVolumeLocks(),
+		ecfsDescription: "",
+		isRegional:      true,
+		clusterName:     testClusterName,
+		features:        features,
 	}
 	return NewMultishareController(config)
 }
@@ -231,24 +255,47 @@ func TestGetShareRequestCapacity(t *testing.T) {
 	tests := []struct {
 		name             string
 		cap              *csi.CapacityRange
+		minSizeBytes     int64
+		maxSizeBytes     int64
 		expectErr        bool
 		expectedCapacity int64
 	}{
 		{
-			name:      "req and limit not set",
-			cap:       &csi.CapacityRange{},
-			expectErr: true,
+			name:         "req and limit not set",
+			cap:          &csi.CapacityRange{},
+			expectErr:    true,
+			minSizeBytes: util.MinShareSizeBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
-			name:             "empty cap range",
+			name:             "empty cap range, test 1",
 			expectedCapacity: 100 * util.Gb,
+			minSizeBytes:     util.MinShareSizeBytes,
+			maxSizeBytes:     util.MaxShareSizeBytes,
 		},
 		{
-			name:      "cap range limit less than minimum supported size",
+			name:             "empty cap range, test 2",
+			expectedCapacity: util.MinShareSizeConfigurableBytes,
+			minSizeBytes:     util.MinShareSizeConfigurableBytes,
+			maxSizeBytes:     util.MaxShareSizeBytes,
+		},
+		{
+			name:      "cap range limit less than minimum supported size, test 1",
 			expectErr: true,
 			cap: &csi.CapacityRange{
 				LimitBytes: 99 * util.Gb,
 			},
+			minSizeBytes: util.MinShareSizeBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
+		},
+		{
+			name:      "cap range limit less than minimum supported size, test 2",
+			expectErr: true,
+			cap: &csi.CapacityRange{
+				LimitBytes: 9 * util.Gb,
+			},
+			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
 			name:      "cap range limit more than maximum supported size",
@@ -256,13 +303,26 @@ func TestGetShareRequestCapacity(t *testing.T) {
 			cap: &csi.CapacityRange{
 				LimitBytes: 2 * util.Tb,
 			},
+			minSizeBytes: util.MinShareSizeBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
-			name:      "cap range req less than minimum supported size",
+			name:      "cap range req less than minimum supported size, test 1",
 			expectErr: true,
 			cap: &csi.CapacityRange{
 				RequiredBytes: 99 * util.Gb,
 			},
+			minSizeBytes: util.MinShareSizeBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
+		},
+		{
+			name:      "cap range req less than minimum supported size, test 2",
+			expectErr: true,
+			cap: &csi.CapacityRange{
+				RequiredBytes: 9 * util.Gb,
+			},
+			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
 			name:      "cap range req more than maximum supported size",
@@ -286,11 +346,62 @@ func TestGetShareRequestCapacity(t *testing.T) {
 				LimitBytes:    1 * util.Tb,
 			},
 			expectedCapacity: 1 * util.Tb,
+			minSizeBytes:     util.MinShareSizeBytes,
+			maxSizeBytes:     util.MaxShareSizeBytes,
+		},
+		{
+			name: "cap range req and limit set, limit exceeds min range",
+			cap: &csi.CapacityRange{
+				RequiredBytes: 1 * util.Gb,
+				LimitBytes:    9 * util.Gb,
+			},
+			expectErr:    true,
+			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
+		},
+		{
+			name: "cap range req and limit set, limit exceeds min range",
+			cap: &csi.CapacityRange{
+				RequiredBytes: 1 * util.Gb,
+				LimitBytes:    99 * util.Gb,
+			},
+			expectErr:    true,
+			minSizeBytes: util.MinShareSizeBytes,
+			maxSizeBytes: util.MaxShareSizeBytes,
+		},
+		{
+			name: "cap range req and limit set within range",
+			cap: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Gb,
+				LimitBytes:    100 * util.Gb,
+			},
+			minSizeBytes:     util.MinShareSizeConfigurableBytes,
+			maxSizeBytes:     128 * util.Gb,
+			expectedCapacity: 100 * util.Gb,
+		},
+		{
+			name: "cap range req and limit set, limit exceed range",
+			cap: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Gb,
+				LimitBytes:    130 * util.Gb,
+			},
+			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			maxSizeBytes: 128 * util.Gb,
+			expectErr:    true,
+		},
+		{
+			name: "cap range req set, req exceed range",
+			cap: &csi.CapacityRange{
+				RequiredBytes: 130 * util.Gb,
+			},
+			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			maxSizeBytes: 128 * util.Gb,
+			expectErr:    true,
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			capacity, err := getShareRequestCapacity(tc.cap)
+			capacity, err := getShareRequestCapacity(tc.cap, tc.minSizeBytes, tc.maxSizeBytes)
 			if tc.expectErr && err == nil {
 				t.Error("expected error, got none")
 			}
@@ -478,7 +589,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := initTestMultishareController(t)
-			filer, err := m.generateNewMultishareInstance(tc.instanceName, tc.req)
+			filer, err := m.generateNewMultishareInstance(tc.instanceName, tc.req, 10)
 			if tc.expectErr && err == nil {
 				t.Error("expected error, got none")
 			}
@@ -494,11 +605,13 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 
 func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 	tests := []struct {
-		name         string
-		prefix       string
-		share        *file.Share
-		expectedResp *csi.CreateVolumeResponse
-		expectError  bool
+		name              string
+		prefix            string
+		share             *file.Share
+		expectError       bool
+		features          *GCFSDriverFeatureOptions
+		expectedResp      *csi.CreateVolumeResponse
+		maxShareSizeBytes int64
 	}{
 		{
 			name:        "empty prefix",
@@ -532,6 +645,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 				},
 				CapacityBytes: 1 * util.Tb,
 			},
+			maxShareSizeBytes: 1 * util.Tb,
 			expectedResp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
@@ -542,11 +656,76 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:   "valid share object, with configurable share feature enabled",
+			prefix: testInstanceScPrefix,
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			share: &file.Share{
+				Name: testShareName,
+				Parent: &file.MultishareInstance{
+					Name:     testInstanceName,
+					Project:  testProject,
+					Location: testLocation,
+					Network: file.Network{
+						Ip: "1.1.1.1",
+					},
+				},
+				CapacityBytes: 1 * util.Tb,
+			},
+			maxShareSizeBytes: 1 * util.Tb,
+			expectedResp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
+					CapacityBytes: 1 * util.Tb,
+					VolumeContext: map[string]string{
+						attrIP:           "1.1.1.1",
+						attrMaxShareSize: strconv.Itoa(util.Tb),
+					},
+				},
+			},
+		},
+		{
+			name:   "valid share object, with configurable share feature enabled, test 2",
+			prefix: testInstanceScPrefix,
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			share: &file.Share{
+				Name: testShareName,
+				Parent: &file.MultishareInstance{
+					Name:     testInstanceName,
+					Project:  testProject,
+					Location: testLocation,
+					Network: file.Network{
+						Ip: "1.1.1.1",
+					},
+				},
+				CapacityBytes: 1 * util.Tb,
+			},
+			maxShareSizeBytes: 100 * util.Gb,
+			expectedResp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
+					CapacityBytes: 1 * util.Tb,
+					VolumeContext: map[string]string{
+						attrIP:           "1.1.1.1",
+						attrMaxShareSize: strconv.Itoa(100 * util.Gb),
+					},
+				},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			m := initTestMultishareController(t)
-			resp, err := m.generateCSICreateVolumeResponse(tc.prefix, tc.share)
+			//m := initTestMultishareController(t)
+			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
+			resp, err := m.generateCSICreateVolumeResponse(tc.prefix, tc.share, tc.maxShareSizeBytes)
 			if tc.expectError && err == nil {
 				t.Error("expected error, got none")
 			}
@@ -1617,6 +1796,254 @@ func TestMultishareControllerExpandVolume(t *testing.T) {
 			}
 			if !reflect.DeepEqual(resp, tc.resp) {
 				t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+			}
+		})
+	}
+}
+
+func TestIsValidMaxVolSize(t *testing.T) {
+	tests := []struct {
+		val         int64
+		expectedret bool
+	}{
+		{
+			val: 0,
+		},
+		{
+			val:         128 * util.Gb,
+			expectedret: true,
+		},
+		{
+			val:         256 * util.Gb,
+			expectedret: true,
+		},
+		{
+			val:         512 * util.Gb,
+			expectedret: true,
+		},
+		{
+			val:         1 * util.Tb,
+			expectedret: true,
+		},
+		{
+			val:         1024 * util.Gb,
+			expectedret: true,
+		},
+		{
+			val:         131072 * util.Mb,
+			expectedret: true,
+		},
+		// Negative test cases
+		{
+			val:         131073 * util.Mb,
+			expectedret: false,
+		},
+		{
+			val:         131073,
+			expectedret: false,
+		},
+		{
+			val:         1023 * util.Tb,
+			expectedret: false,
+		},
+		{
+			val:         127 * util.Gb,
+			expectedret: false,
+		},
+		{
+			val:         257 * util.Gb,
+			expectedret: false,
+		},
+		{
+			val:         -1024 * util.Gb,
+			expectedret: false,
+		},
+		{
+			val:         0,
+			expectedret: false,
+		},
+	}
+	for _, tc := range tests {
+		if isValidMaxVolSize(tc.val) != tc.expectedret {
+			t.Errorf("failed for val %d, expected ret %v", tc.val, tc.expectedret)
+		}
+	}
+}
+
+func TestParseMaxVolumeSizeParam(t *testing.T) {
+	tests := []struct {
+		name                          string
+		req                           *csi.CreateVolumeRequest
+		features                      *GCFSDriverFeatureOptions
+		expectedSharesPerInstance     int
+		expectedMaxShareCapacityBytes int64
+		expectError                   bool
+	}{
+		{
+			name: "feature not enabled, param set",
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "128Gi",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param set, value not set",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param set, invalid value test1",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "-128Gi",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param set, invalid value",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "12i",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param set, unexpected value test1",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "100Gi",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param set, unexpected value test2",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "100Gi",
+				},
+			},
+			expectError: true,
+		},
+		{
+			name: "feature enabled, param not set, defaults returned",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{},
+			},
+			expectedSharesPerInstance:     util.MaxSharesPerInstance,
+			expectedMaxShareCapacityBytes: util.MaxShareSizeBytes,
+		},
+		{
+			name: "feature enabled, param set success test1",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "128Gi",
+				},
+			},
+			expectedSharesPerInstance:     80,
+			expectedMaxShareCapacityBytes: 128 * util.Gb,
+		},
+		{
+			name: "feature enabled, param set success test2",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "256Gi",
+				},
+			},
+			expectedSharesPerInstance:     40,
+			expectedMaxShareCapacityBytes: 256 * util.Gb,
+		},
+		{
+			name: "feature enabled, param set success test3",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "512Gi",
+				},
+			},
+			expectedSharesPerInstance:     20,
+			expectedMaxShareCapacityBytes: 512 * util.Gb,
+		},
+		{
+			name: "feature enabled, param set success test4",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMaxVolumeSize: "1024Gi",
+				},
+			},
+			expectedSharesPerInstance:     10,
+			expectedMaxShareCapacityBytes: 1 * util.Tb,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
+			sharePerInstance, maxShareCapacity, err := m.parseMaxVolumeSizeParam(tc.req)
+			if tc.expectError && err == nil {
+				t.Errorf("failed")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("failed")
+			}
+			if sharePerInstance != tc.expectedSharesPerInstance || maxShareCapacity != tc.expectedMaxShareCapacityBytes {
+				t.Errorf("failed")
 			}
 		})
 	}

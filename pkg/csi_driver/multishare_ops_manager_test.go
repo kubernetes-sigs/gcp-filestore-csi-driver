@@ -1634,6 +1634,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 		req                   *csi.CreateVolumeRequest
 		target                *file.MultishareInstance
 		expectError           bool
+		features              *GCFSDriverFeatureOptions
 	}{
 		{
 			name: "no instances",
@@ -1668,7 +1669,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 					State: "READY",
 				},
 				{
-					Name:     "test-instance-1",
+					Name:     "test-instance-2",
 					Project:  testProject,
 					Location: testRegion,
 					Labels: map[string]string{
@@ -2290,6 +2291,175 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "instance exhausted with max shares, no ready instance found",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  testProject,
+				Location: testRegion,
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					tagKeyClusterLocation:                  testLocation,
+					tagKeyClusterName:                      testClusterName,
+				},
+			},
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Project:  testProject,
+					Location: testRegion,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						tagKeyClusterLocation:                  testLocation,
+						tagKeyClusterName:                      testClusterName,
+					},
+					State:         "READY",
+					MaxShareCount: 2,
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: "share-1",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  testProject,
+						Location: testRegion,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+							tagKeyClusterLocation:                  testLocation,
+							tagKeyClusterName:                      testClusterName,
+						},
+					},
+				},
+				{
+					Name: "share-2",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  testProject,
+						Location: testRegion,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+							tagKeyClusterLocation:                  testLocation,
+							tagKeyClusterName:                      testClusterName,
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "1 instance exhausted with max shares, 1 ready instance with less than max share count",
+			features: &GCFSDriverFeatureOptions{
+				FeatureMaxSharesPerInstance: &FeatureMaxSharesPerInstance{
+					Enabled: true,
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					paramMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+			},
+			target: &file.MultishareInstance{
+				Name:     "test-target-instance",
+				Project:  testProject,
+				Location: testRegion,
+				Labels: map[string]string{
+					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+					tagKeyClusterLocation:                  testLocation,
+					tagKeyClusterName:                      testClusterName,
+				},
+			},
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     "instance-1",
+					Project:  testProject,
+					Location: testRegion,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						tagKeyClusterLocation:                  testLocation,
+						tagKeyClusterName:                      testClusterName,
+					},
+					State:         "READY",
+					MaxShareCount: 2,
+				},
+				{
+					Name:     "instance-2",
+					Project:  testProject,
+					Location: testRegion,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						tagKeyClusterLocation:                  testLocation,
+						tagKeyClusterName:                      testClusterName,
+					},
+					State:         "READY",
+					MaxShareCount: 10,
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: "share-1",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  testProject,
+						Location: testRegion,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+							tagKeyClusterLocation:                  testLocation,
+							tagKeyClusterName:                      testClusterName,
+						},
+					},
+				},
+				{
+					Name: "share-2",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-1",
+						Project:  testProject,
+						Location: testRegion,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+							tagKeyClusterLocation:                  testLocation,
+							tagKeyClusterName:                      testClusterName,
+						},
+					},
+				},
+				{
+					Name: "share-3",
+					Parent: &file.MultishareInstance{
+						Name:     "instance-2",
+						Project:  testProject,
+						Location: testRegion,
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+							tagKeyClusterLocation:                  testLocation,
+							tagKeyClusterName:                      testClusterName,
+						},
+					},
+				},
+			},
+			expectedReadyInstance: []*file.MultishareInstance{
+				{
+					Name:     "instance-2",
+					Project:  testProject,
+					Location: testRegion,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						tagKeyClusterLocation:                  testLocation,
+						tagKeyClusterName:                      testClusterName,
+					},
+					State:         "READY",
+					MaxShareCount: 10,
+				},
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -2303,6 +2473,7 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 				driver:      initTestDriver(t),
 				fileService: s,
 				cloud:       cloudProvider,
+				features:    tc.features,
 			}
 			mcs := NewMultishareController(config)
 			ready, err := mcs.opsManager.runEligibleInstanceCheck(context.Background(), tc.req, tc.ops, tc.target, testRegions)
@@ -2312,6 +2483,9 @@ func TestRunEligibleInstanceCheck(t *testing.T) {
 
 			if tc.expectError && err == nil {
 				t.Errorf("expected error")
+			}
+			if len(ready) != len(tc.expectedReadyInstance) {
+				t.Errorf("Mismatch in expected ready instances count, ready %d, expected %d", len(ready), len(tc.expectedReadyInstance))
 			}
 			for _, r := range ready {
 				if !found(tc.expectedReadyInstance, r) {
