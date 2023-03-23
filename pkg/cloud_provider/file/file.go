@@ -71,6 +71,7 @@ type MultishareInstance struct {
 	State              string
 	KmsKeyName         string
 	Description        string
+	MaxShareCount      int
 }
 
 func (i *MultishareInstance) String() string {
@@ -803,10 +804,11 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 				ConnectMode:     instance.Network.ConnectMode,
 			},
 		},
-		CapacityGb:  util.BytesToGb(instance.CapacityBytes),
-		KmsKeyName:  instance.KmsKeyName,
-		Labels:      instance.Labels,
-		Description: instance.Description,
+		CapacityGb:    util.BytesToGb(instance.CapacityBytes),
+		KmsKeyName:    instance.KmsKeyName,
+		Labels:        instance.Labels,
+		Description:   instance.Description,
+		MaxShareCount: int64(instance.MaxShareCount),
 	}
 
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
@@ -1088,6 +1090,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		MaxCapacityBytes:   instance.MaxCapacityGb * util.Gb,
 		CapacityStepSizeGb: instance.CapacityStepSizeGb,
 		Description:        instance.Description,
+		MaxShareCount:      int(instance.MaxShareCount),
 	}, nil
 }
 

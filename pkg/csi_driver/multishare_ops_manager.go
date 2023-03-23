@@ -356,7 +356,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 	var nonReadyEligibleInstances []*file.MultishareInstance
 
 	for _, instance := range instances {
-		klog.Infof("Found multishare instance %s/%s/%s with state %s.", instance.Project, instance.Location, instance.Name, instance.State)
+		klog.Infof("Found multishare instance %s/%s/%s with state %s and max share count %d", instance.Project, instance.Location, instance.Name, instance.State, instance.MaxShareCount)
 		if instance.State == "CREATING" || instance.State == "REPAIRING" {
 			klog.Infof("Instance %s/%s/%s with state %s is not ready", instance.Project, instance.Location, instance.Name, instance.State)
 			nonReadyEligibleInstances = append(nonReadyEligibleInstances, instance)
@@ -380,7 +380,14 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 				klog.Errorf("Failed to list shares of instance %s/%s/%s, err:%v", instance.Project, instance.Location, instance.Name, err.Error())
 				return nil, err
 			}
-			if len(shares) >= util.MaxSharesPerInstance {
+
+			// If we encounter a scenario where the configurable shares per Filestore instance feature is disabled, CSI driver will continue to place max 10 shares per instance, irrespective of the actual max shares the Filestore instance can support.
+			// Alternately, if CSI max share features is enabled, but filestore disables the feature, the create volume may continue to fail beyond 10 shares per instance.
+			maxShareCount := util.MaxSharesPerInstance
+			if m.msControllerServer != nil && m.msControllerServer.featureMaxSharePerInstance {
+				maxShareCount = instance.MaxShareCount
+			}
+			if len(shares) >= maxShareCount {
 				continue
 			}
 
