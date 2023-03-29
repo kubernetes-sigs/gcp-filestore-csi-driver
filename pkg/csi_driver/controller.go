@@ -156,9 +156,6 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	sourceSnapshotId := ""
 	if req.GetVolumeContentSource() != nil {
-		if newFiler.Tier == enterpriseTier {
-			return nil, status.Error(codes.InvalidArgument, "Enterprise tier Filestore does not support Backup yet")
-		}
 		if req.GetVolumeContentSource().GetVolume() != nil {
 			return nil, status.Error(codes.InvalidArgument, "Unsupported volume content source")
 		}
@@ -765,7 +762,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	}
 
 	// Check for existing snapshot
-	backupUri, _, err := file.CreateBackpURI(filer, req.Name, util.GetBackupLocation(req.GetParameters()))
+	backupUri, _, err := file.CreateBackupURI(filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		return nil, err
 	}

@@ -504,7 +504,7 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 }
 
 func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
-	backupUri, region, err := CreateBackpURI(obj, backupName, backupLocation)
+	backupUri, region, err := CreateBackupURI(obj, backupName, backupLocation)
 	if err != nil {
 		return nil, err
 	}
@@ -706,17 +706,42 @@ func PollOpErrorCode(err error) *codes.Code {
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
-func CreateBackpURI(obj *ServiceInstance, backupName, backupLocation string) (string, string, error) {
-	region := backupLocation
-	if region == "" {
-		var err error
-		region, err = util.GetRegionFromZone(obj.Location)
-		if err != nil {
-			return "", "", err
-		}
+func CreateBackupURI(obj *ServiceInstance, backupName, backupLocation string) (string, string, error) {
+	region, err := deduceRegion(obj, backupLocation)
+	if err != nil {
+		return "", "", err
 	}
 
+	if !hasRegionPattern(region) {
+		return "", "", fmt.Errorf("provided location did not match region pattern: %s", backupLocation)
+	}
 	return backupURI(obj.Project, region, backupName), region, nil
+}
+
+// deduceRegion will either return the provided backupLocation region or deduce
+// from the ServiceInstance
+func deduceRegion(obj *ServiceInstance, backupLocation string) (string, error) {
+	region := backupLocation
+	if region == "" {
+		if hasRegionPattern(obj.Location) {
+			region = obj.Location
+		} else {
+			var err error
+			region, err = util.GetRegionFromZone(obj.Location)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
+	return region, nil
+}
+
+// hasRegionPattern returns true if the give location matches the standard
+// region pattern. This expects regions to look like multiregion-regionsuffix.
+// Example: us-central1
+func hasRegionPattern(location string) bool {
+	regionPattern := regexp.MustCompile("^[^-]+-[^-]+$")
+	return regionPattern.MatchString(location)
 }
 
 func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
