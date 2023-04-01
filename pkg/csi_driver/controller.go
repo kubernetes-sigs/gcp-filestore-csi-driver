@@ -132,6 +132,14 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	return cs
 }
 
+func (m *controllerServer) Run(stopCh <-chan struct{}) {
+	if m.config.multiShareController == nil {
+		return
+	}
+
+	m.config.multiShareController.Run(stopCh)
+}
+
 // CreateVolume creates a GCFS instance
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {

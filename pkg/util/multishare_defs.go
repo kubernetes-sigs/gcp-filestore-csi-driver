@@ -35,7 +35,7 @@ const (
 	FilestoreResourceCleanupFinalizer = "multishare.filestore.csi.storage.gke.io/resource-cleanup-protection"
 
 	// configurable max shares consts
-	MinShareSizeConfigurableBytes int64 = 10 * Gb
+	ConfigurablePackMinShareSizeBytes int64 = 10 * Gb
 )
 
 type OperationType int

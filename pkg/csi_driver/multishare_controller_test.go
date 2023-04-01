@@ -275,8 +275,8 @@ func TestGetShareRequestCapacity(t *testing.T) {
 		},
 		{
 			name:             "empty cap range, test 2",
-			expectedCapacity: util.MinShareSizeConfigurableBytes,
-			minSizeBytes:     util.MinShareSizeConfigurableBytes,
+			expectedCapacity: util.ConfigurablePackMinShareSizeBytes,
+			minSizeBytes:     util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes:     util.MaxShareSizeBytes,
 		},
 		{
@@ -294,7 +294,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 			cap: &csi.CapacityRange{
 				LimitBytes: 9 * util.Gb,
 			},
-			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			minSizeBytes: util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
@@ -321,7 +321,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 			cap: &csi.CapacityRange{
 				RequiredBytes: 9 * util.Gb,
 			},
-			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			minSizeBytes: util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
@@ -356,7 +356,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 				LimitBytes:    9 * util.Gb,
 			},
 			expectErr:    true,
-			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			minSizeBytes: util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes: util.MaxShareSizeBytes,
 		},
 		{
@@ -375,7 +375,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 				RequiredBytes: 100 * util.Gb,
 				LimitBytes:    100 * util.Gb,
 			},
-			minSizeBytes:     util.MinShareSizeConfigurableBytes,
+			minSizeBytes:     util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes:     128 * util.Gb,
 			expectedCapacity: 100 * util.Gb,
 		},
@@ -385,7 +385,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 				RequiredBytes: 100 * util.Gb,
 				LimitBytes:    130 * util.Gb,
 			},
-			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			minSizeBytes: util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes: 128 * util.Gb,
 			expectErr:    true,
 		},
@@ -394,7 +394,7 @@ func TestGetShareRequestCapacity(t *testing.T) {
 			cap: &csi.CapacityRange{
 				RequiredBytes: 130 * util.Gb,
 			},
-			minSizeBytes: util.MinShareSizeConfigurableBytes,
+			minSizeBytes: util.ConfigurablePackMinShareSizeBytes,
 			maxSizeBytes: 128 * util.Gb,
 			expectErr:    true,
 		},

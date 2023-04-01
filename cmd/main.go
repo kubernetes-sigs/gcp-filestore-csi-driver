@@ -72,8 +72,12 @@ var (
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 	descOverrideMaxShareCount  = flag.String("desc-override-max-shares-per-instance", "", "If non-empty, the filestore instance description override is used to configure max share count per instance. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
 	descOverrideMinShareSizeGB = flag.String("desc-override-min-shares-size-gb", "", "If non-empty, the filestore instance description override is used to configure min share size. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
-	enableStateful             = flag.Bool("enable-stateful-multishare", false, "")
-	kubeconfig                 = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+
+	// Feature stateful CSI driver specific parameters
+	enableStateful = flag.Bool("enable-stateful-multishare", false, "")
+
+	kubeconfig               = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+	coreInformerResyncPeriod = flag.Duration("core-informer-resync-repriod", 15*time.Minute, "Core informer resync period.")
 
 	// This is set at compile time
 	version = "unknown"
@@ -123,6 +127,22 @@ func main() {
 		klog.Fatalf("Failed to initialize cloud provider: %v", err)
 	}
 
+	var kubeClient *kubernetes.Clientset
+	if *featureMaxSharePerInstance && *runController && *enableMultishare {
+		clusterConfig, err := buildConfig(*kubeconfig)
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+		klog.Infof("cluster config created")
+
+		kubeClient, err = kubernetes.NewForConfig(clusterConfig)
+		if err != nil {
+			klog.Error(err.Error())
+			os.Exit(1)
+		}
+	}
+
 	featureOptions := &driver.GCFSDriverFeatureOptions{
 		FeatureLockRelease: &driver.FeatureLockRelease{
 			Enabled: *featureLockRelease,
@@ -137,8 +157,11 @@ func main() {
 			Enabled:                          *featureMaxSharePerInstance,
 			DescOverrideMaxSharesPerInstance: *descOverrideMaxShareCount,
 			DescOverrideMinShareSizeGB:       *descOverrideMinShareSizeGB,
+			KubeClient:                       kubeClient,
+			CoreInformerResync:               *coreInformerResyncPeriod,
 		},
 	}
+
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
 		Name:             driverName,
@@ -165,10 +188,8 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to initialize Cloud Filestore CSI Driver: %v", err)
 	}
-
 	klog.Infof("Running Google Cloud Filestore CSI driver version %v", version)
 	gcfsDriver.Run(*endpoint)
-
 	os.Exit(0)
 }
 
