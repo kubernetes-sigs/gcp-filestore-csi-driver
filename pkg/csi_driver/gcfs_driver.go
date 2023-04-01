@@ -19,10 +19,14 @@ package driver
 import (
 	"context"
 	"fmt"
+	"os"
+	"os/signal"
+	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -79,6 +83,8 @@ type FeatureMaxSharesPerInstance struct {
 	Enabled                          bool
 	DescOverrideMaxSharesPerInstance string
 	DescOverrideMinShareSizeGB       string
+	KubeClient                       *kubernetes.Clientset
+	CoreInformerResync               time.Duration
 }
 
 func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
@@ -127,7 +133,6 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		}
 		driver.addControllerServiceCapabilities(csc)
-
 		// Configure controller server
 		driver.cs = newControllerServer(&controllerServerConfig{
 			driver:           driver,
@@ -235,6 +240,23 @@ func (driver *GCFSDriver) ValidateControllerServiceRequest(c csi.ControllerServi
 
 func (driver *GCFSDriver) Run(endpoint string) {
 	klog.Infof("Running driver: %v", driver.config.Name)
+
+	run := func(ctx context.Context) {
+		// run...
+		stopCh := make(chan struct{})
+		go driver.cs.(*controllerServer).Run(stopCh)
+
+		// ...until SIGINT
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
+		close(stopCh)
+	}
+
+	if driver.config.RunController {
+		klog.Infof("runcontroller %v", driver.config.RunController)
+		go run(context.TODO())
+	}
 
 	// Start the nonblocking GRPC.
 	s := NewNonBlockingGRPCServer()

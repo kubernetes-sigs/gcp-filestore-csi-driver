@@ -25,8 +25,15 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
@@ -57,9 +64,15 @@ type MultishareController struct {
 	isRegional                 bool
 	clustername                string
 	featureMaxSharePerInstance bool
+
 	// Filestore instance description overrides
 	descOverrideMaxSharesPerInstance string
 	descOverrideMinShareSizeBytes    string
+
+	pvLister       corelisters.PersistentVolumeLister
+	pvListerSynced cache.InformerSynced
+	kubeClient     *kubernetes.Clientset
+	factory        informers.SharedInformerFactory
 }
 
 func NewMultishareController(config *controllerServerConfig) *MultishareController {
@@ -77,8 +90,27 @@ func NewMultishareController(config *controllerServerConfig) *MultishareControll
 		c.featureMaxSharePerInstance = config.features.FeatureMaxSharesPerInstance.Enabled
 		c.descOverrideMaxSharesPerInstance = config.features.FeatureMaxSharesPerInstance.DescOverrideMaxSharesPerInstance
 		c.descOverrideMinShareSizeBytes = config.features.FeatureMaxSharesPerInstance.DescOverrideMinShareSizeGB
+		c.kubeClient = config.features.FeatureMaxSharesPerInstance.KubeClient
+		c.factory = informers.NewSharedInformerFactory(c.kubeClient, config.features.FeatureMaxSharesPerInstance.CoreInformerResync)
+		pvInformer := c.factory.Core().V1().PersistentVolumes()
+		c.pvLister = pvInformer.Lister()
+		c.pvListerSynced = pvInformer.Informer().HasSynced
 	}
+
 	return c
+}
+
+func (m *MultishareController) Run(stopCh <-chan struct{}) {
+	if !m.featureMaxSharePerInstance {
+		return
+	}
+
+	m.factory.Start(stopCh)
+	klog.Info("core Informer factory started")
+	if !cache.WaitForCacheSync(stopCh, m.pvListerSynced) {
+		klog.Errorf("Cannot sync caches")
+	}
+	klog.Infof("Informer cache sycned successfully %v", m.pvListerSynced())
 }
 
 func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -106,7 +138,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 
 	var reqBytes int64
 	if m.featureMaxSharePerInstance {
-		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeConfigurableBytes, maxShareSizeSizeBytes)
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.ConfigurablePackMinShareSizeBytes, maxShareSizeSizeBytes)
 	} else {
 		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
 	}
@@ -290,8 +322,16 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
 	}
 
-	// TODO: This logic will change to derive the max allowable share size from the PV.spec.CSI.volumeAttributes[“max-share-size”]
-	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeConfigurableBytes, util.MaxShareSizeBytes)
+	maxShareSizeBytes := util.MaxShareSizeBytes
+	if m.featureMaxSharePerInstance {
+		var err error
+		maxShareSizeBytes, err = m.GetShareMaxSizeFromPV(ctx, volumeId)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		klog.Infof("maxShareSizeBytes %d", maxShareSizeBytes)
+	}
+	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange(), util.ConfigurablePackMinShareSizeBytes, maxShareSizeBytes)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -482,7 +522,7 @@ func generateNewShare(name string, parent *file.MultishareInstance, req *csi.Cre
 		return nil, status.Error(codes.Internal, "parent mulishare instance is empty")
 	}
 	// The share size request is already validated in CreateVolume call
-	targetSizeBytes, err := getShareRequestCapacity(req.CapacityRange, util.MinShareSizeConfigurableBytes, util.MaxShareSizeBytes)
+	targetSizeBytes, err := getShareRequestCapacity(req.CapacityRange, util.ConfigurablePackMinShareSizeBytes, util.MaxShareSizeBytes)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -607,7 +647,7 @@ func getShareRequestCapacity(capRange *csi.CapacityRange, minShareSizeBytes, max
 	return rCap, nil
 }
 
-func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share, maxShareSizeSizeBytes int64) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share, maxShareSizeBytes int64) (*csi.CreateVolumeResponse, error) {
 	volId, err := generateMultishareVolumeIdFromShare(instancePrefix, s)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, err.Error())
@@ -626,7 +666,7 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 		resp.Volume.VolumeContext[attrSupportLockRelease] = "true"
 	}
 	if m.featureMaxSharePerInstance {
-		resp.Volume.VolumeContext[attrMaxShareSize] = strconv.Itoa(int(maxShareSizeSizeBytes))
+		resp.Volume.VolumeContext[attrMaxShareSize] = strconv.Itoa(int(maxShareSizeBytes))
 	}
 	klog.Infof("CreateVolume resp: %+v", resp)
 	return resp, nil
@@ -722,4 +762,70 @@ func isValidMaxVolSize(val int64) bool {
 		return true
 	}
 	return false
+}
+
+func (m *MultishareController) GetShareMaxSizeFromPV(ctx context.Context, volHandle string) (int64, error) {
+	// Even if the feature `featureMaxSharePerInstance` is disabled, we still need to handle the case of their being existing PVs which have share capacity range context saved in volumeAttributes
+	var targetPV *v1.PersistentVolume
+	var err error
+	if m.pvListerSynced() {
+		targetPV, err = m.findTargetPVFromInformer(volHandle)
+		if err != nil {
+			klog.Warningf("failed to list PV from informer cache, err %v", err)
+		}
+	} else {
+		klog.Warningf("PV informer cache not intialized, lookup PV list from kube-api server")
+	}
+
+	if targetPV == nil {
+		targetPV, err = m.findTargetPVFromKubeApiServer(ctx, volHandle)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	if targetPV == nil {
+		return 0, fmt.Errorf("target PV with volume handle %v not found, cannot determine the capacity range for the volume", volHandle)
+	}
+
+	// If volume atttributes does not catpure the max share size, it must be created with the feature disabled.
+	v, ok := targetPV.Spec.CSI.VolumeAttributes[attrMaxShareSize]
+	if !ok {
+		return util.MaxShareSizeBytes, nil
+	}
+	val, err := resource.ParseQuantity(v)
+	if err != nil {
+		return 0, err
+	}
+	return val.Value(), nil
+}
+
+func isTargetPV(pv *v1.PersistentVolume, volHandle string) bool {
+	return pv.Spec.CSI != nil && pv.Spec.CSI.VolumeHandle == volHandle
+}
+
+func (m *MultishareController) findTargetPVFromInformer(volHandle string) (*v1.PersistentVolume, error) {
+	pvList, err := m.pvLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+	for _, pv := range pvList {
+		if isTargetPV(pv, volHandle) {
+			return pv, nil
+		}
+	}
+	return nil, nil
+}
+
+func (m *MultishareController) findTargetPVFromKubeApiServer(ctx context.Context, volHandle string) (*v1.PersistentVolume, error) {
+	pvList, err := m.kubeClient.CoreV1().PersistentVolumes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, pv := range pvList.Items {
+		if isTargetPV(&pv, volHandle) {
+			return &pv, nil
+		}
+	}
+	return nil, nil
 }

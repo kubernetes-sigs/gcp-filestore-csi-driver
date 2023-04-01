@@ -263,8 +263,10 @@ func ParseShareURI(shareURI string) (string, string, string, string, error) {
 func GetMultishareOpsTimeoutConfig(opType OperationType) (time.Duration, time.Duration, error) {
 	switch opType {
 	case InstanceCreate, ShareDelete:
-		return 1 * time.Hour, 5 * time.Second, nil
-	case InstanceDelete, InstanceUpdate, ShareCreate, ShareUpdate:
+		return 1 * time.Hour, 60 * time.Second, nil
+	case InstanceDelete:
+		return 10 * time.Minute, 60 * time.Second, nil
+	case InstanceUpdate, ShareCreate, ShareUpdate:
 		return 10 * time.Minute, 5 * time.Second, nil
 	default:
 		return 0, 0, fmt.Errorf("unknown op type %v", opType)
