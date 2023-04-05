@@ -160,7 +160,8 @@ const (
 	instanceURIFmt  = locationURIFmt + "/instances/%s"
 	operationURIFmt = locationURIFmt + "/operations/%s"
 	backupURIFmt    = locationURIFmt + "/backups/%s"
-	shareURIFmt     = instanceURIFmt + "/shares/%s"
+	shareSuffixFmt  = "/shares/%s"
+	shareURIFmt     = instanceURIFmt + shareSuffixFmt
 	// Patch update masks
 	fileShareUpdateMask          = "file_shares"
 	multishareCapacityUpdateMask = "capacity_gb"
@@ -859,18 +860,10 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 	targetinstance := &filev1beta1multishare.Instance{
 		MultiShareEnabled: true,
 		Tier:              obj.Tier,
-		Networks: []*filev1beta1multishare.NetworkConfig{
-			{
-				Network:         obj.Network.Name,
-				Modes:           []string{"MODE_IPV4"},
-				ReservedIpRange: obj.Network.ReservedIpRange,
-				ConnectMode:     obj.Network.ConnectMode,
-			},
-		},
-		CapacityGb:  util.BytesToGb(obj.CapacityBytes),
-		KmsKeyName:  obj.KmsKeyName,
-		Labels:      obj.Labels,
-		Description: obj.Description,
+		CapacityGb:        util.BytesToGb(obj.CapacityBytes),
+		KmsKeyName:        obj.KmsKeyName,
+		Labels:            obj.Labels,
+		Description:       obj.Description,
 	}
 	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {

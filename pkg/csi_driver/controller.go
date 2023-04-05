@@ -115,6 +115,7 @@ type controllerServerConfig struct {
 	volumeLocks          *util.VolumeLocks
 	enableMultishare     bool
 	multiShareController *MultishareController
+	reconciler           *MultishareReconciler
 	metricsManager       *metrics.MetricsManager
 	ecfsDescription      string
 	isRegional           bool
@@ -128,6 +129,10 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	if config.enableMultishare {
 		config.multiShareController = NewMultishareController(config)
 		config.multiShareController.opsManager.controllerServer = cs
+	}
+	if config.reconciler != nil {
+		klog.Infof("stateful reconciler enabled, setting its controller server")
+		config.reconciler.controllerServer = cs
 	}
 	return cs
 }

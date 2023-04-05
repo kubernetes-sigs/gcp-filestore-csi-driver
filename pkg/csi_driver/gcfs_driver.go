@@ -19,21 +19,38 @@ package driver
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/kubernetes-csi/csi-lib-utils/leaderelection"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
+	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
+	sharescheme "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/scheme"
+	fsInformers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions"
+	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1alpha1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
+)
+
+const (
+	// The maximum retry duration = initial duration * retry factor ^ # steps. Rearranging, this gives
+	// # steps = log(maximum retry / initial duration) / log(retry factor).
+	crdCheckRetryFactor       = 1.5
+	crdCheckInitialDurationMs = 100
 )
 
 type GCFSDriverConfig struct {
@@ -46,6 +63,7 @@ type GCFSDriverConfig struct {
 	Cloud            *cloud.Cloud    // Cloud provider
 	MetadataService  metadataservice.Service
 	EnableMultishare bool
+	Reconciler       *MultishareReconciler
 	Metrics          *metrics.MetricsManager
 	EcfsDescription  string
 	IsRegional       bool
@@ -61,6 +79,12 @@ type GCFSDriver struct {
 	ns  csi.NodeServer
 	cs  csi.ControllerServer
 
+	// Stateful CSI driver
+	recon         *MultishareReconciler
+	factory       fsInformers.SharedInformerFactory
+	coreFactory   informers.SharedInformerFactory
+	driverFactory fsInformers.SharedInformerFactory
+
 	// Plugin capabilities
 	vcap  map[csi.VolumeCapability_AccessMode_Mode]*csi.VolumeCapability_AccessMode
 	cscap []*csi.ControllerServiceCapability
@@ -72,6 +96,24 @@ type GCFSDriverFeatureOptions struct {
 	FeatureLockRelease *FeatureLockRelease
 	// FeatureMaxSharesPerInstance will enable CSI driver to pack configurable number of max shares per Filestore instance (multishare)
 	FeatureMaxSharesPerInstance *FeatureMaxSharesPerInstance
+	FeatureStateful             *FeatureStateful
+}
+
+type FeatureStateful struct {
+	Enabled      bool
+	KubeAPIQPS   float64
+	KubeAPIBurst int
+	KubeConfig   string
+	ResyncPeriod time.Duration
+
+	LeaderElection              bool
+	LeaderElectionNamespace     string
+	LeaderElectionLeaseDuration time.Duration
+	LeaderElectionRenewDeadline time.Duration
+	LeaderElectionRetryPeriod   time.Duration
+
+	DriverClientSet *clientset.Clientset
+	ShareLister     listers.ShareInfoLister
 }
 
 type FeatureLockRelease struct {
@@ -133,6 +175,10 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
 		}
 		driver.addControllerServiceCapabilities(csc)
+
+		if config.FeatureOptions.FeatureStateful != nil && config.FeatureOptions.FeatureStateful.Enabled {
+			driver.recon, driver.factory, driver.coreFactory, driver.driverFactory = initMultishareReconciler(config)
+		}
 		// Configure controller server
 		driver.cs = newControllerServer(&controllerServerConfig{
 			driver:           driver,
@@ -140,6 +186,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			cloud:            config.Cloud,
 			volumeLocks:      util.NewVolumeLocks(),
 			enableMultishare: config.EnableMultishare,
+			reconciler:       config.Reconciler,
 			metricsManager:   config.Metrics,
 			ecfsDescription:  config.EcfsDescription,
 			isRegional:       config.IsRegional,
@@ -254,6 +301,10 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	}
 
 	if driver.config.RunController {
+		if driver.recon != nil {
+			runMultishareReconciler(driver.config, driver.recon, driver.factory, driver.coreFactory, driver.driverFactory)
+		}
+
 		klog.Infof("runcontroller %v", driver.config.RunController)
 		go run(context.TODO())
 	}
@@ -266,4 +317,136 @@ func (driver *GCFSDriver) Run(endpoint string) {
 		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
 	}
 	s.Wait()
+}
+
+func initMultishareReconciler(driverConfig *GCFSDriverConfig) (*MultishareReconciler, fsInformers.SharedInformerFactory, informers.SharedInformerFactory, fsInformers.SharedInformerFactory) {
+	config, err := util.BuildConfig(driverConfig.FeatureOptions.FeatureStateful.KubeConfig)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	config.QPS = (float32)(driverConfig.FeatureOptions.FeatureStateful.KubeAPIQPS)
+	config.Burst = driverConfig.FeatureOptions.FeatureStateful.KubeAPIBurst
+
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	fsClient, err := clientset.NewForConfig(config)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	driverfsClient, err := clientset.NewForConfig(config)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	resyncPeriod := driverConfig.FeatureOptions.FeatureStateful.ResyncPeriod
+	factory := fsInformers.NewSharedInformerFactory(fsClient, resyncPeriod)
+	coreFactory := informers.NewSharedInformerFactory(kubeClient, resyncPeriod)
+	driverFactory := fsInformers.NewSharedInformerFactory(driverfsClient, resyncPeriod)
+	sharescheme.AddToScheme(scheme.Scheme)
+
+	recon := NewMultishareReconciler(
+		fsClient,
+		driverConfig,
+		factory.Multishare().V1alpha1().ShareInfos(),
+		factory.Multishare().V1alpha1().InstanceInfos(),
+		coreFactory.Storage().V1().StorageClasses().Lister(),
+	)
+	driverConfig.Reconciler = recon
+	driverConfig.FeatureOptions.FeatureStateful.DriverClientSet = driverfsClient
+	driverConfig.FeatureOptions.FeatureStateful.ShareLister = driverFactory.Multishare().V1alpha1().ShareInfos().Lister()
+
+	if err := ensureCustomResourceDefinitionsExist(fsClient); err != nil {
+		klog.Errorf("Exiting due to failure to ensure CRDs exist during startup: %+v", err)
+		os.Exit(1)
+	}
+
+	return recon, factory, coreFactory, driverFactory
+}
+
+func runMultishareReconciler(driverConfig *GCFSDriverConfig, recon *MultishareReconciler, factory fsInformers.SharedInformerFactory, coreFactory informers.SharedInformerFactory, driverFactory fsInformers.SharedInformerFactory) {
+
+	run := func(context.Context) {
+		// run...
+		stopCh := make(chan struct{})
+		factory.Start(stopCh)
+		coreFactory.Start(stopCh)
+		driverFactory.Start(stopCh)
+		go recon.Run(stopCh)
+
+		// ...until SIGINT
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
+		close(stopCh)
+	}
+
+	statefulConfig := driverConfig.FeatureOptions.FeatureStateful
+
+	if !statefulConfig.LeaderElection {
+		go run(context.TODO())
+	} else {
+		go func() {
+			lockName := "filestore-stateful-leader"
+			config, err := util.BuildConfig(driverConfig.FeatureOptions.FeatureStateful.KubeConfig)
+			if err != nil {
+				klog.Fatal(err.Error())
+			}
+
+			leClient, err := kubernetes.NewForConfig(config)
+			if err != nil {
+				klog.Fatalf("Failed to create leaderelection client: %v", err)
+			}
+			le := leaderelection.NewLeaderElection(leClient, lockName, run)
+			if statefulConfig.LeaderElectionNamespace != "" {
+				le.WithNamespace(statefulConfig.LeaderElectionNamespace)
+			}
+			le.WithLeaseDuration(statefulConfig.LeaderElectionLeaseDuration)
+			le.WithRenewDeadline(statefulConfig.LeaderElectionRenewDeadline)
+			le.WithRetryPeriod(statefulConfig.LeaderElectionRetryPeriod)
+			if err := le.Run(); err != nil {
+				klog.Fatalf("Failed to initialize leader election: %v", err)
+			}
+		}()
+	}
+}
+
+// Checks that the ShareInfo v1alpha1 CRDs exist.
+func ensureCustomResourceDefinitionsExist(client *clientset.Clientset) error {
+	condition := func() (bool, error) {
+		var err error
+
+		// scoping to an empty namespace makes `List` work across all namespaces
+		_, err = client.MultishareV1alpha1().ShareInfos().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			klog.Errorf("Failed to list v1alpha1 shareinfos with error=%+v", err)
+			return false, nil
+		}
+
+		return true, nil
+	}
+
+	maxMs := (5 * time.Second).Milliseconds()
+	if maxMs < crdCheckInitialDurationMs {
+		maxMs = crdCheckInitialDurationMs
+	}
+	steps := int(math.Ceil(math.Log(float64(maxMs)/crdCheckInitialDurationMs) / math.Log(crdCheckRetryFactor)))
+	if steps < 1 {
+		steps = 1
+	}
+	backoff := wait.Backoff{
+		Duration: crdCheckInitialDurationMs * time.Millisecond,
+		Factor:   crdCheckRetryFactor,
+		Steps:    steps,
+	}
+	if err := wait.ExponentialBackoff(backoff, condition); err != nil {
+		return err
+	}
+
+	return nil
 }
