@@ -38,6 +38,7 @@ type ShareInfo struct {
 type ShareInfoSpec struct {
 	ShareName       string `json:"shareName"`
 	CapacityBytes   int64  `json:"capacityBytes"`
+	Region          string `json:"region"`
 	InstancePoolTag string `json:"instancePoolTag"`
 }
 

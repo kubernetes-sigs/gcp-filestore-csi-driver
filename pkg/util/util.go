@@ -315,3 +315,22 @@ func InstanceStateToCRDStatus(state string) (v1alpha1.FilestoreStatus, error) {
 		return "", fmt.Errorf("Unknown share state: %q", state)
 	}
 }
+
+// this function replaces "/" in instanceURI with "." to comply with custom resource naming rule
+func InstanceURIToInstanceInfoName(instanceURI string) string {
+	return strings.ReplaceAll(instanceURI, "/", ".")
+}
+
+// this function replaces "." in instanceInfo name string with "/" to reconstruct instanceURI
+func InstanceInfoNameToInstanceURI(iiName string) string {
+	return strings.ReplaceAll(iiName, ".", "/")
+}
+
+func ShareToShareInfoName(shareName string) string {
+	return strings.ReplaceAll(shareName, "_", "-")
+}
+
+func ShareInfoToShareName(siName string) string {
+	s := strings.ToLower(siName)
+	return strings.ReplaceAll(s, "-", "_")
+}

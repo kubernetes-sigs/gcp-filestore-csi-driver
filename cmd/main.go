@@ -19,16 +19,30 @@ package main
 import (
 	"context"
 	"flag"
+	"math"
 	"os"
+	"os/signal"
 	"time"
 
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/clientcmd"
+
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
+	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
+	sharescheme "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/scheme"
+	fsInformers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
+	reconciler "sigs.k8s.io/gcp-filestore-csi-driver/pkg/multishare_reconciler"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 )
 
@@ -58,11 +72,15 @@ var (
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 	descOverrideMaxShareCount  = flag.String("desc-override-max-shares-per-instance", "", "If non-empty, the filestore instance description override is used to configure max share count per instance. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
 	descOverrideMinShareSizeGB = flag.String("desc-override-min-shares-size-gb", "", "If non-empty, the filestore instance description override is used to configure min share size. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
+	enableStateful             = flag.Bool("enable-stateful-multishare", false, "")
+	kubeconfig                 = flag.String("kubeconfig", "", "Absolute path to the kubeconfig file. Required only when running out of cluster.")
+
 	// This is set at compile time
 	version = "unknown"
 )
 
 const driverName = "filestore.csi.storage.gke.io"
+const resyncPeriod = 15 * time.Minute
 
 func main() {
 	klog.InitFlags(nil)
@@ -139,6 +157,10 @@ func main() {
 		FeatureOptions:   featureOptions,
 	}
 
+	if *runController && *enableMultishare && *enableStateful {
+		runMultishareReconciler(config)
+	}
+
 	gcfsDriver, err := driver.NewGCFSDriver(config)
 	if err != nil {
 		klog.Fatalf("Failed to initialize Cloud Filestore CSI Driver: %v", err)
@@ -148,4 +170,103 @@ func main() {
 	gcfsDriver.Run(*endpoint)
 
 	os.Exit(0)
+}
+
+func runMultishareReconciler(driverConfig *driver.GCFSDriverConfig) {
+	config, err := buildConfig(*kubeconfig)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+	fsClient, err := clientset.NewForConfig(config)
+	if err != nil {
+		klog.Error(err.Error())
+		os.Exit(1)
+	}
+
+	factory := fsInformers.NewSharedInformerFactory(fsClient, resyncPeriod)
+	coreFactory := informers.NewSharedInformerFactory(kubeClient, resyncPeriod)
+	sharescheme.AddToScheme(scheme.Scheme)
+
+	recon := reconciler.NewMultishareReconciler(
+		fsClient,
+		driverConfig,
+		factory.Multishare().V1alpha1().ShareInfos(),
+		factory.Multishare().V1alpha1().InstanceInfos(),
+		coreFactory.Storage().V1().StorageClasses().Lister(),
+	)
+
+	if err := ensureCustomResourceDefinitionsExist(fsClient); err != nil {
+		klog.Errorf("Exiting due to failure to ensure CRDs exist during startup: %+v", err)
+		os.Exit(1)
+	}
+
+	//TODO: add leader election so only 1 reconciler is spawn for regional cluster
+	run := func(context.Context) {
+		// run...
+		stopCh := make(chan struct{})
+		factory.Start(stopCh)
+		coreFactory.Start(stopCh)
+		go recon.Run(stopCh)
+
+		// ...until SIGINT
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		<-c
+		close(stopCh)
+	}
+
+	go run(context.TODO())
+}
+
+// Checks that the ShareInfo v1alpha1 CRDs exist.
+func ensureCustomResourceDefinitionsExist(client *clientset.Clientset) error {
+	condition := func() (bool, error) {
+		var err error
+
+		// Scoping to an empty namespace makes `List` work across all namespaces.
+		_, err = client.MultishareV1alpha1().ShareInfos().List(context.TODO(), metav1.ListOptions{})
+		if err != nil {
+			klog.Errorf("Failed to list v1alpha1 shareinfos with error=%+v", err)
+			return false, nil
+		}
+
+		return true, nil
+	}
+
+	// The maximum retry duration = initial duration * retry factor ^ # steps. Rearranging, this gives
+	// # steps = log(maximum retry / initial duration) / log(retry factor).
+	const retryFactor = 1.5
+	const initialDurationMs = 100
+	maxMs := (5 * time.Second).Milliseconds()
+	if maxMs < initialDurationMs {
+		maxMs = initialDurationMs
+	}
+	steps := int(math.Ceil(math.Log(float64(maxMs)/initialDurationMs) / math.Log(retryFactor)))
+	if steps < 1 {
+		steps = 1
+	}
+	backoff := wait.Backoff{
+		Duration: initialDurationMs * time.Millisecond,
+		Factor:   retryFactor,
+		Steps:    steps,
+	}
+	if err := wait.ExponentialBackoff(backoff, condition); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func buildConfig(kubeconfig string) (*rest.Config, error) {
+	if kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfig)
+	}
+	return rest.InClusterConfig()
 }

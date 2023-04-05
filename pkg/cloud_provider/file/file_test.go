@@ -183,7 +183,7 @@ func TestGetInstanceNameFromURI(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		project, location, instance, err := getInstanceNameFromURI(test.uri)
+		project, location, instance, err := GetInstanceNameFromURI(test.uri)
 		if err == nil && test.expectErr {
 			t.Errorf("test %v failed: got success", test.name)
 		}

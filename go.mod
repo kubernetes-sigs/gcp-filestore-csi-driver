@@ -30,6 +30,7 @@ require (
 	k8s.io/klog/v2 v2.60.1
 	k8s.io/kubernetes v1.24.1
 	k8s.io/mount-utils v0.24.1
+	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9
 	sigs.k8s.io/boskos v0.0.0-20201002225104-ae3497d24cd7
 	sigs.k8s.io/controller-runtime v0.12.1
 )
@@ -89,7 +90,6 @@ require (
 	k8s.io/apiextensions-apiserver v0.24.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20220603121420-31174f50af60 // indirect
 	k8s.io/test-infra v0.0.0-20201007205216-b54c51c3a44a // indirect
-	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
 	sigs.k8s.io/json v0.0.0-20220525155127-227cbc7cc124 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect

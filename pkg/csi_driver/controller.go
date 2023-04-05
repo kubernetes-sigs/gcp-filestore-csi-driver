@@ -72,12 +72,12 @@ const (
 	paramTier                      = "tier"
 	paramLocation                  = "location"
 	paramNetwork                   = "network"
-	paramReservedIPV4CIDR          = "reserved-ipv4-cidr"
-	paramReservedIPRange           = "reserved-ip-range"
-	paramConnectMode               = "connect-mode"
+	ParamReservedIPV4CIDR          = "reserved-ipv4-cidr"
+	ParamReservedIPRange           = "reserved-ip-range"
+	ParamConnectMode               = "connect-mode"
 	paramMultishare                = "multishare"
-	paramInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
-	paramMultishareInstanceScLabel = "instance-storageclass-label"
+	ParamInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
+	ParamMultishareInstanceScLabel = "instance-storageclass-label"
 	paramMaxVolumeSize             = "max-volume-size"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
@@ -93,8 +93,8 @@ const (
 	tagKeyCreatedForClaimName      = "kubernetes_io_created-for_pvc_name"
 	tagKeyCreatedForVolumeName     = "kubernetes_io_created-for_pv_name"
 	tagKeyCreatedBy                = "storage_gke_io_created-by"
-	tagKeyClusterName              = "storage_gke_io_cluster_name"
-	tagKeyClusterLocation          = "storage_gke_io_cluster_location"
+	TagKeyClusterName              = "storage_gke_io_cluster_name"
+	TagKeyClusterLocation          = "storage_gke_io_cluster_location"
 )
 
 type capacityRangeForTier struct {
@@ -233,13 +233,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
 		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 		if newFiler.Network.ConnectMode == privateServiceAccess {
-			if reservedIPRange, ok := param[paramReservedIPRange]; ok {
+			if reservedIPRange, ok := param[ParamReservedIPRange]; ok {
 				if IsCIDR(reservedIPRange) {
 					return nil, status.Errorf(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value %v", reservedIPRange)
 				}
 				newFiler.Network.ReservedIpRange = reservedIPRange
 			}
-		} else if reservedIPV4CIDR, ok := param[paramReservedIPV4CIDR]; ok {
+		} else if reservedIPV4CIDR, ok := param[ParamReservedIPV4CIDR]; ok {
 			reservedIPRange, err := s.reserveIPRange(ctx, newFiler, reservedIPV4CIDR)
 
 			// Possible cases are 1) CreateInstanceAborted, 2)CreateInstance running in background
@@ -562,17 +562,17 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			}
 		case paramNetwork:
 			network = v
-		case paramConnectMode:
+		case ParamConnectMode:
 			connectMode = v
 			if connectMode != directPeering && connectMode != privateServiceAccess {
 				return nil, fmt.Errorf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
-		case paramInstanceEncryptionKmsKey:
+		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
-		case paramReservedIPV4CIDR, paramReservedIPRange:
+		case ParamReservedIPV4CIDR, ParamReservedIPRange:
 			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":

@@ -429,8 +429,8 @@ func TestExtractInstanceLabels(t *testing.T) {
 			driver: testDriverName,
 			expectedLabel: map[string]string{
 				tagKeyCreatedBy:       testDrivernameLabelValue,
-				tagKeyClusterName:     testClusterName,
-				tagKeyClusterLocation: testLocation,
+				TagKeyClusterName:     testClusterName,
+				TagKeyClusterLocation: testLocation,
 			},
 		},
 		{
@@ -438,15 +438,15 @@ func TestExtractInstanceLabels(t *testing.T) {
 			driver: testDriverName,
 			params: map[string]string{
 				ParameterKeyLabels:             "a=b,c=d",
-				paramMultishareInstanceScLabel: "testsc",
+				ParamMultishareInstanceScLabel: "testsc",
 			},
 			expectedLabel: map[string]string{
 				tagKeyCreatedBy:                        testDrivernameLabelValue,
 				util.ParamMultishareInstanceScLabelKey: "testsc",
 				"a":                                    "b",
 				"c":                                    "d",
-				tagKeyClusterName:                      testClusterName,
-				tagKeyClusterLocation:                  testLocation,
+				TagKeyClusterName:                      testClusterName,
+				TagKeyClusterLocation:                  testLocation,
 			},
 		},
 	}
@@ -488,14 +488,14 @@ func TestExtractShareLabels(t *testing.T) {
 			name: "user labels ignored",
 			params: map[string]string{
 				ParameterKeyLabels:             "a=b,c=d",
-				paramMultishareInstanceScLabel: "testsc",
+				ParamMultishareInstanceScLabel: "testsc",
 			},
 		},
 		{
 			name: "driver labels",
 			params: map[string]string{
 				ParameterKeyLabels:             "a=b,c=d",
-				paramMultishareInstanceScLabel: "testsc",
+				ParamMultishareInstanceScLabel: "testsc",
 				ParameterKeyPVCName:            testPVCName,
 				ParameterKeyPVCNamespace:       testPVCNamespace,
 				ParameterKeyPVName:             testPVName,
@@ -549,7 +549,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 			instanceName: testInstanceName,
 			req: &csi.CreateVolumeRequest{
 				Parameters: map[string]string{
-					paramConnectMode: "blah",
+					ParamConnectMode: "blah",
 				},
 			},
 			expectErr: true,
@@ -559,9 +559,9 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 			instanceName: testInstanceName,
 			req: &csi.CreateVolumeRequest{
 				Parameters: map[string]string{
-					paramConnectMode:               directPeering,
+					ParamConnectMode:               directPeering,
 					ParameterKeyLabels:             "a=b,c=d",
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 			},
 			expectedInstance: &file.MultishareInstance{
@@ -579,8 +579,8 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 					"a":                                    "b",
 					"c":                                    "d",
 					tagKeyCreatedBy:                        "test-driver",
-					tagKeyClusterLocation:                  testRegion,
-					tagKeyClusterName:                      testClusterName,
+					TagKeyClusterLocation:                  testRegion,
+					TagKeyClusterName:                      testClusterName,
 					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
 				},
 			},
@@ -815,7 +815,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 100 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -839,7 +839,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 99 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -862,7 +862,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					LimitBytes: 99 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -885,7 +885,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 2 * util.Tb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -908,7 +908,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					LimitBytes: 2 * util.Tb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -931,7 +931,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 100 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -955,8 +955,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Project:  "test-project",
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
-						tagKeyClusterLocation:                  testLocation,
-						tagKeyClusterName:                      "",
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
 					},
 					CapacityBytes: 1 * util.Tb,
 					Tier:          "enterprise",
@@ -973,8 +973,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Project:  "test-project",
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
-						tagKeyClusterLocation:                  testLocation,
-						tagKeyClusterName:                      "",
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
 					},
 					CapacityBytes: 1 * util.Tb,
 					Tier:          "enterprise",
@@ -999,7 +999,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 100 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 					paramTier:                      "enterprise",
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
@@ -1032,8 +1032,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Project:  "test-project",
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
-						tagKeyClusterLocation:                  testLocation,
-						tagKeyClusterName:                      "",
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
 					},
 					CapacityBytes: 1 * util.Tb,
 					Tier:          "Enterprise",
@@ -1055,7 +1055,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 100 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -1079,8 +1079,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Project:  "test-project",
 					Labels: map[string]string{
 						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
-						tagKeyClusterLocation:                  testLocation,
-						tagKeyClusterName:                      "",
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
 					},
 					CapacityBytes: 1 * util.Tb,
 					Tier:          "Enterprise",
@@ -1118,7 +1118,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					RequiredBytes: 100 * util.Gb,
 				},
 				Parameters: map[string]string{
-					paramMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
