@@ -27,7 +27,7 @@ RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_
 # Install nfs packages
 # Note that the newer debian bullseye image does not work with nfs-common; I
 # believe that libcap needs extra configuration.
-FROM k8s.gcr.io/build-image/debian-base:buster-v1.10.0 as deps
+FROM gke.gcr.io/debian-base:bullseye-v1.4.3-gke.5 as deps
 ENV DEBIAN_FRONTEND noninteractive
 
 # The netbase package is needed to get rpcbind to work correctly,
@@ -45,10 +45,19 @@ ENV DEBIAN_FRONTEND noninteractive
 # between older and newer distros (in this case it was /etc/rpc
 # existing only in the old launcher.gcr.io image) and using dpgk -S
 # <file> to determine which package supplies it, can be helpful.
-RUN apt-get update && apt-get dist-upgrade -y && apt-get install -y --no-install-recommends \
+
+# libcap2 is a dependency for nfs-common. https://github.com/kubernetes/release/blob/v0.15.0/images/build/debian-base/bullseye/Dockerfile.build#L44 shows that the libcap2 is hold.
+# https://github.com/kubernetes/release/blob/v0.15.0/images/build/debian-base/bullseye/Dockerfile.build#L82 shows that the `/var/lib/apt/lists/*` is removed, that causes apt to be unaware that libcap2 is installed.
+# We run `apt-get update` and then mark the package as unhold.
+
+# Now in `nfs_services_start.sh` we call rpcbind start, this tries to source the `/lib/lsb/init-functions` file. This needs to be installed from the lsb-base package. In the debian-base image the lsb package is deleted (https://github.com/kubernetes/release/blob/v0.15.0/images/build/debian-base/bullseye/Dockerfile.build#L90). Hence using `apt-get install --reinstall` fixes the problem.
+RUN apt-get update && apt-get dist-upgrade -y && apt-mark unhold libcap2 && apt-get install --reinstall -y --no-install-recommends \
+    lsb-base \
     mount \
+    rpcbind \
     netbase \
     ca-certificates \
+    libcap2 \
     nfs-common
 
 # This is needed for rpcbind
@@ -83,7 +92,7 @@ RUN echo "Yes, do as I say!" | apt-get purge \
 # Cleanup cached and unnecessary files.
 RUN apt-get autoremove -y && \
     apt-get clean -y && \
-    tar -czf /usr/share/copyrights.tar.gz /usr/share/common-licenses /usr/share/doc/*/copyright && \
+    tar -czf /usr/share/copyrights.tar.gz /usr/share/doc/*/copyright && \
     rm -rf \
         /usr/share/doc \
         /usr/share/man \
