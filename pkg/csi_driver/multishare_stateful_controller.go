@@ -34,6 +34,7 @@ import (
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareStatefulController struct {
+	//TODO: support variable share count per Filestore instance feature.
 	driver *GCFSDriver
 	zone   string
 	cloud  *cloud.Cloud
@@ -84,17 +85,16 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 		if !errors.IsNotFound(err) {
 			return nil, status.Errorf(codes.Internal, "error getting shareInfo %q from informer: %s", pvName, err.Error())
 		}
+		klog.Infof("querying ShareInfo %q from api server", pvName)
 		shareInfo, err = m.clientset.MultishareV1alpha1().ShareInfos().Get(context.TODO(), pvName, metav1.GetOptions{})
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				return nil, status.Errorf(codes.Internal, "error getting shareInfo %q from api server: %s", pvName, err.Error())
 			}
-			// shareInfo does not exist for share
 			klog.V(6).Infof("shareInfo object for share %q not found in API server", pvName)
 			shareInfo = nil
 		} else {
-			// shareInfo exist in api server but not cache
-			klog.V(6).Infof("shareInfo object for share %q not found in informer cache but found in api server", pvName)
+			klog.Infof("shareInfo object for share %q not found in informer cache but found in api server", pvName)
 		}
 	}
 
@@ -134,18 +134,9 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 		return nil, status.Errorf(codes.Aborted, "share %s is not ready yet", pvName)
 	}
 
-	instanceUri := shareInfo.Status.InstanceHandle
-	project, location, instanceName, err := util.ParseInstanceURI(instanceUri)
+	share, err := generateFileShareFromShareInfo(shareInfo)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "couldn't parse instanceURI %q: %s", instanceUri, err.Error())
-	}
-	share := &file.Share{
-		Name: shareInfo.Spec.ShareName,
-		Parent: &file.MultishareInstance{
-			Project:  project,
-			Location: location,
-			Name:     instanceName,
-		},
+		return nil, err
 	}
 	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, util.MaxShareSizeBytes)
 }
@@ -164,7 +155,7 @@ func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *cs
 			return nil, status.Errorf(codes.Internal, "error deleting volume %q due to informer error: %s", req.VolumeId, err.Error())
 		}
 		// check with api if share exist
-		klog.V(6).Infof("shareInfo %s DNE in cache, checking if share is already deleted", siName)
+		klog.V(6).Infof("shareInfo %s does not exist in cache, checking if share is already deleted", siName)
 		_, err := m.cloud.File.GetShare(ctx, &file.Share{
 			Parent: &file.MultishareInstance{
 				Project:  project,
@@ -174,7 +165,6 @@ func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *cs
 			Name: shareName,
 		})
 		if err != nil {
-			// If share not found, proceed to instance/shrink check.
 			if file.IsNotFoundErr(err) {
 				return &csi.DeleteVolumeResponse{}, nil
 			}
@@ -189,7 +179,7 @@ func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *cs
 			klog.Errorf("shareInfo %s shouldn't have no finalizer before deletion marking", siName)
 			return nil, status.Errorf(codes.Internal, "error deleting volume %s due to driver state error", req.VolumeId)
 		}
-		// delete shareInfo
+
 		err := m.deleteShareInfo(ctx, siName)
 		if err != nil {
 			klog.Errorf("error marking the shareInfo object as deleted: %s", err.Error())
@@ -199,7 +189,7 @@ func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *cs
 
 	if shareInfo.Status == nil {
 		klog.Errorf("shareInfo %s marked to be deleted but shareInfo.Status == nil", siName)
-		return nil, status.Errorf(codes.Aborted, "waiting for volume %s to be deleteed.", req.VolumeId)
+		return nil, status.Errorf(codes.Aborted, "waiting for volume %s to be deleted.", req.VolumeId)
 	}
 
 	if shareInfo.Status.ShareStatus == v1alpha1.DELETED {
@@ -216,11 +206,10 @@ func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *cs
 	}
 
 	if shareInfo.Status.Error != "" {
-		// return error
 		return nil, status.Errorf(codes.Internal, "internal error: %s", shareInfo.Status.Error)
 	}
 
-	return nil, status.Errorf(codes.Aborted, "waiting for share %s to be deleted", req.VolumeId)
+	return nil, status.Errorf(codes.Aborted, "waiting for the Filestore share supporting volume %s to be deleted", req.VolumeId)
 }
 
 func (m *MultishareStatefulController) updateShareInfo(ctx context.Context, shareInfoClone *v1alpha1.ShareInfo) (*v1alpha1.ShareInfo, error) {
@@ -286,10 +275,12 @@ func (m *MultishareStatefulController) ControllerExpandVolume(ctx context.Contex
 
 	if shareInfo.Status.CapacityBytes >= reqBytes && shareInfo.Status.ShareStatus == v1alpha1.READY {
 		klog.Infof("Controller expand volume succeeded for volume %v, size(bytes): %v", req.VolumeId, shareInfo.Status.CapacityBytes)
-		return &csi.ControllerExpandVolumeResponse{
-			CapacityBytes:         shareInfo.Status.CapacityBytes,
-			NodeExpansionRequired: false,
-		}, nil
+
+		share, err := generateFileShareFromShareInfo(shareInfo)
+		if err != nil {
+			return nil, err
+		}
+		return m.mc.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
 	}
 
 	if shareInfo.Status.Error != "" {
@@ -297,4 +288,20 @@ func (m *MultishareStatefulController) ControllerExpandVolume(ctx context.Contex
 	}
 
 	return nil, status.Errorf(codes.Aborted, "waiting for volume %s to be expanded", siName)
+}
+
+func generateFileShareFromShareInfo(shareInfo *v1alpha1.ShareInfo) (*file.Share, error) {
+	instanceUri := shareInfo.Status.InstanceHandle
+	project, location, instanceName, err := util.ParseInstanceURI(instanceUri)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "couldn't parse instanceURI %q: %s", instanceUri, err.Error())
+	}
+	return &file.Share{
+		Name: shareInfo.Spec.ShareName,
+		Parent: &file.MultishareInstance{
+			Project:  project,
+			Location: location,
+			Name:     instanceName,
+		},
+	}, nil
 }
