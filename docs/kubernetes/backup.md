@@ -8,7 +8,7 @@ Kubernetes 1.17+. CSI VolumeSnapshot should not be confused with Filestore Backu
 >**Prerequisites:**: Volume Snapshot CRDs and snapshot-controller needs to be installed for the backup example to work. Please refer to [this](https://kubernetes-csi.github.io/docs/snapshot-controller.html#deployment) for additional details. GKE clusters 1.17+ come pre-installed with the above mentioned CRDs and snapshot controller, see [here](https://cloud.google.com/kubernetes-engine/docs/how-to/persistent-volumes/volume-snapshots).
 
 ### Backup Example
-A Filestore backup is a copy of a file share that includes all file data and metadata of the file share from the point in time when the backup is created. It works for Basic HDD and Basic SSD tier instances. Once a backup of a file share is created, the original file share can be modified or deleted without affecting the backup. A file share can be completely restored from a backup as a new Filestore instance or onto an existing file share. For more details refer to this [documentation](https://cloud.google.com/filestore/docs/backups)
+A Filestore backup is a copy of a file share that includes all file data and metadata of the file share from the point in time when the backup is created. It works for [Basic HDD, Basic SSD, and Enterprise tier instances](https://cloud.google.com/filestore/docs/service-tiers). The tier and volume size of the backup must match the source volume. Once a backup of a file share is created, the original file share can be modified or deleted without affecting the backup. A file share can be completely restored from a backup as a new Filestore instance or onto an existing file share. For more details refer to this [documentation](https://cloud.google.com/filestore/docs/backups)
 
 The [CSI Snapshot](https://github.com/container-storage-interface/spec/blob/master/spec.md#createsnapshot) feature is leveraged to create Filestore Backups. By specifying a `type: backup` field in the VolumeSnapshotClass parameters, filestore CSI driver understands how to initiate a backup for a Filestore instance backed by the Persistent Volume. In future release when Filestore snapshots will be supported, an appropriate `type` parameter will be set in the VolumeSnapshotClass to indicate Filestore snapshots.
 
@@ -29,6 +29,7 @@ The [CSI Snapshot](https://github.com/container-storage-interface/spec/blob/mast
     name: csi-filestore
     provisioner: filestore.csi.storage.gke.io
     parameters:
+      tier: enterprise
       network: <network name> # Change this network as per the deployment
     volumeBindingMode: WaitForFirstConsumer
     allowVolumeExpansion: true
@@ -82,7 +83,7 @@ The [CSI Snapshot](https://github.com/container-storage-interface/spec/blob/mast
     The output is similar to this:
 
     ```yaml
-    apiVersion: snapshot.storage.k8s.io/v1beta1
+    apiVersion: snapshot.storage.k8s.io/v1
     kind: VolumeSnapshot
     metadata:
     creationTimestamp: "2020-11-13T03:04:03Z"
