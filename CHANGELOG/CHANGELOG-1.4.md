@@ -1,3 +1,14 @@
+# v1.4.3 - Changelog since v1.4.2
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Enable parsing regional backup location ([#462](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/462), [@hsadoyan](https://github.com/hsadoyan))
+- Update golang version to 1.19.7 ([#466](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/466), [@saikat-royc](https://github.com/saikat-royc))
+- Migrate to bullseye debian base image ([#468](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/468), [@saikat-royc](https://github.com/saikat-royc))
+- Update golang 1.19.7 for webhook ([#470](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/470), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.4.2 - Changelog since v1.4.1
 
 ## Changes by Kind
