@@ -26,6 +26,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
 )
 
@@ -335,4 +337,11 @@ func ShareToShareInfoName(shareName string) string {
 func ShareInfoToShareName(siName string) string {
 	s := strings.ToLower(siName)
 	return strings.ReplaceAll(s, "-", "_")
+}
+
+func BuildConfig(kubeconfig string) (*rest.Config, error) {
+	if kubeconfig != "" {
+		return clientcmd.BuildConfigFromFlags("", kubeconfig)
+	}
+	return rest.InClusterConfig()
 }

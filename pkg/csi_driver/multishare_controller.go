@@ -126,7 +126,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, status.Error(codes.InvalidArgument, "Multishare backed volumes do not support volume content source")
 	}
 
-	instanceScPrefix, err := getInstanceSCPrefix(req)
+	instanceScPrefix, err := getInstanceSCLabel(req)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -428,7 +428,7 @@ func (m *MultishareController) waitOnWorkflow(ctx context.Context, workflow *Wor
 	return
 }
 
-func getInstanceSCPrefix(req *csi.CreateVolumeRequest) (string, error) {
+func getInstanceSCLabel(req *csi.CreateVolumeRequest) (string, error) {
 	params := req.GetParameters()
 	v, ok := params[ParamMultishareInstanceScLabel]
 	if !ok {
