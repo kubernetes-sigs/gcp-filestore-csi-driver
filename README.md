@@ -53,6 +53,7 @@ The following table captures the compatibility matrix of the core filestore driv
 | v1.3.9 (GA)                             |  yes |  yes  |
 | v1.3.10 (GA)                            |  yes |  yes  |
 | v1.3.11 (GA)                            |  yes |  yes  |
+| v1.3.12 (GA)                            |  yes |  yes  |
 | v1.4.1 (GA)                             |  yes |  yes  |
 | v1.4.2 (GA)                             |  yes |  yes  |
 | v1.4.3 (GA)                             |  yes |  yes  |
