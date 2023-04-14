@@ -1,6 +1,16 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.12 - Changelog since v1.3.11
+
+## Changes by Kind
+
+### Other (Cleanup)
+
+- Update golang version to 1.19.7 ([#472](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/472), [@saikat-royc](https://github.com/saikat-royc))
+- Update debian base to 1.10.0 buster ([#473](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/473), [@saikat-royc](https://github.com/saikat-royc))
+- Update golang.org/x/net package to 0.7.0 ([#473](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/473), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.3.11 - Changelog since v1.3.10
 
 ## Changes by Kind
