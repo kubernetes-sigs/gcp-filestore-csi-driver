@@ -179,7 +179,7 @@ func (recon *MultishareReconciler) reconcileWorker() {
 
 	// Assign un-assigned shares to instances; update shareInfo and instanceInfo accordingly,
 	// if there's inconsistency between share and instnace then share has source of truth.
-	recon.assignSharesToInstances(shareInfoMap, instanceInfoMap)
+	recon.assignSharesToInstances(shareInfoMap, instanceInfoMap, instanceShares)
 
 	assignmentStamp := time.Now()
 	klog.V(6).Infof("assignment finished in %v", time.Since(reconstructionStamp))
@@ -332,7 +332,11 @@ func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string
 	for _, instanceInfo := range instanceInfos {
 		needDelete := instanceInfo.DeletionTimestamp != nil
 		if !needDelete && instanceInfo.Status != nil &&
-			instanceInfo.Spec.CapacityBytes == instanceInfo.Status.CapacityBytes && instanceInfo.Status.InstanceStatus == v1alpha1.READY {
+			instanceInfo.Spec.CapacityBytes == instanceInfo.Status.CapacityBytes &&
+			(instanceInfo.Status.InstanceStatus == v1alpha1.READY || instanceInfo.Status.InstanceStatus == v1alpha1.UPDATING) {
+			// If the instance is in "UPDATING" state, it might have been deleted manually or is having some issue.
+			// The reconciler should not try to call Instance Create API in this case.
+
 			klog.V(6).Infof("no need to send any instance request for %s", instanceInfo.Name)
 			continue
 		}
@@ -355,7 +359,7 @@ func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string
 				klog.Infof("Starting instance Delete operation for %s", instanceURI)
 				_, err = recon.cloud.File.StartDeleteMultishareInstanceOp(context.TODO(), instance)
 
-			} else if instanceInfo.Status == nil || instanceInfo.Status.InstanceStatus != v1alpha1.READY {
+			} else if instanceInfo.Status == nil || (instanceInfo.Status.InstanceStatus != v1alpha1.READY && instanceInfo.Status.InstanceStatus != v1alpha1.UPDATING) {
 				instance, err = recon.generateNewMultishareInstance(instanceInfo)
 				if err != nil {
 					klog.Errorf("error while generating new instance for %s to call API: %s", instanceInfo.Name, err.Error())
@@ -536,10 +540,10 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 	return instance, nil
 }
 
-func (recon *MultishareReconciler) assignSharesToInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo) {
+func (recon *MultishareReconciler) assignSharesToInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo, instanceShares map[string][]*file.Share) {
 	recon.fixTwoWayPointers(shareInfos, instanceInfos)
 
-	recon.assignSharesToEligibleOrNewInstances(shareInfos, instanceInfos)
+	recon.assignSharesToEligibleOrNewInstances(shareInfos, instanceInfos, instanceShares)
 
 	// Have to call deleteOrResizeInstances() after assigning shares and/or fixing two way pointers because no resizing were attempted in
 	// assignSharesToEligibleOrNewInstances() or fixTwoWayPointers()
@@ -621,7 +625,7 @@ func (recon *MultishareReconciler) fixTwoWayPointers(shareInfos map[string]*v1al
 
 // assignSharesToEligibleOrNewInstances assigns shares that are not already assigned to eligible instances.
 // If there're no eligible instances, generate a new one.
-func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo) {
+func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo, instanceShares map[string][]*file.Share) {
 	for _, shareInfo := range shareInfos {
 		if shareInfo.Status == nil || shareInfo.Status.InstanceHandle == "" {
 
@@ -640,6 +644,11 @@ func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInf
 			var instanceURI string
 			var err error
 			for _, instanceInfo := range instanceInfos {
+				_, ok := instanceShares[util.InstanceInfoNameToInstanceURI(instanceInfo.Name)]
+				if !ok && instanceInfo.Status != nil && instanceInfo.Status.InstanceStatus != "" {
+					// if InstanceStatus is not empty but instance is no longer present, instance might have been manually deleted by user and can no longer be used
+					klog.Warningf("instanceInfo %s has non empty InstanceStatus but underlying instance does not exist. Skip assignment to that instance", instanceInfo.Name)
+				}
 				if instanceFitShare(instanceInfo, shareInfo) {
 					instanceURI = util.InstanceInfoNameToInstanceURI(instanceInfo.Name)
 					instanceInfo, err = recon.assignShareToInstanceInfo(instanceInfo, shareInfo.Name)
@@ -927,24 +936,6 @@ func (recon *MultishareReconciler) createShareInfo(share *file.Share, shareInfo 
 		return nil, err
 	}
 	return result, nil
-}
-
-// maybeUpdateShareInfoDeleted update the shareInfo object as status "DELETED" if it has deletion timestamp set.
-func (recon *MultishareReconciler) maybeUpdateShareInfoDeleted(shareInfo *v1alpha1.ShareInfo) (*v1alpha1.ShareInfo, error) {
-	if shareInfo.DeletionTimestamp == nil {
-		klog.V(6).Infof("ShareInfo %q doesn't have deletion timestamp, its status shouldn't be marked as deleted", shareInfo.Name)
-		return shareInfo, nil
-	}
-	shareInfoClone := shareInfo.DeepCopy()
-	if shareInfoClone.Status == nil {
-		// if the status is nil, and later the updateStatus succeed, it means that the shareInfo.Status was never populated.
-		// delete should not have happened before shareInfo.Status.ShareStatus show READY
-		return shareInfo, fmt.Errorf("ShareInfo %q marked to be deleted but Status is nil", shareInfoClone.Name)
-	}
-	shareInfoClone.Status.ShareStatus = v1alpha1.DELETED
-	klog.Infof("Trying to mark ShareInfo %s as DELETED", shareInfo.Name)
-
-	return recon.updateShareInfoStatus(context.TODO(), shareInfoClone)
 }
 
 // removeShareFromInstanceInfo removes share assignment from instanceInfo object in place but does not re-calculate required instance Size.
@@ -1240,8 +1231,17 @@ func (recon *MultishareReconciler) listMultishareResourceOps(ctx context.Context
 			continue
 		}
 
+		klog.V(6).Infof("creation time: %s", meta.CreateTime)
 		var err error
-		if op.Error != nil {
+		if op.Done && op.Error != nil {
+			// filter out error Op that's more than util.ErrRetention old
+			var createTime time.Time
+			createTime, err = time.Parse(util.OpTimeLayout, meta.CreateTime)
+			if err != nil {
+				klog.Errorf("failed to parse creation Time %q with error: %s", meta.CreateTime, err.Error())
+			} else if createTime.Before(time.Now().Add(-util.ErrRetention)) {
+				continue
+			}
 			err = status.Error(codes.Code(op.Error.Code), op.Error.Message)
 		}
 
@@ -1265,6 +1265,12 @@ func instanceFitShare(instanceInfo *v1alpha1.InstanceInfo, shareInfo *v1alpha1.S
 	}
 
 	if instanceInfo.Status != nil && len(instanceInfo.Status.ShareNames) >= util.MaxSharesPerInstance {
+		return false
+	}
+
+	if instanceInfo.Status != nil && instanceInfo.Status.InstanceStatus == v1alpha1.UPDATING {
+		// If the instance status is UPDATING, it means it's not in a ready state and may be unhealthy or being deleted.
+		// Do not assign share to that instance.
 		return false
 	}
 
