@@ -908,7 +908,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -918,7 +918,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -937,7 +937,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node-1",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -947,7 +947,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -966,7 +966,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -976,7 +976,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -996,7 +996,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1006,7 +1006,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1055,7 +1055,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1066,7 +1066,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1083,7 +1083,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1093,7 +1093,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1110,7 +1110,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
@@ -1120,7 +1120,7 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
+					Namespace:  util.ManagedFilestoreCSINamespace,
 					Finalizers: []string{util.ConfigMapFinalzer},
 				},
 				Data: map[string]string{},

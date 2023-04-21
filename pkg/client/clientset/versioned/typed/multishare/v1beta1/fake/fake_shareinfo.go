@@ -27,32 +27,35 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
+	v1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
 )
 
 // FakeShareInfos implements ShareInfoInterface
 type FakeShareInfos struct {
-	Fake *FakeMultishareV1alpha1
+	Fake *FakeMultishareV1beta1
+	ns   string
 }
 
-var shareinfosResource = schema.GroupVersionResource{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1alpha1", Resource: "shareinfos"}
+var shareinfosResource = schema.GroupVersionResource{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1beta1", Resource: "shareinfos"}
 
-var shareinfosKind = schema.GroupVersionKind{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1alpha1", Kind: "ShareInfo"}
+var shareinfosKind = schema.GroupVersionKind{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1beta1", Kind: "ShareInfo"}
 
 // Get takes name of the shareInfo, and returns the corresponding shareInfo object, and an error if there is any.
-func (c *FakeShareInfos) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.ShareInfo, err error) {
+func (c *FakeShareInfos) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.ShareInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(shareinfosResource, name), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewGetAction(shareinfosResource, c.ns, name), &v1beta1.ShareInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ShareInfo), err
+	return obj.(*v1beta1.ShareInfo), err
 }
 
 // List takes label and field selectors, and returns the list of ShareInfos that match those selectors.
-func (c *FakeShareInfos) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.ShareInfoList, err error) {
+func (c *FakeShareInfos) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.ShareInfoList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(shareinfosResource, shareinfosKind, opts), &v1alpha1.ShareInfoList{})
+		Invokes(testing.NewListAction(shareinfosResource, shareinfosKind, c.ns, opts), &v1beta1.ShareInfoList{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -61,8 +64,8 @@ func (c *FakeShareInfos) List(ctx context.Context, opts v1.ListOptions) (result 
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1alpha1.ShareInfoList{ListMeta: obj.(*v1alpha1.ShareInfoList).ListMeta}
-	for _, item := range obj.(*v1alpha1.ShareInfoList).Items {
+	list := &v1beta1.ShareInfoList{ListMeta: obj.(*v1beta1.ShareInfoList).ListMeta}
+	for _, item := range obj.(*v1beta1.ShareInfoList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -73,61 +76,67 @@ func (c *FakeShareInfos) List(ctx context.Context, opts v1.ListOptions) (result 
 // Watch returns a watch.Interface that watches the requested shareInfos.
 func (c *FakeShareInfos) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(shareinfosResource, opts))
+		InvokesWatch(testing.NewWatchAction(shareinfosResource, c.ns, opts))
+
 }
 
 // Create takes the representation of a shareInfo and creates it.  Returns the server's representation of the shareInfo, and an error, if there is any.
-func (c *FakeShareInfos) Create(ctx context.Context, shareInfo *v1alpha1.ShareInfo, opts v1.CreateOptions) (result *v1alpha1.ShareInfo, err error) {
+func (c *FakeShareInfos) Create(ctx context.Context, shareInfo *v1beta1.ShareInfo, opts v1.CreateOptions) (result *v1beta1.ShareInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(shareinfosResource, shareInfo), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewCreateAction(shareinfosResource, c.ns, shareInfo), &v1beta1.ShareInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ShareInfo), err
+	return obj.(*v1beta1.ShareInfo), err
 }
 
 // Update takes the representation of a shareInfo and updates it. Returns the server's representation of the shareInfo, and an error, if there is any.
-func (c *FakeShareInfos) Update(ctx context.Context, shareInfo *v1alpha1.ShareInfo, opts v1.UpdateOptions) (result *v1alpha1.ShareInfo, err error) {
+func (c *FakeShareInfos) Update(ctx context.Context, shareInfo *v1beta1.ShareInfo, opts v1.UpdateOptions) (result *v1beta1.ShareInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(shareinfosResource, shareInfo), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewUpdateAction(shareinfosResource, c.ns, shareInfo), &v1beta1.ShareInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ShareInfo), err
+	return obj.(*v1beta1.ShareInfo), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeShareInfos) UpdateStatus(ctx context.Context, shareInfo *v1alpha1.ShareInfo, opts v1.UpdateOptions) (*v1alpha1.ShareInfo, error) {
+func (c *FakeShareInfos) UpdateStatus(ctx context.Context, shareInfo *v1beta1.ShareInfo, opts v1.UpdateOptions) (*v1beta1.ShareInfo, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(shareinfosResource, "status", shareInfo), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewUpdateSubresourceAction(shareinfosResource, "status", c.ns, shareInfo), &v1beta1.ShareInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ShareInfo), err
+	return obj.(*v1beta1.ShareInfo), err
 }
 
 // Delete takes name of the shareInfo and deletes it. Returns an error if one occurs.
 func (c *FakeShareInfos) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(shareinfosResource, name, opts), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewDeleteActionWithOptions(shareinfosResource, c.ns, name, opts), &v1beta1.ShareInfo{})
+
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeShareInfos) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(shareinfosResource, listOpts)
+	action := testing.NewDeleteCollectionAction(shareinfosResource, c.ns, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1alpha1.ShareInfoList{})
+	_, err := c.Fake.Invokes(action, &v1beta1.ShareInfoList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched shareInfo.
-func (c *FakeShareInfos) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.ShareInfo, err error) {
+func (c *FakeShareInfos) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.ShareInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(shareinfosResource, name, pt, data, subresources...), &v1alpha1.ShareInfo{})
+		Invokes(testing.NewPatchSubresourceAction(shareinfosResource, c.ns, name, pt, data, subresources...), &v1beta1.ShareInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.ShareInfo), err
+	return obj.(*v1beta1.ShareInfo), err
 }

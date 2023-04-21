@@ -35,10 +35,10 @@ import (
 	storageListers "k8s.io/client-go/listers/storage/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
 	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
-	informers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions/multishare/v1alpha1"
-	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1alpha1"
+	informers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions/multishare/v1beta1"
+	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1beta1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -138,7 +138,7 @@ func (recon *MultishareReconciler) reconcileWorker() {
 	// Create shareInfo objects if does not exist, update shareInfo.Status based on listed out shares' status.
 	shareInfoMap := recon.createAndUpdateShareInfos(shares)
 
-	shareInfoList, err := recon.shareLister.List(labels.Everything())
+	shareInfoList, err := recon.shareLister.ShareInfos(util.ManagedFilestoreCSINamespace).List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Filestore CSI driver cannot list ShareInfo objects: %v", err)
 		return
@@ -154,7 +154,7 @@ func (recon *MultishareReconciler) reconcileWorker() {
 	// Create instanceInfo objects if it does not exist, update instanceInfo.Status based on listed out instances' status.
 	instanceInfoMap := recon.createAndUpdateInstanceInfos(instances, instanceShares)
 
-	instanceInfoList, err := recon.instanceLister.List(labels.Everything())
+	instanceInfoList, err := recon.instanceLister.InstanceInfos(util.ManagedFilestoreCSINamespace).List(labels.Everything())
 	if err != nil {
 		klog.Errorf("Filestore CSI driver cannot list InstanceInfo objects: %v", err)
 		return
@@ -205,7 +205,7 @@ func (recon *MultishareReconciler) reconcileWorker() {
 	klog.Infof("Reconciliation round finished after %v", time.Since(startTime))
 }
 
-func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v1alpha1.InstanceInfo, shareInfos map[string]*v1alpha1.ShareInfo, instanceShares map[string][]*file.Share, ops []*Op) {
+func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v1beta1.InstanceInfo, shareInfos map[string]*v1beta1.ShareInfo, instanceShares map[string][]*file.Share, ops []*Op) {
 	for _, shareInfo := range shareInfos {
 		needDelete := shareInfo.DeletionTimestamp != nil
 
@@ -214,7 +214,7 @@ func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v
 				klog.Errorf("shareInfo %s marked for delete but Status subresource is nil", shareInfo.Name)
 				continue
 			}
-			if shareInfo.Status.ShareStatus == v1alpha1.DELETED {
+			if shareInfo.Status.ShareStatus == v1beta1.DELETED {
 				klog.Infof("shareInfo status DELETED, skip sending share request for %s", shareInfo.Name)
 				continue
 			}
@@ -245,7 +245,7 @@ func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v
 			klog.Errorf("share %s is assigned to %s but instanceInfo does not exist", shareInfo.Name, shareInfo.Status.InstanceHandle)
 			continue
 		}
-		if assignedInstanceInfo.Status == nil || assignedInstanceInfo.Status.InstanceStatus != v1alpha1.READY || assignedInstanceInfo.Status.CapacityBytes < assignedInstanceInfo.Spec.CapacityBytes {
+		if assignedInstanceInfo.Status == nil || assignedInstanceInfo.Status.InstanceStatus != v1beta1.READY || assignedInstanceInfo.Status.CapacityBytes < assignedInstanceInfo.Spec.CapacityBytes {
 			klog.Infof("Instance %s is not ready", assignedInstanceInfo.Name)
 			if assignedInstanceInfo.Status != nil && assignedInstanceInfo.Status.Error != "" {
 				recon.updateShareInfoErr(shareInfo, fmt.Errorf(assignedInstanceInfo.Status.Error))
@@ -284,7 +284,7 @@ func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v
 			if needDelete {
 				klog.Infof("Starting share Delete operation for %s", shareURI)
 				_, err = recon.cloud.File.StartDeleteShareOp(context.TODO(), share)
-			} else if shareInfo.Status.ShareStatus != v1alpha1.READY {
+			} else if shareInfo.Status.ShareStatus != v1beta1.READY {
 				klog.Infof("Starting share Create operation for %s", shareURI)
 				_, err = recon.cloud.File.StartCreateShareOp(context.TODO(), share)
 			} else if shareInfo.Status.CapacityBytes != 0 && shareInfo.Spec.CapacityBytes != shareInfo.Status.CapacityBytes {
@@ -299,7 +299,7 @@ func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v
 }
 
 // maybeUpdateShareInfoStatus will unassign share from instanceInfo, then upon success, mark shareInfo.Status.ShareStatus as DELETED.
-func (recon *MultishareReconciler) maybeMarkShareInfoStatusDeleted(shareInfo *v1alpha1.ShareInfo, instanceInfo *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) maybeMarkShareInfoStatusDeleted(shareInfo *v1beta1.ShareInfo, instanceInfo *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
 	if instanceInfo == nil {
 		return instanceInfo, fmt.Errorf("instanceInfo does not exist for shareInfo %s which is assigned to %q", shareInfo.Name, shareInfo.Status.InstanceHandle)
 	}
@@ -317,9 +317,9 @@ func (recon *MultishareReconciler) maybeMarkShareInfoStatusDeleted(shareInfo *v1
 	}
 	shareInfoClone := shareInfo.DeepCopy()
 	if shareInfo.Status == nil {
-		shareInfoClone.Status = &v1alpha1.ShareInfoStatus{}
+		shareInfoClone.Status = &v1beta1.ShareInfoStatus{}
 	}
-	shareInfoClone.Status.ShareStatus = v1alpha1.DELETED
+	shareInfoClone.Status.ShareStatus = v1beta1.DELETED
 	_, err := recon.updateShareInfoStatus(context.TODO(), shareInfoClone)
 	if err != nil {
 		return instanceInfoClone, fmt.Errorf("failed to update %s.Status.ShareStatus to DELETED: %s", shareInfo.Name, err.Error())
@@ -328,12 +328,12 @@ func (recon *MultishareReconciler) maybeMarkShareInfoStatusDeleted(shareInfo *v1
 	return instanceInfoClone, nil
 }
 
-func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string]*v1alpha1.InstanceInfo, ops []*Op) {
+func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string]*v1beta1.InstanceInfo, ops []*Op) {
 	for _, instanceInfo := range instanceInfos {
 		needDelete := instanceInfo.DeletionTimestamp != nil
 		if !needDelete && instanceInfo.Status != nil &&
 			instanceInfo.Spec.CapacityBytes == instanceInfo.Status.CapacityBytes &&
-			(instanceInfo.Status.InstanceStatus == v1alpha1.READY || instanceInfo.Status.InstanceStatus == v1alpha1.UPDATING) {
+			(instanceInfo.Status.InstanceStatus == v1beta1.READY || instanceInfo.Status.InstanceStatus == v1beta1.UPDATING) {
 			// If the instance is in "UPDATING" state, it might have been deleted manually or is having some issue.
 			// The reconciler should not try to call Instance Create API in this case.
 
@@ -359,7 +359,7 @@ func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string
 				klog.Infof("Starting instance Delete operation for %s", instanceURI)
 				_, err = recon.cloud.File.StartDeleteMultishareInstanceOp(context.TODO(), instance)
 
-			} else if instanceInfo.Status == nil || (instanceInfo.Status.InstanceStatus != v1alpha1.READY && instanceInfo.Status.InstanceStatus != v1alpha1.UPDATING) {
+			} else if instanceInfo.Status == nil || (instanceInfo.Status.InstanceStatus != v1beta1.READY && instanceInfo.Status.InstanceStatus != v1beta1.UPDATING) {
 				instance, err = recon.generateNewMultishareInstance(instanceInfo)
 				if err != nil {
 					klog.Errorf("error while generating new instance for %s to call API: %s", instanceInfo.Name, err.Error())
@@ -382,11 +382,11 @@ func (recon *MultishareReconciler) sendInstanceRequests(instanceInfos map[string
 	}
 }
 
-func (recon *MultishareReconciler) updateInstanceInfoErr(instanceInfo *v1alpha1.InstanceInfo, err error) {
+func (recon *MultishareReconciler) updateInstanceInfoErr(instanceInfo *v1beta1.InstanceInfo, err error) {
 	klog.Infof("found error message for instance %s", instanceInfo.Name)
 	instanceInfoClone := instanceInfo.DeepCopy()
 	if instanceInfoClone.Status == nil {
-		instanceInfoClone.Status = &v1alpha1.InstanceInfoStatus{}
+		instanceInfoClone.Status = &v1beta1.InstanceInfoStatus{}
 	}
 
 	if !strings.EqualFold(instanceInfoClone.Status.Error, err.Error()) {
@@ -400,10 +400,10 @@ func (recon *MultishareReconciler) updateInstanceInfoErr(instanceInfo *v1alpha1.
 	}
 }
 
-func (recon *MultishareReconciler) updateShareInfoErr(shareInfo *v1alpha1.ShareInfo, err error) {
+func (recon *MultishareReconciler) updateShareInfoErr(shareInfo *v1beta1.ShareInfo, err error) {
 	shareInfoClone := shareInfo.DeepCopy()
 	if shareInfoClone.Status == nil {
-		shareInfoClone.Status = &v1alpha1.ShareInfoStatus{}
+		shareInfoClone.Status = &v1beta1.ShareInfoStatus{}
 	}
 
 	if !strings.EqualFold(shareInfoClone.Status.Error, err.Error()) {
@@ -418,7 +418,7 @@ func (recon *MultishareReconciler) updateShareInfoErr(shareInfo *v1alpha1.ShareI
 }
 
 // basicMultishareInstanceFromInstanceInfo generates a MultishareInstance object with basic info for deletion and expansion purpose
-func basicMultishareInstanceFromInstanceInfo(instanceInfo *v1alpha1.InstanceInfo) (*file.MultishareInstance, error) {
+func basicMultishareInstanceFromInstanceInfo(instanceInfo *v1beta1.InstanceInfo) (*file.MultishareInstance, error) {
 	instanceURI := util.InstanceInfoNameToInstanceURI(instanceInfo.Name)
 	project, instanceRegion, name, err := util.ParseInstanceURI(instanceURI)
 	if err != nil {
@@ -435,7 +435,7 @@ func basicMultishareInstanceFromInstanceInfo(instanceInfo *v1alpha1.InstanceInfo
 
 // generateNewMultishareInstance generates a MultishareInstance object for the purpose of instance creation.
 // During this function's execution, it might call controllerServer.reserveIPRange to reserve an IP range.
-func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v1alpha1.InstanceInfo) (*file.MultishareInstance, error) {
+func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v1beta1.InstanceInfo) (*file.MultishareInstance, error) {
 	instanceURI := util.InstanceInfoNameToInstanceURI(instanceInfo.Name)
 	project, instanceRegion, name, err := util.ParseInstanceURI(instanceURI)
 	if err != nil {
@@ -540,7 +540,7 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 	return instance, nil
 }
 
-func (recon *MultishareReconciler) assignSharesToInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo, instanceShares map[string][]*file.Share) {
+func (recon *MultishareReconciler) assignSharesToInstances(shareInfos map[string]*v1beta1.ShareInfo, instanceInfos map[string]*v1beta1.InstanceInfo, instanceShares map[string][]*file.Share) {
 	recon.fixTwoWayPointers(shareInfos, instanceInfos)
 
 	recon.assignSharesToEligibleOrNewInstances(shareInfos, instanceInfos, instanceShares)
@@ -556,7 +556,7 @@ func (recon *MultishareReconciler) assignSharesToInstances(shareInfos map[string
 // have been created and we couldn't move shares around.
 // instanceInfo.Status.ShareNames -> shareInfo
 // shareInfo.Status.InstanceHandle -> instanceInfo
-func (recon *MultishareReconciler) fixTwoWayPointers(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo) {
+func (recon *MultishareReconciler) fixTwoWayPointers(shareInfos map[string]*v1beta1.ShareInfo, instanceInfos map[string]*v1beta1.InstanceInfo) {
 	for _, instanceInfo := range instanceInfos {
 		if instanceInfo.Status == nil {
 			klog.V(6).Infof("Instance %q has Status nil", instanceInfo.Name)
@@ -625,7 +625,7 @@ func (recon *MultishareReconciler) fixTwoWayPointers(shareInfos map[string]*v1al
 
 // assignSharesToEligibleOrNewInstances assigns shares that are not already assigned to eligible instances.
 // If there're no eligible instances, generate a new one.
-func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInfos map[string]*v1alpha1.ShareInfo, instanceInfos map[string]*v1alpha1.InstanceInfo, instanceShares map[string][]*file.Share) {
+func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInfos map[string]*v1beta1.ShareInfo, instanceInfos map[string]*v1beta1.InstanceInfo, instanceShares map[string][]*file.Share) {
 	for _, shareInfo := range shareInfos {
 		if shareInfo.Status == nil || shareInfo.Status.InstanceHandle == "" {
 
@@ -701,7 +701,7 @@ func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInf
 // deleteOrResizeInstances takes a map of instanceUri -> instanceInfos and
 // 1) add DeletionTimestamp for any instanceInfo that's empty (doesn't have share assigned to it).
 // 2) calculates and updates the minimum viable Spec.CapacityBytes for instanceInfos that are not empty.
-func (recon *MultishareReconciler) deleteOrResizeInstances(instanceInfos map[string]*v1alpha1.InstanceInfo) {
+func (recon *MultishareReconciler) deleteOrResizeInstances(instanceInfos map[string]*v1beta1.InstanceInfo) {
 	for instanceURI, instanceInfo := range instanceInfos {
 		if instanceInfo.DeletionTimestamp != nil {
 			continue
@@ -732,12 +732,12 @@ func (recon *MultishareReconciler) deleteOrResizeInstances(instanceInfos map[str
 }
 
 // generateInstanceInfo generates and creates a new instanceInfo object based on instanceURI and storage class tag.
-func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTag string) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTag string) (*v1beta1.InstanceInfo, error) {
 	storageClass, err := recon.storageClassFromTag(scTag)
 	if err != nil {
 		return nil, err
 	}
-	newInstanceInfo := &v1alpha1.InstanceInfo{
+	newInstanceInfo := &v1beta1.InstanceInfo{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       util.InstanceURIToInstanceInfoName(instanceURI),
 			Finalizers: []string{util.FilestoreResourceCleanupFinalizer},
@@ -745,7 +745,7 @@ func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTa
 				ParamMultishareInstanceScLabel: storageClass.Parameters[ParamMultishareInstanceScLabel],
 			},
 		},
-		Spec: v1alpha1.InstanceInfoSpec{
+		Spec: v1beta1.InstanceInfoSpec{
 			CapacityBytes:    util.MinMultishareInstanceSizeBytes,
 			StorageClassName: storageClass.Name,
 		},
@@ -772,10 +772,10 @@ func (recon *MultishareReconciler) storageClassFromTag(scTag string) (*v1.Storag
 	return nil, fmt.Errorf("no storageclass match storageClassTag %q", scTag)
 }
 
-func (recon *MultishareReconciler) assignShareToInstanceInfo(instanceInfo *v1alpha1.InstanceInfo, shareName string) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) assignShareToInstanceInfo(instanceInfo *v1beta1.InstanceInfo, shareName string) (*v1beta1.InstanceInfo, error) {
 	instanceInfoClone := instanceInfo.DeepCopy()
 	if instanceInfoClone.Status == nil {
-		instanceInfoClone.Status = &v1alpha1.InstanceInfoStatus{}
+		instanceInfoClone.Status = &v1beta1.InstanceInfoStatus{}
 	}
 	for _, name := range instanceInfoClone.Status.ShareNames {
 		if name == shareName {
@@ -788,10 +788,10 @@ func (recon *MultishareReconciler) assignShareToInstanceInfo(instanceInfo *v1alp
 	return recon.updateInstanceInfoStatus(context.TODO(), instanceInfoClone)
 }
 
-func (recon *MultishareReconciler) assignInstanceToShareInfo(shareInfo *v1alpha1.ShareInfo, instanceURI string) (*v1alpha1.ShareInfo, error) {
+func (recon *MultishareReconciler) assignInstanceToShareInfo(shareInfo *v1beta1.ShareInfo, instanceURI string) (*v1beta1.ShareInfo, error) {
 	shareInfoClone := shareInfo.DeepCopy()
 	if shareInfoClone.Status == nil {
-		shareInfoClone.Status = &v1alpha1.ShareInfoStatus{}
+		shareInfoClone.Status = &v1beta1.ShareInfoStatus{}
 	}
 	shareInfoClone.Status.InstanceHandle = instanceURI
 	klog.Infof("Try to assign share %q to instance %q", shareInfo.Name, instanceURI)
@@ -800,8 +800,8 @@ func (recon *MultishareReconciler) assignInstanceToShareInfo(shareInfo *v1alpha1
 
 // createAndUpdateInstanceInfos create instanceInfo objects if needed and updates their statuses to match with actual state of the world.
 // InstanceInfo objects in the returned map must be treated as read only.
-func (recon *MultishareReconciler) createAndUpdateInstanceInfos(instances []*file.MultishareInstance, instanceShares map[string][]*file.Share) map[string]*v1alpha1.InstanceInfo {
-	instanceInfoMap := make(map[string]*v1alpha1.InstanceInfo)
+func (recon *MultishareReconciler) createAndUpdateInstanceInfos(instances []*file.MultishareInstance, instanceShares map[string][]*file.Share) map[string]*v1beta1.InstanceInfo {
+	instanceInfoMap := make(map[string]*v1beta1.InstanceInfo)
 
 	for _, instance := range instances {
 		instanceURI, err := file.GenerateMultishareInstanceURI(instance)
@@ -811,13 +811,13 @@ func (recon *MultishareReconciler) createAndUpdateInstanceInfos(instances []*fil
 		}
 		iiName := util.InstanceURIToInstanceInfoName(instanceURI)
 
-		instanceInfo, err := recon.instanceLister.Get(iiName)
+		instanceInfo, err := recon.instanceLister.InstanceInfos(util.ManagedFilestoreCSINamespace).Get(iiName)
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				klog.Errorf("Error getting instanceInfo %q from informer: %v", iiName, err)
 				continue
 			}
-			instanceInfo, err = recon.clientset.MultishareV1alpha1().InstanceInfos().Get(context.TODO(), iiName, metav1.GetOptions{})
+			instanceInfo, err = recon.clientset.MultishareV1beta1().InstanceInfos(util.ManagedFilestoreCSINamespace).Get(context.TODO(), iiName, metav1.GetOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
 					klog.Errorf("Error getting instanceInfo %q from api server: %v", iiName, err)
@@ -852,19 +852,19 @@ func (recon *MultishareReconciler) createAndUpdateInstanceInfos(instances []*fil
 
 // createAndUpdateShareInfos create shareInfo objects if needed and updates their statuses to match with actual state of the world.
 // ShareInfo objects in the returned map must be treated as read only.
-func (recon *MultishareReconciler) createAndUpdateShareInfos(shares []*file.Share) map[string]*v1alpha1.ShareInfo {
-	shareInfoMap := make(map[string]*v1alpha1.ShareInfo)
+func (recon *MultishareReconciler) createAndUpdateShareInfos(shares []*file.Share) map[string]*v1beta1.ShareInfo {
+	shareInfoMap := make(map[string]*v1beta1.ShareInfo)
 
 	// Create ShareInfo that are not reflected.
 	for _, share := range shares {
 		shareInfoName := util.ShareToShareInfoName(share.Name)
-		shareInfo, err := recon.shareLister.Get(shareInfoName)
+		shareInfo, err := recon.shareLister.ShareInfos(util.ManagedFilestoreCSINamespace).Get(shareInfoName)
 		if err != nil {
 			if !errors.IsNotFound(err) {
 				klog.Errorf("Error getting shareInfo %q from informer: %v", shareInfoName, err)
 				continue
 			}
-			shareInfo, err = recon.clientset.MultishareV1alpha1().ShareInfos().Get(context.TODO(), shareInfoName, metav1.GetOptions{})
+			shareInfo, err = recon.clientset.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).Get(context.TODO(), shareInfoName, metav1.GetOptions{})
 			if err != nil {
 				if !errors.IsNotFound(err) {
 					klog.Errorf("Error getting shareInfo %q from api server: %v", shareInfoName, err)
@@ -899,39 +899,39 @@ func (recon *MultishareReconciler) createAndUpdateShareInfos(shares []*file.Shar
 	return shareInfoMap
 }
 
-func (recon *MultishareReconciler) reconstructInstanceInfo(iiName string, instance *file.MultishareInstance, instanceInfo *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) reconstructInstanceInfo(iiName string, instance *file.MultishareInstance, instanceInfo *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
 
 	// In the reconstruct case, the instance is already present with a scTag. And we cannot change the instances' property anymore.
 	// We don't need to have storageClassName field (the storageclass might not exist either) and it will act like a distinguisher
 	// between migrated instances and driver-created instances.
-	instanceInfo = &v1alpha1.InstanceInfo{
+	instanceInfo = &v1beta1.InstanceInfo{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: iiName,
 			Labels: map[string]string{
 				ParamMultishareInstanceScLabel: instance.Labels[util.ParamMultishareInstanceScLabelKey],
 			},
 		},
-		Spec: v1alpha1.InstanceInfoSpec{
+		Spec: v1beta1.InstanceInfoSpec{
 			CapacityBytes: instance.CapacityBytes,
 		},
 	}
 	return recon.createInstanceInfo(context.TODO(), instanceInfo)
 }
 
-func (recon *MultishareReconciler) createShareInfo(share *file.Share, shareInfo *v1alpha1.ShareInfo) (*v1alpha1.ShareInfo, error) {
-	shareInfo = &v1alpha1.ShareInfo{
+func (recon *MultishareReconciler) createShareInfo(share *file.Share, shareInfo *v1beta1.ShareInfo) (*v1beta1.ShareInfo, error) {
+	shareInfo = &v1beta1.ShareInfo{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       util.ShareToShareInfoName(share.Name),
 			Finalizers: []string{util.FilestoreResourceCleanupFinalizer},
 		},
-		Spec: v1alpha1.ShareInfoSpec{
+		Spec: v1beta1.ShareInfoSpec{
 			ShareName:     share.Name,
 			CapacityBytes: share.CapacityBytes,
 			Region:        share.Parent.Location,
 		},
 	}
 	klog.Infof("Trying to create ShareInfo %s", shareInfo.Name)
-	result, err := recon.clientset.MultishareV1alpha1().ShareInfos().Create(context.TODO(), shareInfo, metav1.CreateOptions{})
+	result, err := recon.clientset.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).Create(context.TODO(), shareInfo, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -939,7 +939,7 @@ func (recon *MultishareReconciler) createShareInfo(share *file.Share, shareInfo 
 }
 
 // removeShareFromInstanceInfo removes share assignment from instanceInfo object in place but does not re-calculate required instance Size.
-func (recon *MultishareReconciler) removeShareFromInstanceInfo(instanceInfoClone *v1alpha1.InstanceInfo, shareName string) (*v1alpha1.InstanceInfo, bool) {
+func (recon *MultishareReconciler) removeShareFromInstanceInfo(instanceInfoClone *v1beta1.InstanceInfo, shareName string) (*v1beta1.InstanceInfo, bool) {
 	if instanceInfoClone.Status == nil || len(instanceInfoClone.Status.ShareNames) == 0 {
 		klog.Warningf("Trying to remove share %q from instanceInfo %q but it does not have Status subresource or no assigned shares", shareName, instanceInfoClone.Name)
 		return instanceInfoClone, false
@@ -960,7 +960,7 @@ func (recon *MultishareReconciler) removeShareFromInstanceInfo(instanceInfoClone
 	return instanceInfoClone, updated
 }
 
-func (recon *MultishareReconciler) instanceInfoNewCapacity(instanceInfoClone *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, bool) {
+func (recon *MultishareReconciler) instanceInfoNewCapacity(instanceInfoClone *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, bool) {
 	if instanceInfoClone.Status == nil || len(instanceInfoClone.Status.ShareNames) == 0 {
 		return instanceInfoClone, false
 	}
@@ -971,7 +971,7 @@ func (recon *MultishareReconciler) instanceInfoNewCapacity(instanceInfoClone *v1
 	}
 	var targetInstanceSizeByte int64 = 0
 	for _, shareName := range instanceInfoClone.Status.ShareNames {
-		shareInfo, err := recon.shareLister.Get(shareName)
+		shareInfo, err := recon.shareLister.ShareInfos(util.ManagedFilestoreCSINamespace).Get(shareName)
 		if err != nil {
 			klog.Warningf("Error getting ShareInfo %q: %v", shareName, err)
 			continue
@@ -994,7 +994,7 @@ func (recon *MultishareReconciler) instanceInfoNewCapacity(instanceInfoClone *v1
 
 // If instanceInfo has been deleted (deletionTimestamp is not nil), and only have 1 finalizer, this method removes that finalizer.
 // The object will then be automatically cleaned up by the API server
-func (recon *MultishareReconciler) maybeRemoveInstanceInfoFinalizer(instanceInfo *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) maybeRemoveInstanceInfoFinalizer(instanceInfo *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
 	instanceInfoClone := instanceInfo.DeepCopy()
 	if instanceInfo.DeletionTimestamp == nil {
 		klog.V(6).Infof("InstanceInfo %q doesn't have deletion timestamp, it shouldn't be deleted", instanceInfo.Name)
@@ -1023,7 +1023,7 @@ func (recon *MultishareReconciler) maybeRemoveInstanceInfoFinalizer(instanceInfo
 	return nil, nil
 }
 
-func (recon *MultishareReconciler) maybeUpdateInstanceInfoStatus(instance *file.MultishareInstance, instanceInfo *v1alpha1.InstanceInfo, instanceShares map[string][]*file.Share) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) maybeUpdateInstanceInfoStatus(instance *file.MultishareInstance, instanceInfo *v1beta1.InstanceInfo, instanceShares map[string][]*file.Share) (*v1beta1.InstanceInfo, error) {
 	status, err := util.InstanceStateToCRDStatus(instance.State)
 	if err != nil {
 		return instanceInfo, err
@@ -1062,7 +1062,7 @@ func (recon *MultishareReconciler) maybeUpdateInstanceInfoStatus(instance *file.
 	for name := range shareNames {
 		shareNameList = append(shareNameList, name)
 	}
-	newStatus := &v1alpha1.InstanceInfoStatus{
+	newStatus := &v1beta1.InstanceInfoStatus{
 		CapacityBytes:      instance.CapacityBytes,
 		InstanceStatus:     status,
 		ShareNames:         shareNameList,
@@ -1079,7 +1079,7 @@ func (recon *MultishareReconciler) maybeUpdateInstanceInfoStatus(instance *file.
 }
 
 // maybeUpdateShareInfoStatus updates shareInfo.Status, if needed, to match with share's status.
-func (recon *MultishareReconciler) maybeUpdateShareInfoStatus(share *file.Share, shareInfo *v1alpha1.ShareInfo) (*v1alpha1.ShareInfo, error) {
+func (recon *MultishareReconciler) maybeUpdateShareInfoStatus(share *file.Share, shareInfo *v1beta1.ShareInfo) (*v1beta1.ShareInfo, error) {
 	status, err := util.ShareStateToCRDStatus(share.State)
 	if err != nil {
 		return nil, err
@@ -1097,7 +1097,7 @@ func (recon *MultishareReconciler) maybeUpdateShareInfoStatus(share *file.Share,
 		return shareInfo, nil
 	}
 
-	newStatus := &v1alpha1.ShareInfoStatus{
+	newStatus := &v1beta1.ShareInfoStatus{
 		CapacityBytes:  share.CapacityBytes,
 		ShareStatus:    status,
 		InstanceHandle: instanceHandle,
@@ -1111,41 +1111,41 @@ func (recon *MultishareReconciler) maybeUpdateShareInfoStatus(share *file.Share,
 	return recon.updateShareInfoStatus(context.TODO(), shareInfoClone)
 }
 
-func (recon *MultishareReconciler) createInstanceInfo(ctx context.Context, instanceInfo *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
+func (recon *MultishareReconciler) createInstanceInfo(ctx context.Context, instanceInfo *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
 	klog.Infof("Trying to create instanceInfo %s", instanceInfo.Name)
-	result, err := recon.clientset.MultishareV1alpha1().InstanceInfos().Create(context.TODO(), instanceInfo, metav1.CreateOptions{})
+	result, err := recon.clientset.MultishareV1beta1().InstanceInfos(util.ManagedFilestoreCSINamespace).Create(context.TODO(), instanceInfo, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
 	return result, nil
 }
 
-func (recon *MultishareReconciler) deleteInstanceInfo(ctx context.Context, instanceInfo *v1alpha1.InstanceInfo) error {
+func (recon *MultishareReconciler) deleteInstanceInfo(ctx context.Context, instanceInfo *v1beta1.InstanceInfo) error {
 	if len(instanceInfo.Finalizers) == 0 {
 		return fmt.Errorf("Need to have finalizer to prevent auto gc of instanceInfo object")
 	}
 	klog.Infof("Trying to add deletionTimestamp to instanceInfo %s", instanceInfo.Name)
-	return recon.clientset.MultishareV1alpha1().InstanceInfos().Delete(context.TODO(), instanceInfo.Name, metav1.DeleteOptions{})
+	return recon.clientset.MultishareV1beta1().InstanceInfos(util.ManagedFilestoreCSINamespace).Delete(context.TODO(), instanceInfo.Name, metav1.DeleteOptions{})
 }
 
-func (recon *MultishareReconciler) updateShareInfoStatus(ctx context.Context, shareInfoClone *v1alpha1.ShareInfo) (*v1alpha1.ShareInfo, error) {
-	result, err := recon.clientset.MultishareV1alpha1().ShareInfos().UpdateStatus(ctx, shareInfoClone, metav1.UpdateOptions{})
+func (recon *MultishareReconciler) updateShareInfoStatus(ctx context.Context, shareInfoClone *v1beta1.ShareInfo) (*v1beta1.ShareInfo, error) {
+	result, err := recon.clientset.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).UpdateStatus(ctx, shareInfoClone, metav1.UpdateOptions{})
 	if err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (recon *MultishareReconciler) updateInstanceInfoStatus(ctx context.Context, instanceInfoClone *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
-	result, err := recon.clientset.MultishareV1alpha1().InstanceInfos().UpdateStatus(ctx, instanceInfoClone, metav1.UpdateOptions{})
+func (recon *MultishareReconciler) updateInstanceInfoStatus(ctx context.Context, instanceInfoClone *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
+	result, err := recon.clientset.MultishareV1beta1().InstanceInfos(util.ManagedFilestoreCSINamespace).UpdateStatus(ctx, instanceInfoClone, metav1.UpdateOptions{})
 	if err != nil {
 		return result, err
 	}
 	return result, nil
 }
 
-func (recon *MultishareReconciler) updateInstanceInfo(ctx context.Context, instanceInfoClone *v1alpha1.InstanceInfo) (*v1alpha1.InstanceInfo, error) {
-	result, err := recon.clientset.MultishareV1alpha1().InstanceInfos().Update(ctx, instanceInfoClone, metav1.UpdateOptions{})
+func (recon *MultishareReconciler) updateInstanceInfo(ctx context.Context, instanceInfoClone *v1beta1.InstanceInfo) (*v1beta1.InstanceInfo, error) {
+	result, err := recon.clientset.MultishareV1beta1().InstanceInfos(util.ManagedFilestoreCSINamespace).Update(ctx, instanceInfoClone, metav1.UpdateOptions{})
 	if err != nil {
 		return result, err
 	}
@@ -1256,7 +1256,7 @@ func (recon *MultishareReconciler) listMultishareResourceOps(ctx context.Context
 }
 
 // instanceFitShare returns true if shareInfo can be assigned to instanceInfo.
-func instanceFitShare(instanceInfo *v1alpha1.InstanceInfo, shareInfo *v1alpha1.ShareInfo) bool {
+func instanceFitShare(instanceInfo *v1beta1.InstanceInfo, shareInfo *v1beta1.ShareInfo) bool {
 	// Instance needs to be:
 	// 1. not up for delete 2.of the same storage class and 3. has less than max number of shares assigned already.
 	if instanceInfo.DeletionTimestamp != nil ||
@@ -1268,7 +1268,7 @@ func instanceFitShare(instanceInfo *v1alpha1.InstanceInfo, shareInfo *v1alpha1.S
 		return false
 	}
 
-	if instanceInfo.Status != nil && instanceInfo.Status.InstanceStatus == v1alpha1.UPDATING {
+	if instanceInfo.Status != nil && instanceInfo.Status.InstanceStatus == v1beta1.UPDATING {
 		// If the instance status is UPDATING, it means it's not in a ready state and may be unhealthy or being deleted.
 		// Do not assign share to that instance.
 		return false
@@ -1278,7 +1278,7 @@ func instanceFitShare(instanceInfo *v1alpha1.InstanceInfo, shareInfo *v1alpha1.S
 }
 
 // instanceEmpty returns true if instanceInfo.Status.ShareNames has zero entries.
-func instanceEmpty(instanceInfo *v1alpha1.InstanceInfo) bool {
+func instanceEmpty(instanceInfo *v1beta1.InstanceInfo) bool {
 	if instanceInfo.Status == nil || len(instanceInfo.Status.ShareNames) != 0 {
 		return false
 	}
@@ -1307,7 +1307,7 @@ func runningOpMaybeErrForTarget(targetURI string, ops []*Op) (*Op, error) {
 }
 
 // returns true if shareInfo.Status is not nil and the actual share exists in assigned instance
-func shareExist(shareInfo *v1alpha1.ShareInfo, instanceShares map[string][]*file.Share) bool {
+func shareExist(shareInfo *v1beta1.ShareInfo, instanceShares map[string][]*file.Share) bool {
 	if shareInfo.Status == nil {
 		return false
 	}
