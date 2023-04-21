@@ -1,3 +1,11 @@
+# v1.4.4 - Changelog since v1.4.3
+
+## Changes by Kind
+
+### Uncategorized
+
+- update golang version to 1.19.8 ([#484](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/484), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.4.3 - Changelog since v1.4.2
 
 ## Changes by Kind

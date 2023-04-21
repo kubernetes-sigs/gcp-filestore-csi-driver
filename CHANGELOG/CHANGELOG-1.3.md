@@ -1,6 +1,14 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.13 - Changelog since v1.3.12
+
+## Changes by Kind
+
+### Uncategorized
+
+- update golang version to 1.19.8 ([#485](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/485), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.3.12 - Changelog since v1.3.11
 
 ## Changes by Kind
