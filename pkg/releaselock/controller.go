@@ -84,12 +84,12 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 	run := func(ctx context.Context) {
 		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
 		wait.Forever(func() {
-			cmList, err := c.client.CoreV1().ConfigMaps(util.ConfigMapNamespace).List(ctx, metav1.ListOptions{})
+			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
 			if err != nil {
-				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ConfigMapNamespace, err)
+				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
 				return
 			}
-			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ConfigMapNamespace)
+			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
 
 			nodes, err := c.listNodes(ctx)
 			if err != nil {
@@ -112,7 +112,7 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 
 	rl, err := resourcelock.New(
 		resourcelock.LeasesResourceLock,
-		util.ConfigMapNamespace,
+		util.ManagedFilestoreCSINamespace,
 		leaseName,
 		nil,
 		c.client.CoordinationV1(),

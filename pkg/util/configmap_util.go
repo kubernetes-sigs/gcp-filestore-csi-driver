@@ -42,7 +42,6 @@ const (
 
 const (
 	ConfigMapNamePrefix = "fscsi-"
-	ConfigMapNamespace  = "gke-managed-filestorecsi"
 
 	// ConfigMapFinalzer is the finalizer which will be added during configmap creation.
 	ConfigMapFinalzer = "filestore.csi.storage.gke.io/lock-release"

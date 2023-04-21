@@ -28,7 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
 )
 
 const (
@@ -51,6 +51,8 @@ const (
 
 	// number of elements in backup Volume sources e.g. projects/{project name}/locations/{zone}/instances/{name}
 	volumeTotalElements = 6
+
+	ManagedFilestoreCSINamespace = "gke-managed-filestorecsi"
 )
 
 // Round up to the nearest Gb
@@ -294,27 +296,27 @@ func ErrCodePtr(code codes.Code) *codes.Code {
 	return &code
 }
 
-func ShareStateToCRDStatus(state string) (v1alpha1.FilestoreStatus, error) {
+func ShareStateToCRDStatus(state string) (v1beta1.FilestoreStatus, error) {
 	switch state {
 	case "CREATING":
-		return v1alpha1.CREATING, nil
+		return v1beta1.CREATING, nil
 	case "READY":
-		return v1alpha1.READY, nil
+		return v1beta1.READY, nil
 	case "DELETING", "STATE_UNSPECIFIED":
-		return v1alpha1.UPDATING, nil
+		return v1beta1.UPDATING, nil
 	default:
 		return "", fmt.Errorf("Unknown share state: %q", state)
 	}
 }
 
-func InstanceStateToCRDStatus(state string) (v1alpha1.FilestoreStatus, error) {
+func InstanceStateToCRDStatus(state string) (v1beta1.FilestoreStatus, error) {
 	switch state {
 	case "CREATING":
-		return v1alpha1.CREATING, nil
+		return v1beta1.CREATING, nil
 	case "READY":
-		return v1alpha1.READY, nil
+		return v1beta1.READY, nil
 	case "DELETING", "STATE_UNSPECIFIED", "REPAIRING", "ERROR", "RESTORING", "SUSPENDED", "REVERTING", "RESUMING":
-		return v1alpha1.UPDATING, nil
+		return v1beta1.UPDATING, nil
 	default:
 		return "", fmt.Errorf("Unknown share state: %q", state)
 	}
