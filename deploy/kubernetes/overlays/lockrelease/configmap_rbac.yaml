@@ -1,89 +1,86 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gke-managed-filestorecsi
+ name: gke-managed-filestorecsi
 
 ---
 
 kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: filestorecsi-node-driver-role
+ name: filestorecsi-node-driver-cluster-role
 rules:
-  - apiGroups: [""]
-    resources: ["configmaps"]
-    verbs: ["get", "list", "update", "create"]
-
----
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: filestorecsi-node-driver-cluster-role
-rules:
-  - apiGroups: [""]
-    resources: ["nodes"]
-    verbs: ["get", "list"]
-
----
-
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:     
- name: filestorecsi-node-leaderelection-role                  
-rules:                                              
-  - apiGroups: ["coordination.k8s.io"]
-    resources: ["leases"]
-    verbs: ["get", "list", "delete", "update", "create"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list"]
 
 ---
 
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: filestorecsi-node-driver-cluster-role-binding
+ name: filestorecsi-node-driver-cluster-role-binding
 subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
-roleRef:
-  kind: ClusterRole
-  name: filestorecsi-node-driver-cluster-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
-kind: RoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
- annotations:
-   components.gke.io/layer: addon
- labels:
-   k8s-app: gcp-filestore-csi-driver
-   addonmanager.kubernetes.io/mode: Reconcile
- name: filestorecsi-node-leaderelection-binding
- namespace: gke-managed-filestorecsi
-subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
+- kind: ServiceAccount
+  name: gcp-filestore-csi-node-sa
+  namespace: gcp-filestore-csi-driver
 roleRef:
  kind: ClusterRole
- name: filestorecsi-node-leaderelection-role
+ name: filestorecsi-node-driver-cluster-role
  apiGroup: rbac.authorization.k8s.io
 
 ---
 
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+ name: filestorecsi-node-driver-role
+ namespace: gke-managed-filestorecsi
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "list", "update", "create"]
+
+---
+
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:    
+  name: filestorecsi-node-leaderelection-role
+  namespace: gke-managed-filestorecsi             
+rules:                                             
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  verbs: ["get", "list", "delete", "update", "create"]
+
+---
+
 kind: RoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  name: filestorecsi-node-driver-role-binding
+  name: filestorecsi-node-leaderelection-binding
   namespace: gke-managed-filestorecsi
 subjects:
-  - kind: ServiceAccount
-    name: gcp-filestore-csi-node-sa
-    namespace: gcp-filestore-csi-driver
+- kind: ServiceAccount
+  name: gcp-filestore-csi-node-sa
+  namespace: gcp-filestore-csi-driver
 roleRef:
-  kind: ClusterRole
-  name: filestorecsi-node-driver-role
+  kind: Role
+  name: filestorecsi-node-leaderelection-role
   apiGroup: rbac.authorization.k8s.io
+
+---
+
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+ name: filestorecsi-node-driver-role-binding
+ namespace: gke-managed-filestorecsi
+subjects:
+- kind: ServiceAccount
+  name: gcp-filestore-csi-node-sa
+  namespace: gcp-filestore-csi-driver
+roleRef:
+ kind: Role
+ name: filestorecsi-node-driver-role
+ apiGroup: rbac.authorization.k8s.io
