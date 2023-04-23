@@ -508,10 +508,10 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 	// Update the configMap after successful nfs mount operation.
 	nodeName := s.driver.config.NodeName
 	configmapName := util.ConfigMapNamePrefix + nodeName
-	klog.Infof("NodeStageVolume getting configmap %s/%s for volume %s", util.ConfigMapNamespace, configmapName, volumeID)
-	cm, err := util.GetConfigMap(ctx, configmapName, util.ConfigMapNamespace, s.kubeClient)
+	klog.Infof("NodeStageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
+	cm, err := util.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace, s.kubeClient)
 	if err != nil {
-		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ConfigMapNamespace, configmapName, volumeID, err)
+		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
 	}
 
@@ -525,10 +525,10 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 	filestoreIP := attr[attrIP]
 	if cm == nil {
 		data := map[string]string{lockInfoKey: filestoreIP}
-		klog.Infof("NodeStageVolume creating configmap %s/%s with data %v for volume %s", util.ConfigMapNamespace, configmapName, data, volumeID)
-		cm, err := util.CreateConfigMapWithData(ctx, configmapName, util.ConfigMapNamespace, data, s.kubeClient)
+		klog.Infof("NodeStageVolume creating configmap %s/%s with data %v for volume %s", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID)
+		cm, err := util.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data, s.kubeClient)
 		if err != nil {
-			klog.Errorf("NodeStageVolume failed to create configmap %s/%s with data %s for volume %s: %v", util.ConfigMapNamespace, configmapName, data, volumeID, err)
+			klog.Errorf("NodeStageVolume failed to create configmap %s/%s with data %s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID, err)
 			return err
 		}
 		klog.Infof("NodeStageVolume successfully created configmap %s/%s with data %v for volume %s", cm.Name, cm.Name, cm.Data, volumeID)
@@ -536,7 +536,7 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 	}
 
 	if err := util.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP, s.kubeClient); err != nil {
-		klog.Errorf("NodeStageVolume failed to update configmap %s/%s with lock info {%s: %s} for volume %s: %v", util.ConfigMapNamespace, configmapName, volumeID, err)
+		klog.Errorf("NodeStageVolume failed to update configmap %s/%s with lock info {%s: %s} for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
 	}
 
@@ -548,14 +548,14 @@ func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *c
 	volumeID := req.GetVolumeId()
 	nodeName := s.driver.config.NodeName
 	configmapName := util.ConfigMapNamePrefix + nodeName
-	klog.Infof("NodeUnstageVolume getting configmap %s/%s for volume %s", util.ConfigMapNamespace, configmapName, volumeID)
-	cm, err := util.GetConfigMap(ctx, configmapName, util.ConfigMapNamespace, s.kubeClient)
+	klog.Infof("NodeUnstageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
+	cm, err := util.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace, s.kubeClient)
 	if err != nil {
-		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ConfigMapNamespace, configmapName, volumeID, err)
+		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
 	}
 	if cm == nil {
-		klog.Infof("NodeUnstageVolume skipped updating lock info for volume %s: configmap %s/%s not found", volumeID, util.ConfigMapNamespace, configmapName)
+		klog.Infof("NodeUnstageVolume skipped updating lock info for volume %s: configmap %s/%s not found", volumeID, util.ManagedFilestoreCSINamespace, configmapName)
 		return nil
 	}
 

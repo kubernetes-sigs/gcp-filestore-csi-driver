@@ -21,24 +21,24 @@ package fake
 import (
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1alpha1"
+	v1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1beta1"
 )
 
-type FakeMultishareV1alpha1 struct {
+type FakeMultishareV1beta1 struct {
 	*testing.Fake
 }
 
-func (c *FakeMultishareV1alpha1) InstanceInfos() v1alpha1.InstanceInfoInterface {
-	return &FakeInstanceInfos{c}
+func (c *FakeMultishareV1beta1) InstanceInfos(namespace string) v1beta1.InstanceInfoInterface {
+	return &FakeInstanceInfos{c, namespace}
 }
 
-func (c *FakeMultishareV1alpha1) ShareInfos() v1alpha1.ShareInfoInterface {
-	return &FakeShareInfos{c}
+func (c *FakeMultishareV1beta1) ShareInfos(namespace string) v1beta1.ShareInfoInterface {
+	return &FakeShareInfos{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeMultishareV1alpha1) RESTClient() rest.Interface {
+func (c *FakeMultishareV1beta1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

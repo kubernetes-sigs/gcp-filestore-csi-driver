@@ -27,32 +27,35 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1alpha1"
+	v1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
 )
 
 // FakeInstanceInfos implements InstanceInfoInterface
 type FakeInstanceInfos struct {
-	Fake *FakeMultishareV1alpha1
+	Fake *FakeMultishareV1beta1
+	ns   string
 }
 
-var instanceinfosResource = schema.GroupVersionResource{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1alpha1", Resource: "instanceinfos"}
+var instanceinfosResource = schema.GroupVersionResource{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1beta1", Resource: "instanceinfos"}
 
-var instanceinfosKind = schema.GroupVersionKind{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1alpha1", Kind: "InstanceInfo"}
+var instanceinfosKind = schema.GroupVersionKind{Group: "multishare.filestore.csi.storage.gke.io", Version: "v1beta1", Kind: "InstanceInfo"}
 
 // Get takes name of the instanceInfo, and returns the corresponding instanceInfo object, and an error if there is any.
-func (c *FakeInstanceInfos) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.InstanceInfo, err error) {
+func (c *FakeInstanceInfos) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.InstanceInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(instanceinfosResource, name), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewGetAction(instanceinfosResource, c.ns, name), &v1beta1.InstanceInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.InstanceInfo), err
+	return obj.(*v1beta1.InstanceInfo), err
 }
 
 // List takes label and field selectors, and returns the list of InstanceInfos that match those selectors.
-func (c *FakeInstanceInfos) List(ctx context.Context, opts v1.ListOptions) (result *v1alpha1.InstanceInfoList, err error) {
+func (c *FakeInstanceInfos) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.InstanceInfoList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(instanceinfosResource, instanceinfosKind, opts), &v1alpha1.InstanceInfoList{})
+		Invokes(testing.NewListAction(instanceinfosResource, instanceinfosKind, c.ns, opts), &v1beta1.InstanceInfoList{})
+
 	if obj == nil {
 		return nil, err
 	}
@@ -61,8 +64,8 @@ func (c *FakeInstanceInfos) List(ctx context.Context, opts v1.ListOptions) (resu
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1alpha1.InstanceInfoList{ListMeta: obj.(*v1alpha1.InstanceInfoList).ListMeta}
-	for _, item := range obj.(*v1alpha1.InstanceInfoList).Items {
+	list := &v1beta1.InstanceInfoList{ListMeta: obj.(*v1beta1.InstanceInfoList).ListMeta}
+	for _, item := range obj.(*v1beta1.InstanceInfoList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -73,61 +76,67 @@ func (c *FakeInstanceInfos) List(ctx context.Context, opts v1.ListOptions) (resu
 // Watch returns a watch.Interface that watches the requested instanceInfos.
 func (c *FakeInstanceInfos) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(instanceinfosResource, opts))
+		InvokesWatch(testing.NewWatchAction(instanceinfosResource, c.ns, opts))
+
 }
 
 // Create takes the representation of a instanceInfo and creates it.  Returns the server's representation of the instanceInfo, and an error, if there is any.
-func (c *FakeInstanceInfos) Create(ctx context.Context, instanceInfo *v1alpha1.InstanceInfo, opts v1.CreateOptions) (result *v1alpha1.InstanceInfo, err error) {
+func (c *FakeInstanceInfos) Create(ctx context.Context, instanceInfo *v1beta1.InstanceInfo, opts v1.CreateOptions) (result *v1beta1.InstanceInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(instanceinfosResource, instanceInfo), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewCreateAction(instanceinfosResource, c.ns, instanceInfo), &v1beta1.InstanceInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.InstanceInfo), err
+	return obj.(*v1beta1.InstanceInfo), err
 }
 
 // Update takes the representation of a instanceInfo and updates it. Returns the server's representation of the instanceInfo, and an error, if there is any.
-func (c *FakeInstanceInfos) Update(ctx context.Context, instanceInfo *v1alpha1.InstanceInfo, opts v1.UpdateOptions) (result *v1alpha1.InstanceInfo, err error) {
+func (c *FakeInstanceInfos) Update(ctx context.Context, instanceInfo *v1beta1.InstanceInfo, opts v1.UpdateOptions) (result *v1beta1.InstanceInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(instanceinfosResource, instanceInfo), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewUpdateAction(instanceinfosResource, c.ns, instanceInfo), &v1beta1.InstanceInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.InstanceInfo), err
+	return obj.(*v1beta1.InstanceInfo), err
 }
 
 // UpdateStatus was generated because the type contains a Status member.
 // Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
-func (c *FakeInstanceInfos) UpdateStatus(ctx context.Context, instanceInfo *v1alpha1.InstanceInfo, opts v1.UpdateOptions) (*v1alpha1.InstanceInfo, error) {
+func (c *FakeInstanceInfos) UpdateStatus(ctx context.Context, instanceInfo *v1beta1.InstanceInfo, opts v1.UpdateOptions) (*v1beta1.InstanceInfo, error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateSubresourceAction(instanceinfosResource, "status", instanceInfo), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewUpdateSubresourceAction(instanceinfosResource, "status", c.ns, instanceInfo), &v1beta1.InstanceInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.InstanceInfo), err
+	return obj.(*v1beta1.InstanceInfo), err
 }
 
 // Delete takes name of the instanceInfo and deletes it. Returns an error if one occurs.
 func (c *FakeInstanceInfos) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteActionWithOptions(instanceinfosResource, name, opts), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewDeleteActionWithOptions(instanceinfosResource, c.ns, name, opts), &v1beta1.InstanceInfo{})
+
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
 func (c *FakeInstanceInfos) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(instanceinfosResource, listOpts)
+	action := testing.NewDeleteCollectionAction(instanceinfosResource, c.ns, listOpts)
 
-	_, err := c.Fake.Invokes(action, &v1alpha1.InstanceInfoList{})
+	_, err := c.Fake.Invokes(action, &v1beta1.InstanceInfoList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched instanceInfo.
-func (c *FakeInstanceInfos) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1alpha1.InstanceInfo, err error) {
+func (c *FakeInstanceInfos) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.InstanceInfo, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(instanceinfosResource, name, pt, data, subresources...), &v1alpha1.InstanceInfo{})
+		Invokes(testing.NewPatchSubresourceAction(instanceinfosResource, c.ns, name, pt, data, subresources...), &v1beta1.InstanceInfo{})
+
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1alpha1.InstanceInfo), err
+	return obj.(*v1beta1.InstanceInfo), err
 }
