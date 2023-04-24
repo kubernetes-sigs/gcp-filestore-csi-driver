@@ -25,24 +25,24 @@ import (
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	multisharev1alpha1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1alpha1"
+	multisharev1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1beta1"
 )
 
 type Interface interface {
 	Discovery() discovery.DiscoveryInterface
-	MultishareV1alpha1() multisharev1alpha1.MultishareV1alpha1Interface
+	MultishareV1beta1() multisharev1beta1.MultishareV1beta1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
 // version included in a Clientset.
 type Clientset struct {
 	*discovery.DiscoveryClient
-	multishareV1alpha1 *multisharev1alpha1.MultishareV1alpha1Client
+	multishareV1beta1 *multisharev1beta1.MultishareV1beta1Client
 }
 
-// MultishareV1alpha1 retrieves the MultishareV1alpha1Client
-func (c *Clientset) MultishareV1alpha1() multisharev1alpha1.MultishareV1alpha1Interface {
-	return c.multishareV1alpha1
+// MultishareV1beta1 retrieves the MultishareV1beta1Client
+func (c *Clientset) MultishareV1beta1() multisharev1beta1.MultishareV1beta1Interface {
+	return c.multishareV1beta1
 }
 
 // Discovery retrieves the DiscoveryClient
@@ -89,7 +89,7 @@ func NewForConfigAndClient(c *rest.Config, httpClient *http.Client) (*Clientset,
 
 	var cs Clientset
 	var err error
-	cs.multishareV1alpha1, err = multisharev1alpha1.NewForConfigAndClient(&configShallowCopy, httpClient)
+	cs.multishareV1beta1, err = multisharev1beta1.NewForConfigAndClient(&configShallowCopy, httpClient)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +114,7 @@ func NewForConfigOrDie(c *rest.Config) *Clientset {
 // New creates a new Clientset for the given RESTClient.
 func New(c rest.Interface) *Clientset {
 	var cs Clientset
-	cs.multishareV1alpha1 = multisharev1alpha1.New(c)
+	cs.multishareV1beta1 = multisharev1beta1.New(c)
 
 	cs.DiscoveryClient = discovery.NewDiscoveryClient(c)
 	return &cs
