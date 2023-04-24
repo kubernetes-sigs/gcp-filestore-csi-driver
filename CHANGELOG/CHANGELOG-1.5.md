@@ -1,3 +1,18 @@
+# v1.5.1 - Changelog since v1.5.0
+
+## Changes by Kind
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
 # v1.5.0 - Changelog since v1.4.3
 
 ## Changes by Kind
