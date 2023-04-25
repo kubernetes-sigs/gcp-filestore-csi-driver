@@ -1236,7 +1236,7 @@ func (recon *MultishareReconciler) listMultishareResourceOps(ctx context.Context
 		if op.Done && op.Error != nil {
 			// filter out error Op that's more than util.ErrRetention old
 			var createTime time.Time
-			createTime, err = time.Parse(util.OpTimeLayout, meta.CreateTime)
+			createTime, err = time.Parse(time.RFC3339Nano, meta.CreateTime)
 			if err != nil {
 				klog.Errorf("failed to parse creation Time %q with error: %s", meta.CreateTime, err.Error())
 			} else if createTime.Before(time.Now().Add(-util.ErrRetention)) {
