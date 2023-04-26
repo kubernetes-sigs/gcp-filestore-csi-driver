@@ -11,20 +11,21 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package lockrelease
 
 import (
 	"context"
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 )
 
 // Ordering of elements in configmap key
@@ -101,8 +102,8 @@ func GKENodeNameFromConfigMap(cm *corev1.ConfigMap) (string, error) {
 
 // GetConfigMap gets the configmap from the api server.
 // Returns nil if the expected configmap is not found.
-func GetConfigMap(ctx context.Context, cmName, cmNamespace string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
-	cm, err := client.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
+func (c *LockReleaseController) GetConfigMap(ctx context.Context, cmName, cmNamespace string) (*corev1.ConfigMap, error) {
+	cm, err := c.client.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
 	if err != nil {
 		if apiError.IsNotFound(err) {
 			return nil, nil
@@ -114,7 +115,7 @@ func GetConfigMap(ctx context.Context, cmName, cmNamespace string, client kubern
 
 // CreateConfigMapWithData creates a configmap in the api server.
 // Returns the api server's representation of the configmap, and an error, if there is any.
-func CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, data map[string]string, client kubernetes.Interface) (*corev1.ConfigMap, error) {
+func (c *LockReleaseController) CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, data map[string]string) (*corev1.ConfigMap, error) {
 	obj := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       cmName,
@@ -123,7 +124,7 @@ func CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, da
 		},
 		Data: data,
 	}
-	cm, err := client.CoreV1().ConfigMaps(cmNamespace).Create(ctx, obj, metav1.CreateOptions{})
+	cm, err := c.client.CoreV1().ConfigMaps(cmNamespace).Create(ctx, obj, metav1.CreateOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,8 @@ func CreateConfigMapWithData(ctx context.Context, cmName, cmNamespace string, da
 // UpdateConfigMapWithKeyValue adds a key value pair into configmap.data, and updates the configmap in the api server.
 // No-op if the key already exists in configmap.data.
 // Returns the server's representation of the configMap, and an error, if there is any.
-func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key, value string, client kubernetes.Interface) error {
+// UpdateConfigMapWithKeyValue is only called in NodeStageVolume.
+func (c *LockReleaseController) UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key, value string) error {
 	if cm.Data == nil {
 		cm.Data = map[string]string{}
 	}
@@ -144,7 +146,10 @@ func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key,
 	}
 	klog.Infof("NodeStageVolume storing lock info {%s: %s} in configmap %s/%s with data %v", key, value, cm.Namespace, cm.Name, cm.Data)
 	cm.Data[key] = value
-	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	start := time.Now()
+	updatedCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	duration := time.Since(start)
+	c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.UpdateOpType, metrics.NodeStageOpSource, duration)
 	if err != nil {
 		return err
 	}
@@ -154,7 +159,8 @@ func UpdateConfigMapWithKeyValue(ctx context.Context, cm *corev1.ConfigMap, key,
 
 // RemoveKeyFromConfigMap deletes the key from configmap.data, then updates the configmap.
 // No-op if the key does not exist.
-func RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key string, client kubernetes.Interface) error {
+// RemoveKeyFromConfigMap is only called in NodeUnstageVolume.
+func (c *LockReleaseController) RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key string) error {
 	if _, keyExists := cm.Data[key]; !keyExists {
 		klog.Infof("NodeUnstageVolume skipped updating configmap %s/%s since key %s not found in configmap.data", cm.Namespace, cm.Name, key)
 		return nil
@@ -162,7 +168,10 @@ func RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key strin
 
 	klog.Infof("NodeUnstageVolume removing key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
 	delete(cm.Data, key)
-	updatedCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	start := time.Now()
+	updatedCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
+	duration := time.Since(start)
+	c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.UpdateOpType, metrics.NodeUnstageOpSource, duration)
 	if err != nil {
 		return err
 	}
@@ -174,9 +183,13 @@ func RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key strin
 // removes the key from configmap.data, and update the configmap.
 // Keeps retrying until configmap successfully update or timeout.
 // No-op if the key does not exist.
-func RemoveKeyFromConfigMapWithRetry(ctx context.Context, cm *corev1.ConfigMap, key string, client kubernetes.Interface) error {
+// RemoveKeyFromConfigMapWithRetry is only called in lock release reconciler.
+func (c *LockReleaseController) RemoveKeyFromConfigMapWithRetry(ctx context.Context, cm *corev1.ConfigMap, key string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latestCM, err := client.CoreV1().ConfigMaps(cm.Namespace).Get(ctx, cm.Name, metav1.GetOptions{})
+		start := time.Now()
+		latestCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Get(ctx, cm.Name, metav1.GetOptions{})
+		duration := time.Since(start)
+		c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.ReconcilerOpSource, duration)
 		if err != nil {
 			return err
 		}
@@ -185,7 +198,10 @@ func RemoveKeyFromConfigMapWithRetry(ctx context.Context, cm *corev1.ConfigMap, 
 			return nil
 		}
 		delete(latestCM.Data, key)
-		_, updateErr := client.CoreV1().ConfigMaps(latestCM.Namespace).Update(ctx, latestCM, metav1.UpdateOptions{})
+		start = time.Now()
+		_, updateErr := c.client.CoreV1().ConfigMaps(latestCM.Namespace).Update(ctx, latestCM, metav1.UpdateOptions{})
+		duration = time.Since(start)
+		c.RecordKubeAPIMetrics(updateErr, metrics.ConfigMapResourceType, metrics.UpdateOpType, metrics.ReconcilerOpSource, duration)
 		return updateErr
 	})
 }

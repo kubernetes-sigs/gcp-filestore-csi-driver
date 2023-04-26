@@ -36,10 +36,31 @@ const (
 	labelStatusCode    = "grpc_status_code"
 	labelMethodName    = "method_name"
 	labelFilestoreMode = "filestore_mode"
+
+	// NFS lock releae metrics.
+	kubeAPIDurationMetricName  = "kube_api_duration_seconds"
+	labelOpStatusCode          = "op_status_code"
+	labelResourceType          = "resource_type"
+	labelOpType                = "op_type"
+	labelOpSource              = "op_source"
+	lockReleaseCountMetricName = "lock_release_count"
+	labelLockReleaseStatusCode = "status_code"
+	successStatusCode          = "success"
+	failureStatusCode          = "failure"
+	ConfigMapResourceType      = "configmap"
+	NodeResourceType           = "node"
+	GetOpType                  = "get"
+	CreateOpType               = "create"
+	UpdateOpType               = "update"
+	ListOpType                 = "list"
+	NodeStageOpSource          = "node_stage_volume"
+	NodeUnstageOpSource        = "node_unstage_volume"
+	ReconcilerOpSource         = "lock_release_reconciler"
 )
 
 var (
-	metricBuckets = []float64{.1, .25, .5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600}
+	metricBuckets        = []float64{.1, .25, .5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600}
+	kubeAPIMetricBuckets = []float64{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024}
 
 	// This metric is exposed only from the controller driver component when GKE_FILESTORECSI_VERSION env variable is set.
 	gkeComponentVersion = metrics.NewGaugeVec(&metrics.GaugeOpts{
@@ -55,6 +76,25 @@ var (
 		},
 		[]string{labelStatusCode, labelMethodName, labelFilestoreMode},
 	)
+
+	lockReleaseCount = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem: subSystem,
+			Name:      lockReleaseCountMetricName,
+			Help:      "Metric to expose count of node driver initiated filestore lock release operations.",
+		},
+		[]string{labelLockReleaseStatusCode},
+	)
+
+	kubeAPIDurationMilliseconds = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: subSystem,
+			Name:      kubeAPIDurationMetricName,
+			Buckets:   kubeAPIMetricBuckets,
+			Help:      "Metric to expose duration of node driver initiated k8s API operations.",
+		},
+		[]string{labelOpStatusCode, labelResourceType, labelOpType, labelOpSource},
+	)
 )
 
 type MetricsManager struct {
@@ -66,12 +106,23 @@ func NewMetricsManager() *MetricsManager {
 		registry: metrics.NewKubeRegistry(),
 	}
 	metrics.RegisterProcessStartTime(mm.registry.Register)
-	mm.registry.MustRegister(operationSeconds)
 	return mm
 }
 
 func (mm *MetricsManager) GetRegistry() metrics.KubeRegistry {
 	return mm.registry
+}
+
+func (mm *MetricsManager) RegisterOperationSecondsMetric() {
+	mm.registry.MustRegister(operationSeconds)
+}
+
+func (mm *MetricsManager) RegisterLockReleaseCountnMetric() {
+	mm.registry.MustRegister(lockReleaseCount)
+}
+
+func (mm *MetricsManager) RegisterKubeAPIDurationMetric() {
+	mm.registry.MustRegister(kubeAPIDurationMilliseconds)
 }
 
 func (mm *MetricsManager) registerComponentVersionMetric() {
@@ -92,6 +143,26 @@ func (mm *MetricsManager) recordComponentVersionMetric() error {
 
 func (mm *MetricsManager) RecordOperationMetrics(opErr error, methodName string, filestoreMode string, opDuration time.Duration) {
 	operationSeconds.WithLabelValues(getErrorCode(opErr), methodName, filestoreMode).Observe(opDuration.Seconds())
+}
+
+func (mm *MetricsManager) RecordKubeAPIMetrics(opErr error, resourceType, opType, opSource string, opDuration time.Duration) {
+	var statusCode string
+	if opErr == nil {
+		statusCode = successStatusCode
+	} else {
+		statusCode = failureStatusCode
+	}
+	kubeAPIDurationMilliseconds.WithLabelValues(statusCode, resourceType, opType, opSource).Observe(float64(opDuration.Milliseconds()))
+}
+
+func (mm *MetricsManager) RecordLockReleaseMetrics(opErr error) {
+	var statusCode string
+	if opErr == nil {
+		statusCode = successStatusCode
+	} else {
+		statusCode = failureStatusCode
+	}
+	lockReleaseCount.WithLabelValues(statusCode).Inc()
 }
 
 func getErrorCode(err error) string {

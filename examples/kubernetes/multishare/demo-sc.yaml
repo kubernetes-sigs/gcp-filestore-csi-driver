@@ -9,6 +9,9 @@ parameters:
   # # standard (default) or premier or enterprise
   tier: enterprise
   multishare: "true"
+  network: "projects/leiyiz-joonix/global/networks/shared-net"
+  connect-mode: PRIVATE_SERVICE_ACCESS
+  reserved-ip-range: filestore-reserved-ip-range
   # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
   # network: default
 allowVolumeExpansion: true

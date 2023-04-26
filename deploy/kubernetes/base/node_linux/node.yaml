@@ -49,11 +49,17 @@ spec:
             - "--endpoint=unix:/csi/csi.sock"
             - "--nodeid=$(KUBE_NODE_NAME)"
             - "--node=true"
+            - --feature-lock-release=true
+            - --http-endpoint=:22026
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
+          ports:
+            - containerPort: 22026
+              name: http-endpoint
+              protocol: TCP
           volumeMounts:
             - name: kubelet-dir
               mountPath: /var/lib/kubelet

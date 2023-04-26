@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -908,8 +909,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -918,8 +919,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -937,8 +938,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node-1",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.1234567.127_0_0_2": "1.1.1.1",
@@ -947,8 +948,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -966,8 +967,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
@@ -976,8 +977,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1.test-filestore.test-share.123456.192_168_1_1": "192.168.92.0",
@@ -996,8 +997,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1006,8 +1007,8 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1055,8 +1056,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.2",
@@ -1066,8 +1067,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.2",
@@ -1083,8 +1084,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1093,8 +1094,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-filestore.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1110,8 +1111,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			existingCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{
 					"test-project.us-central1-c.test-csi.vol1.123456.127_0_0_1": "1.1.1.1",
@@ -1120,8 +1121,8 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 			expectedCM: &corev1.ConfigMap{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:       "fscsi-test-node",
-					Namespace:  util.ConfigMapNamespace,
-					Finalizers: []string{util.ConfigMapFinalzer},
+					Namespace:  lockrelease.ConfigMapNamespace,
+					Finalizers: []string{lockrelease.ConfigMapFinalzer},
 				},
 				Data: map[string]string{},
 			},

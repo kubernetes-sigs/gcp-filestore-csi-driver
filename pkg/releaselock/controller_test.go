@@ -1,8 +1,7 @@
-package rpc
+package lockrelease
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -163,14 +162,4 @@ func TestListNodes(t *testing.T) {
 	if diff := cmp.Diff(expectedMap, nodes); diff != "" {
 		t.Errorf("test listNodes failed: unexpected diff (-want +got):%s", diff)
 	}
-}
-
-func gotExpectedError(testFunc string, wantErr bool, err error) error {
-	if err != nil && !wantErr {
-		return fmt.Errorf("%s got error %v, want nil", testFunc, err)
-	}
-	if err == nil && wantErr {
-		return fmt.Errorf("%s got nil, want error", testFunc)
-	}
-	return nil
 }

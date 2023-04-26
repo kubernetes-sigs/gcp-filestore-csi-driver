@@ -51,7 +51,12 @@ metadata:
 rules:                                             
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
-  verbs: ["get", "list", "delete", "update", "create"]
+  verbs: ["get", "list", "create"]
+- apiGroups: ["coordination.k8s.io"]
+  resources: ["leases"]
+  resourceNames: ["filestore-csi-storage-gke-io-node"]
+  verbs: ["delete", "update"]
+
 
 ---
 

@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package util
+package lockrelease
 
 import (
 	"context"
@@ -179,7 +179,8 @@ func TestGetConfigMap(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		cm, err := GetConfigMap(context.Background(), test.cmName, test.cmNamespace, client)
+		controller := LockReleaseController{client: client}
+		cm, err := controller.GetConfigMap(context.Background(), test.cmName, test.cmNamespace)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
@@ -273,12 +274,13 @@ func TestUpdateConfigMapWithKeyValue(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
+		controller := LockReleaseController{client: client}
 		ctx := context.Background()
-		err := UpdateConfigMapWithKeyValue(ctx, test.existingCM, test.key, test.value, client)
+		err := controller.UpdateConfigMapWithKeyValue(ctx, test.existingCM, test.key, test.value)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		updatedCM, err := controller.GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace)
 		if err != nil {
 			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
 		}
@@ -370,12 +372,13 @@ func TestRemoveKeyFromConfigMap(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
+		controller := LockReleaseController{client: client}
 		ctx := context.Background()
-		err := RemoveKeyFromConfigMap(ctx, test.existingCM, test.key, client)
+		err := controller.RemoveKeyFromConfigMap(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		updatedCM, err := controller.GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace)
 		if err != nil {
 			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
 		}
@@ -467,12 +470,13 @@ func TestRemoveKeyFromConfigMapWithRetry(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
+		controller := LockReleaseController{client: client}
 		ctx := context.Background()
-		err := RemoveKeyFromConfigMapWithRetry(ctx, test.existingCM, test.key, client)
+		err := controller.RemoveKeyFromConfigMapWithRetry(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		updatedCM, err := GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace, client)
+		updatedCM, err := controller.GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace)
 		if err != nil {
 			t.Fatalf("test %q failed: unexpected error: %v", test.name, err)
 		}

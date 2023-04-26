@@ -15,7 +15,11 @@ spec:
   csi:
     driver: filestore.csi.storage.gke.io
     # Modify this to use the zone, filestore instance and share name.
-    volumeHandle: "modeInstance/<zone>/<filestore-instance-name>/<filestore-share-name>"
+    volumeHandle: modeInstance/us-central1/test-lock-release-0/share
+    # volumeHandle: "modeMultishare/csi-filestore-multishare/leiyiz-joonix/us-central1/fs-25aea110-f141-4776-9467-19ae627ece66/pvc_5f22d0bb_a937_452f_96be_1ea3da36b368"
     volumeAttributes:
-      ip: <Filestore Instance IP> # Modify this to Pre-provisioned Filestore instance IP
-      volume: <Filestore Share Name> # Modify this to Pre-provisioned Filestore instance share name
+      # ip: 10.16.96.2 # Modify this to Pre-provisioned Filestore instance IP
+      ip: 172.21.172.130
+      supportLockRelease: "true"
+      volume: share
+      # volume: pvc_5f22d0bb_a937_452f_96be_1ea3da36b368 # Modify this to Pre-provisioned Filestore instance share name

@@ -110,6 +110,10 @@ spec:
             - "--endpoint=unix:/csi/csi.sock"
             - "--nodeid=$(KUBE_NODE_NAME)"
             - "--controller=true"
+            - --http-endpoint=:22024
+            - --enable-multishare=true
+            - --feature-lock-release=true
+            - --gke-cluster-name=nfs-lock
           env:
             - name: KUBE_NODE_NAME
               valueFrom:
@@ -117,6 +121,10 @@ spec:
                   fieldPath: spec.nodeName
             - name: GOOGLE_APPLICATION_CREDENTIALS
               value: "/etc/cloud_sa/gcp_filestore_csi_driver_sa.json"
+          ports:
+            - containerPort: 22024
+              name: http-endpoint
+              protocol: TCP
           volumeMounts:
             - name: socket-dir
               mountPath: /csi
