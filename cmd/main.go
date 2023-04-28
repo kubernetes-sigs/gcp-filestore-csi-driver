@@ -79,6 +79,7 @@ var (
 const driverName = "filestore.csi.storage.gke.io"
 
 func main() {
+	// test
 	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
 	flag.Parse()
