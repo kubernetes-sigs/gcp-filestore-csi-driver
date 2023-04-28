@@ -11,7 +11,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package rpc
+package lockrelease
 
 import (
 	"context"
@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
@@ -47,7 +47,8 @@ type LockReleaseController struct {
 	// hostname is the GKE node name where the lock release controller is running on.
 	hostname string
 
-	config *LockReleaseControllerConfig
+	config         *LockReleaseControllerConfig
+	metricsManager *metrics.MetricsManager
 }
 
 type LockReleaseControllerConfig struct {
@@ -55,6 +56,8 @@ type LockReleaseControllerConfig struct {
 	LeaseDuration, RenewDeadline, RetryPeriod time.Duration
 	// Reconcile loop frequency.
 	SyncPeriod time.Duration
+	// HTTP endpoint and path to emit NFS lock release metrics.
+	MetricEndpoint, MetricPath string
 }
 
 func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseControllerConfig) (*LockReleaseController, error) {
@@ -72,26 +75,42 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 	// Add a uniquifier so that two processes on the same host don't accidentally both become active.
 	id := hostname + "_" + string(uuid.NewUUID())
 
-	return &LockReleaseController{
+	lc := &LockReleaseController{
 		id:       id,
 		hostname: hostname,
 		client:   client,
 		config:   config,
-	}, nil
+	}
+
+	if config.MetricEndpoint != "" {
+		mm := metrics.NewMetricsManager()
+		mm.InitializeHttpHandler(config.MetricEndpoint, config.MetricPath)
+		mm.RegisterKubeAPIDurationMetric()
+		mm.RegisterLockReleaseCountnMetric()
+		lc.metricsManager = mm
+	}
+
+	return lc, nil
 }
 
 func (c *LockReleaseController) Run(ctx context.Context) {
 	run := func(ctx context.Context) {
 		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
 		wait.Forever(func() {
-			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
+			start := time.Now()
+			cmList, err := c.client.CoreV1().ConfigMaps(ConfigMapNamespace).List(ctx, metav1.ListOptions{})
+			duration := time.Since(start)
+			c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
 			if err != nil {
-				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
+				klog.Errorf("Failed to list configmap in namespace %s: %v", ConfigMapNamespace, err)
 				return
 			}
-			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
+			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), ConfigMapNamespace)
 
+			start = time.Now()
 			nodes, err := c.listNodes(ctx)
+			duration = time.Since(start)
+			c.RecordKubeAPIMetrics(err, metrics.NodeResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
 			if err != nil {
 				klog.Errorf("Failed to list nodes: %v", err)
 				return
@@ -112,7 +131,7 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 
 	rl, err := resourcelock.New(
 		resourcelock.LeasesResourceLock,
-		util.ManagedFilestoreCSINamespace,
+		ConfigMapNamespace,
 		leaseName,
 		nil,
 		c.client.CoordinationV1(),
@@ -138,7 +157,7 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 }
 
 func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap, nodes map[string]*corev1.Node) error {
-	nodeName, err := util.GKENodeNameFromConfigMap(cm)
+	nodeName, err := GKENodeNameFromConfigMap(cm)
 	if err != nil {
 		klog.Errorf("Failed to get GKE node name from configmap %s/%s: %v", cm.Namespace, cm.Name, err)
 		return err
@@ -147,7 +166,7 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 	node := nodes[nodeName]
 	data := cm.DeepCopy().Data
 	for key, filestoreIP := range data {
-		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := util.ParseConfigMapKey(key)
+		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := ParseConfigMapKey(key)
 		if err != nil {
 			klog.Errorf("Failed to parse configmap key %s: %v", key, err)
 			continue
@@ -163,15 +182,17 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 			continue
 		}
 		klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s no longer exists, releasing lock for Filestore IP %s", nodeName, gceInstanceID, gkeNodeInternalIP, filestoreIP)
-		if err := ReleaseLock(filestoreIP, gkeNodeInternalIP); err != nil {
-			klog.Errorf("Failed to release lock: %v", err)
+		opErr := ReleaseLock(filestoreIP, gkeNodeInternalIP)
+		c.RecordLockReleaseMetrics(opErr)
+		if opErr != nil {
+			klog.Errorf("Failed to release lock: %v", opErr)
 			continue
 		}
 		klog.Infof("Removing lock info key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
 		// Apply the "Get() and Update(), or retry" logic in RemoveKeyFromConfigMap().
 		// This will increase the number of k8s api calls,
 		// but reduce repetitive ReleaseLock() due to kubeclient api failures in each reconcile loop.
-		if err := util.RemoveKeyFromConfigMapWithRetry(ctx, cm, key, c.client); err != nil {
+		if err := c.RemoveKeyFromConfigMapWithRetry(ctx, cm, key); err != nil {
 			klog.Errorf("Failed to remove key %s from configmap %s/%s: %v", key, cm.Namespace, cm.Name, err)
 		}
 	}
@@ -212,4 +233,18 @@ func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*core
 		nodeMap[node.Name] = node.DeepCopy()
 	}
 	return nodeMap, nil
+}
+
+func (c *LockReleaseController) RecordKubeAPIMetrics(opErr error, resourceType, opType, opSource string, opDuration time.Duration) {
+	if c.metricsManager == nil {
+		return
+	}
+	c.metricsManager.RecordKubeAPIMetrics(opErr, resourceType, opType, opSource, opDuration)
+}
+
+func (c *LockReleaseController) RecordLockReleaseMetrics(opErr error) {
+	if c.metricsManager == nil {
+		return
+	}
+	c.metricsManager.RecordLockReleaseMetrics(opErr)
 }
