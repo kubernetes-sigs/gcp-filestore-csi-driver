@@ -37,7 +37,6 @@ const (
 	// resource deletion is done this Finalizer will be removed and the object will be cleaned up.
 	FilestoreResourceCleanupFinalizer = "multishare.filestore.csi.storage.gke.io/resource-cleanup-protection"
 
-	OpTimeLayout = "2023-04-10T22:58:52.014103834Z"
 	ErrRetention = 15 * time.Minute
 
 	// configurable max shares consts
