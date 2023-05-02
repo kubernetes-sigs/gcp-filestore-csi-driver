@@ -92,6 +92,7 @@ func main() {
 	if *runController {
 		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
 			mm = metrics.NewMetricsManager()
+			mm.RegisterOperationSecondsMetric()
 			mm.InitializeHttpHandler(*httpEndpoint, *metricsPath)
 			mm.EmitGKEComponentVersion()
 		}
@@ -139,10 +140,12 @@ func main() {
 		FeatureLockRelease: &driver.FeatureLockRelease{
 			Enabled: *featureLockRelease,
 			Config: &lockrelease.LockReleaseControllerConfig{
-				LeaseDuration: *leaderElectionLeaseDuration,
-				RenewDeadline: *leaderElectionRenewDeadline,
-				RetryPeriod:   *leaderElectionRetryPeriod,
-				SyncPeriod:    *lockReleaseSyncPeriod,
+				LeaseDuration:  *leaderElectionLeaseDuration,
+				RenewDeadline:  *leaderElectionRenewDeadline,
+				RetryPeriod:    *leaderElectionRetryPeriod,
+				SyncPeriod:     *lockReleaseSyncPeriod,
+				MetricEndpoint: *httpEndpoint,
+				MetricPath:     *metricsPath,
 			},
 		},
 		FeatureMaxSharesPerInstance: &driver.FeatureMaxSharesPerInstance{
