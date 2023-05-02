@@ -45,10 +45,10 @@ rules:
 
 kind: Role
 apiVersion: rbac.authorization.k8s.io/v1
-metadata:    
+metadata:
   name: filestorecsi-node-leaderelection-role
-  namespace: gke-managed-filestorecsi             
-rules:                                             
+  namespace: gke-managed-filestorecsi
+rules:
 - apiGroups: ["coordination.k8s.io"]
   resources: ["leases"]
   verbs: ["get", "list", "delete", "update", "create"]
