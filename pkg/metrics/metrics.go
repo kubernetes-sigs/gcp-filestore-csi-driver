@@ -36,10 +36,36 @@ const (
 	labelStatusCode    = "grpc_status_code"
 	labelMethodName    = "method_name"
 	labelFilestoreMode = "filestore_mode"
+
+	// NFS lock release metrics.
+	kubeAPIDurationMetricName  = "kube_api_duration_seconds"
+	lockReleaseCountMetricName = "lock_release_count"
+	// Label op_status_code indicates whether the k8s API operation succeeds or not.
+	labelOpStatusCode = "op_status_code"
+	successStatusCode = "success"
+	failureStatusCode = "failure"
+	// Label resource_type indicates the resource that the k8s API is querying.
+	labelResourceType     = "resource_type"
+	ConfigMapResourceType = "configmap"
+	NodeResourceType      = "node"
+	// Label op_type indicates the k8s API operation type.
+	labelOpType  = "op_type"
+	GetOpType    = "get"
+	CreateOpType = "create"
+	UpdateOpType = "update"
+	ListOpType   = "list"
+	// Label op_source indicates the CSI operation which initiates the k8s API operation.
+	labelOpSource       = "op_source"
+	NodeStageOpSource   = "node_stage_volume"
+	NodeUnstageOpSource = "node_unstage_volume"
+	ReconcilerOpSource  = "lock_release_reconciler"
+	// Label status_code indicates whether the lock release rpc call succeeds or not.
+	labelLockReleaseStatusCode = "status_code"
 )
 
 var (
-	metricBuckets = []float64{.1, .25, .5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600}
+	metricBuckets        = []float64{.1, .25, .5, 1, 2.5, 5, 10, 15, 30, 60, 120, 300, 600}
+	kubeAPIMetricBuckets = []float64{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024}
 
 	// This metric is exposed only from the controller driver component when GKE_FILESTORECSI_VERSION env variable is set.
 	gkeComponentVersion = metrics.NewGaugeVec(&metrics.GaugeOpts{
@@ -55,6 +81,25 @@ var (
 		},
 		[]string{labelStatusCode, labelMethodName, labelFilestoreMode},
 	)
+
+	lockReleaseCount = metrics.NewCounterVec(
+		&metrics.CounterOpts{
+			Subsystem: subSystem,
+			Name:      lockReleaseCountMetricName,
+			Help:      "Metric to expose count of node driver initiated filestore lock release operations.",
+		},
+		[]string{labelLockReleaseStatusCode},
+	)
+
+	kubeAPIDurationMilliseconds = metrics.NewHistogramVec(
+		&metrics.HistogramOpts{
+			Subsystem: subSystem,
+			Name:      kubeAPIDurationMetricName,
+			Buckets:   kubeAPIMetricBuckets,
+			Help:      "Metric to expose duration of node driver initiated k8s API operations.",
+		},
+		[]string{labelOpStatusCode, labelResourceType, labelOpType, labelOpSource},
+	)
 )
 
 type MetricsManager struct {
@@ -66,12 +111,23 @@ func NewMetricsManager() *MetricsManager {
 		registry: metrics.NewKubeRegistry(),
 	}
 	metrics.RegisterProcessStartTime(mm.registry.Register)
-	mm.registry.MustRegister(operationSeconds)
 	return mm
 }
 
 func (mm *MetricsManager) GetRegistry() metrics.KubeRegistry {
 	return mm.registry
+}
+
+func (mm *MetricsManager) RegisterOperationSecondsMetric() {
+	mm.registry.MustRegister(operationSeconds)
+}
+
+func (mm *MetricsManager) RegisterLockReleaseCountnMetric() {
+	mm.registry.MustRegister(lockReleaseCount)
+}
+
+func (mm *MetricsManager) RegisterKubeAPIDurationMetric() {
+	mm.registry.MustRegister(kubeAPIDurationMilliseconds)
 }
 
 func (mm *MetricsManager) registerComponentVersionMetric() {
@@ -92,6 +148,26 @@ func (mm *MetricsManager) recordComponentVersionMetric() error {
 
 func (mm *MetricsManager) RecordOperationMetrics(opErr error, methodName string, filestoreMode string, opDuration time.Duration) {
 	operationSeconds.WithLabelValues(getErrorCode(opErr), methodName, filestoreMode).Observe(opDuration.Seconds())
+}
+
+func (mm *MetricsManager) RecordKubeAPIMetrics(opErr error, resourceType, opType, opSource string, opDuration time.Duration) {
+	var statusCode string
+	if opErr == nil {
+		statusCode = successStatusCode
+	} else {
+		statusCode = failureStatusCode
+	}
+	kubeAPIDurationMilliseconds.WithLabelValues(statusCode, resourceType, opType, opSource).Observe(float64(opDuration.Milliseconds()))
+}
+
+func (mm *MetricsManager) RecordLockReleaseMetrics(opErr error) {
+	var statusCode string
+	if opErr == nil {
+		statusCode = successStatusCode
+	} else {
+		statusCode = failureStatusCode
+	}
+	lockReleaseCount.WithLabelValues(statusCode).Inc()
 }
 
 func getErrorCode(err error) string {

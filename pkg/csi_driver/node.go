@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
@@ -54,7 +56,6 @@ type nodeServer struct {
 	metaService           metadata.Service
 	volumeLocks           *util.VolumeLocks
 	lockReleaseController *lockrelease.LockReleaseController
-	kubeClient            kubernetes.Interface
 	features              *GCFSDriverFeatureOptions
 }
 
@@ -75,7 +76,6 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		if err != nil {
 			return nil, err
 		}
-		ns.kubeClient = client
 		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config)
 		if err != nil {
 			return nil, err
@@ -507,9 +507,12 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 
 	// Update the configMap after successful nfs mount operation.
 	nodeName := s.driver.config.NodeName
-	configmapName := util.ConfigMapNamePrefix + nodeName
+	configmapName := lockrelease.ConfigMapNamePrefix + nodeName
 	klog.Infof("NodeStageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
-	cm, err := util.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace, s.kubeClient)
+	start := time.Now()
+	cm, err := s.lockReleaseController.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace)
+	duration := time.Since(start)
+	s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.NodeStageOpSource, duration)
 	if err != nil {
 		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
@@ -526,7 +529,10 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 	if cm == nil {
 		data := map[string]string{lockInfoKey: filestoreIP}
 		klog.Infof("NodeStageVolume creating configmap %s/%s with data %v for volume %s", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID)
-		cm, err := util.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data, s.kubeClient)
+		start := time.Now()
+		cm, err := s.lockReleaseController.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data)
+		duration := time.Since(start)
+		s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.CreateOpType, metrics.NodeStageOpSource, duration)
 		if err != nil {
 			klog.Errorf("NodeStageVolume failed to create configmap %s/%s with data %s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID, err)
 			return err
@@ -535,7 +541,7 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 		return nil
 	}
 
-	if err := util.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP, s.kubeClient); err != nil {
+	if err := s.lockReleaseController.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP); err != nil {
 		klog.Errorf("NodeStageVolume failed to update configmap %s/%s with lock info {%s: %s} for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
 	}
@@ -547,9 +553,12 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *csi.NodeUnstageVolumeRequest) error {
 	volumeID := req.GetVolumeId()
 	nodeName := s.driver.config.NodeName
-	configmapName := util.ConfigMapNamePrefix + nodeName
+	configmapName := lockrelease.ConfigMapNamePrefix + nodeName
 	klog.Infof("NodeUnstageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
-	cm, err := util.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace, s.kubeClient)
+	start := time.Now()
+	cm, err := s.lockReleaseController.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace)
+	duration := time.Since(start)
+	s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.NodeUnstageOpSource, duration)
 	if err != nil {
 		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 		return err
@@ -565,7 +574,7 @@ func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *c
 		return err
 	}
 
-	if err := util.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey, s.kubeClient); err != nil {
+	if err := s.lockReleaseController.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey); err != nil {
 		klog.Infof("NodeUnstageVolume failed to remove key %s from configmap %s/%s for volume %s: %v", lockInfoKey, cm.Namespace, cm.Name, volumeID, err)
 		return err
 	}
@@ -586,7 +595,7 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 		if err != nil {
 			return "", err
 		}
-		lockInfoKey = util.GenerateConfigMapKey(project, location, filestoreName, shareName, nodeID, nodeInternalIP)
+		lockInfoKey = lockrelease.GenerateConfigMapKey(project, location, filestoreName, shareName, nodeID, nodeInternalIP)
 		return lockInfoKey, nil
 	}
 
@@ -595,6 +604,6 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 		return "", err
 	}
 	project := s.metaService.GetProject()
-	lockInfoKey = util.GenerateConfigMapKey(project, filestoreInstance.Location, filestoreInstance.Name, filestoreInstance.Volume.Name, nodeID, nodeInternalIP)
+	lockInfoKey = lockrelease.GenerateConfigMapKey(project, filestoreInstance.Location, filestoreInstance.Name, filestoreInstance.Volume.Name, nodeID, nodeInternalIP)
 	return lockInfoKey, nil
 }

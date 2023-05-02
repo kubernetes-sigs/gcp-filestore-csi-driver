@@ -1,8 +1,7 @@
-package rpc
+package lockrelease
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -109,7 +108,7 @@ func TestVerifyNodeExists(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		controller := LockReleaseController{}
+		controller := NewFakeLockReleaseController()
 		nodeExists, err := controller.verifyNodeExists(test.node, test.gceInstanceID, test.nodeInternalIP)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Errorf("%v", gotExpected)
@@ -137,7 +136,7 @@ func TestListNodes(t *testing.T) {
 			},
 		},
 	}
-	controller := LockReleaseController{client: fake.NewSimpleClientset(node1, node2)}
+	controller := NewFakeLockReleaseControllerWithClient(fake.NewSimpleClientset(node1, node2))
 	expectedMap := map[string]*corev1.Node{
 		"node1": {
 			ObjectMeta: metav1.ObjectMeta{
@@ -163,14 +162,4 @@ func TestListNodes(t *testing.T) {
 	if diff := cmp.Diff(expectedMap, nodes); diff != "" {
 		t.Errorf("test listNodes failed: unexpected diff (-want +got):%s", diff)
 	}
-}
-
-func gotExpectedError(testFunc string, wantErr bool, err error) error {
-	if err != nil && !wantErr {
-		return fmt.Errorf("%s got error %v, want nil", testFunc, err)
-	}
-	if err == nil && wantErr {
-		return fmt.Errorf("%s got nil, want error", testFunc)
-	}
-	return nil
 }
