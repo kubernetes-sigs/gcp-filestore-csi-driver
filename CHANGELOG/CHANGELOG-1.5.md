@@ -1,3 +1,15 @@
+# v1.5.2 - Changelog since v1.5.1
+
+## Changes by Kind
+
+### Uncategorized
+
+- bumping CRD to v1beta1 and move scope into namespaced ([#487](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/487), [@leiyiz](https://github.com/leiyiz))
+- fix timestamp parsing ([#492](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/492), [@leiyiz](https://github.com/leiyiz))
+- NFS lock release metrics ([#496](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/496), [@tyuchn](https://github.com/tyuchn))
+- Configmap rbac improvement for NFS lock release ([#486](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/486), [@tyuchn](https://github.com/tyuchn))
+- use namespaced Factory to enable namespaced role binding ([#499](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/499), [@leiyiz](https://github.com/leiyiz))
+
 # v1.5.1 - Changelog since v1.5.0
 
 ## Changes by Kind
