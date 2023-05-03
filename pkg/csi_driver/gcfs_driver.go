@@ -345,9 +345,9 @@ func initMultishareReconciler(driverConfig *GCFSDriverConfig) (*MultishareReconc
 	}
 
 	resyncPeriod := driverConfig.FeatureOptions.FeatureStateful.ResyncPeriod
-	factory := fsInformers.NewSharedInformerFactory(fsClient, resyncPeriod)
+	factory := fsInformers.NewSharedInformerFactoryWithOptions(fsClient, resyncPeriod, fsInformers.WithNamespace(util.ManagedFilestoreCSINamespace))
 	coreFactory := informers.NewSharedInformerFactory(kubeClient, resyncPeriod)
-	driverFactory := fsInformers.NewSharedInformerFactory(driverfsClient, resyncPeriod)
+	driverFactory := fsInformers.NewSharedInformerFactoryWithOptions(driverfsClient, resyncPeriod, fsInformers.WithNamespace(util.ManagedFilestoreCSINamespace))
 	sharescheme.AddToScheme(scheme.Scheme)
 
 	recon := NewMultishareReconciler(
