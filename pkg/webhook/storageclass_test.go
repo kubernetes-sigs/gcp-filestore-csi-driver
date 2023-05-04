@@ -240,6 +240,21 @@ func TestValidateInstanceLabel(t *testing.T) {
 			label:   "abc-*",
 			isValid: false,
 		},
+		{
+			name:    "label start with none-letter",
+			label:   "-next",
+			isValid: false,
+		},
+		{
+			name:    "label start with number",
+			label:   "123",
+			isValid: false,
+		},
+		{
+			name:    "label end with none-letter",
+			label:   "next-",
+			isValid: false,
+		},
 	}
 
 	for _, tc := range testCases {
