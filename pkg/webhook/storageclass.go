@@ -159,6 +159,7 @@ func applyV1StorageClassPatch(sc *storagev1.StorageClass) *v1.AdmissionResponse 
 }
 
 func validateInstanceLabel(label string) bool {
-	regex, _ := regexp.Compile(`^[\p{Ll}0-9_-]{0,63}$`)
+	// https://cloud.google.com/filestore/docs/managing-labels#requirements
+	regex, _ := regexp.Compile(`^(([a-z][a-z0-9_-]{0,61})?[a-z0-9])?$`)
 	return regex.MatchString(label)
 }
