@@ -13,7 +13,7 @@
 # limitations under the License.
 
 ARG BUILDPLATFORM
-FROM --platform=$BUILDPLATFORM golang:1.19.9 as builder
+FROM --platform=$BUILDPLATFORM golang:1.20.4 as builder
 
 ARG TARGETPLATFORM
 
