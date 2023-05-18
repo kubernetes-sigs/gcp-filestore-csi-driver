@@ -1,6 +1,26 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.14 - Changelog since v1.3.13
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Fixed issue where the webhook doesn't recognize -next as an invalid label ([#504](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/504), [@leiyiz](https://github.com/leiyiz))
+- Update go version to 1.20.4 ([#513](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/513), [@tyuchn](https://github.com/tyuchn))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
 # v1.3.13 - Changelog since v1.3.12
 
 ## Changes by Kind
