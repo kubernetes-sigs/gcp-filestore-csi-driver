@@ -213,10 +213,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			_, err = s.config.fileService.GetBackup(ctx, id)
 			if err != nil {
 				klog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err.Error())
-				if errCode := file.IsUserError(err); errCode != nil {
-					return nil, status.Error(*errCode, err.Error())
-				}
-				return nil, status.Errorf(codes.Internal, "Failed to get snapshot %v: %v", id, err.Error())
+				return nil, status.Error(*file.CodeForError(err), err.Error())
 			}
 			sourceSnapshotId = id
 		}
@@ -226,10 +223,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
 	// No error is returned if the instance is not found during CreateVolume.
 	if err != nil && !file.IsNotFoundErr(err) {
-		if errCode := file.IsUserError(err); errCode != nil {
-			return nil, status.Error(*errCode, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	if filer != nil {
@@ -291,10 +285,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 		if createErr != nil {
 			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
-			if errCode := file.IsUserError(createErr); errCode != nil {
-				return nil, status.Error(*errCode, createErr.Error())
-			}
-			return nil, status.Error(codes.Internal, createErr.Error())
+			return nil, status.Error(*file.CodeForError(err), err.Error())
 		}
 	}
 	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
@@ -394,10 +385,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		if file.IsNotFoundErr(err) {
 			return &csi.DeleteVolumeResponse{}, nil
 		}
-		if errCode := file.IsUserError(err); errCode != nil {
-			return nil, status.Error(*errCode, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	if filer.State == "DELETING" {
@@ -407,7 +395,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	err = s.config.fileService.DeleteInstance(ctx, filer)
 	if err != nil {
 		klog.Errorf("Delete volume for volume Id %s failed: %v", volumeID, err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	klog.Infof("DeleteVolume succeeded for volume %v", volumeID)
@@ -434,10 +422,7 @@ func (s *controllerServer) ValidateVolumeCapabilities(ctx context.Context, req *
 	filer.Project = s.config.cloud.Project
 	newFiler, err := s.config.fileService.GetInstance(ctx, filer)
 	if err != nil && !file.IsNotFoundErr(err) {
-		if errCode := file.IsUserError(err); errCode != nil {
-			return nil, status.Error(*errCode, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 	if newFiler == nil {
 		return nil, status.Errorf(codes.NotFound, "volume %v doesn't exist", volumeID)
@@ -697,10 +682,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	filer.Project = s.config.cloud.Project
 	filer, err = s.config.fileService.GetInstance(ctx, filer)
 	if err != nil {
-		if errCode := file.IsUserError(err); errCode != nil {
-			return nil, status.Error(*errCode, err.Error())
-		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 	if filer.State != "READY" {
 		return nil, fmt.Errorf("lolume %q is not yet ready, current state %q", volumeID, filer.State)
@@ -716,7 +698,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 
 	hasPendingOps, err := s.config.fileService.HasOperations(ctx, filer, "update", false /* done */)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	if hasPendingOps {
@@ -726,7 +708,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	filer.Volume.SizeBytes = reqBytes
 	newfiler, err := s.config.fileService.ResizeInstance(ctx, filer)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	klog.Infof("Controller expand volume succeeded for volume %v, new size(bytes): %v", volumeID, newfiler.Volume.SizeBytes)
@@ -893,7 +875,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	backupInfo, err := s.config.fileService.GetBackup(ctx, backupUri)
 	if err != nil {
 		if !file.IsNotFoundErr(err) {
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, status.Error(*file.CodeForError(err), err.Error())
 		}
 	} else {
 		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceInstance, backupInfo.SourceShare)
@@ -930,10 +912,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	if err != nil {
 		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
 		if err != nil {
-			if errCode := file.IsUserError(err); errCode != nil {
-				return nil, status.Error(*errCode, err.Error())
-			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, status.Error(*file.CodeForError(err), err.Error())
 		}
 	}
 	tp, err := util.ParseTimestamp(backupObj.CreateTime)
@@ -977,7 +956,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 			klog.Infof("Volume snapshot with ID %v not found", id)
 			return &csi.DeleteSnapshotResponse{}, nil
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	if backupInfo.Backup.State == "DELETING" {
@@ -986,7 +965,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
 		klog.Errorf("Delete snapshot for backup Id %s failed: %v", id, err.Error())
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(*file.CodeForError(err), err.Error())
 	}
 
 	return &csi.DeleteSnapshotResponse{}, nil
