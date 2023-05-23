@@ -625,8 +625,8 @@ func GetInstanceNameFromURI(uri string) (project, location, name string, err err
 }
 
 func IsNotFoundErr(err error) bool {
-	apiErr, ok := err.(*googleapi.Error)
-	if !ok {
+	var apiErr *googleapi.Error
+	if !errors.As(err, &apiErr) {
 		return false
 	}
 
@@ -718,7 +718,7 @@ func existingErrorCode(err error) *codes.Code {
 	return nil
 }
 
-// CodeForError returns a pointer to the grpc error code that maps to the http
+// codeForError returns a pointer to the grpc error code that maps to the http
 // error code for the passed in user googleapi error or context error. Returns
 // codes.Internal if the given error is not a googleapi error caused by the user.
 // The following http error codes are considered user errors:
@@ -729,7 +729,10 @@ func existingErrorCode(err error) *codes.Code {
 // The following errors are considered context errors:
 // (1) "context deadline exceeded", returns grpc DeadlineExceeded,
 // (2) "context canceled", returns grpc Canceled
-func CodeForError(err error) *codes.Code {
+func codeForError(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
 	if errCode := existingErrorCode(err); errCode != nil {
 		return errCode
 	}
@@ -741,6 +744,15 @@ func CodeForError(err error) *codes.Code {
 	}
 
 	return util.ErrCodePtr(codes.Internal)
+}
+
+// Status error returns the error as a grpc status error, and
+// sets the grpc error code according to CodeForError.
+func StatusError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return status.Error(*codeForError(err), err.Error())
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
