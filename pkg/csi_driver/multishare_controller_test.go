@@ -1040,7 +1040,7 @@ func TestMultishareDeleteVolume(t *testing.T) {
 		errorExpected bool
 	}{
 		{
-			name: "share not found, instance not found, succes response",
+			name: "share not found, instance not found, success response",
 			req: &csi.DeleteVolumeRequest{
 				VolumeId: testVolId,
 			},
