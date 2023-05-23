@@ -71,7 +71,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, nil, status.Error(codes.Internal, err.Error())
+		return nil, nil, err
 	}
 	createShareOp := containsOpWithShareName(shareName, util.ShareCreate, ops)
 	if createShareOp != nil {
@@ -115,7 +115,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 
 		needExpand, targetBytes, err := m.instanceNeedsExpand(ctx, share, share.CapacityBytes)
 		if err != nil {
-			return nil, nil, status.Error(codes.Internal, err.Error())
+			return nil, nil, err
 		}
 
 		if needExpand {
@@ -202,7 +202,7 @@ func (m *MultishareOpsManager) startShareCreateWorkflowSafe(ctx context.Context,
 	defer m.Unlock()
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	return m.startShareWorkflow(ctx, &Workflow{share: share, opType: util.ShareCreate}, ops)
@@ -449,7 +449,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceOrShareExpandWorkflow(ctx co
 
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	expandShareOp, err := containsOpWithShareTarget(share, util.ShareUpdate, ops)
@@ -469,12 +469,12 @@ func (m *MultishareOpsManager) checkAndStartInstanceOrShareExpandWorkflow(ctx co
 
 	instance, err := m.cloud.File.GetMultishareInstance(ctx, share.Parent)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	needExpand, targetBytes, err := m.instanceNeedsExpand(ctx, share, reqBytes-share.CapacityBytes)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 	if needExpand {
 		instance.CapacityBytes = targetBytes
@@ -491,7 +491,7 @@ func (m *MultishareOpsManager) startShareExpandWorkflowSafe(ctx context.Context,
 	defer m.Unlock()
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	share.CapacityBytes = reqBytes
@@ -504,7 +504,7 @@ func (m *MultishareOpsManager) checkAndStartShareDeleteWorkflow(ctx context.Cont
 
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	// If we find a running delete share op, poll for that to complete.
@@ -525,7 +525,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 
 	ops, err := m.listMultishareResourceRunningOps(ctx)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	err = m.verifyNoRunningInstanceOrShareOpsForInstance(instance, ops)
@@ -542,7 +542,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 		if file.IsNotFoundErr(err) {
 			return nil, nil
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	shares, err := m.cloud.File.ListShares(ctx, &file.ListFilter{Project: instance.Project, Location: instance.Location, InstanceName: instance.Name})
@@ -550,7 +550,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 		if file.IsNotFoundErr(err) {
 			return nil, nil
 		}
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, err
 	}
 
 	// Check for delete
@@ -560,7 +560,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 			if file.IsNotFoundErr(err) {
 				return nil, nil
 			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 		return w, err
 	}
@@ -583,7 +583,7 @@ func (m *MultishareOpsManager) checkAndStartInstanceDeleteOrShrinkWorkflow(ctx c
 			if file.IsNotFoundErr(err) {
 				return nil, nil
 			}
-			return nil, status.Error(codes.Internal, err.Error())
+			return nil, err
 		}
 		return w, err
 	}

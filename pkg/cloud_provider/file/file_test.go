@@ -581,15 +581,46 @@ func TestCodeForError(t *testing.T) {
 			err:             status.Error(codes.Aborted, "aborted error"),
 			expectedErrCode: util.ErrCodePtr(codes.Aborted),
 		},
+		{
+			name:            "nil error",
+			err:             nil,
+			expectedErrCode: nil,
+		},
 	}
 
 	for _, test := range cases {
-		errCode := CodeForError(test.err)
+		errCode := codeForError(test.err)
 		if (test.expectedErrCode == nil) != (errCode == nil) {
 			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
 		}
 		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
 			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+		}
+	}
+}
+
+func TestStatusError(t *testing.T) {
+	cases := []struct {
+		name        string
+		err         error
+		expectedErr error
+	}{
+		{
+			name:        "404 googleapi error",
+			err:         &googleapi.Error{Code: http.StatusNotFound},
+			expectedErr: status.Error(codes.NotFound, ""),
+		},
+		{
+			name:        "nil error",
+			err:         nil,
+			expectedErr: nil,
+		},
+	}
+
+	for _, test := range cases {
+		err := StatusError(test.err)
+		if (test.expectedErr == nil) != (err == nil) {
+			t.Errorf("test %v failed: got %v, expected %v", test.name, err, test.expectedErr)
 		}
 	}
 }
