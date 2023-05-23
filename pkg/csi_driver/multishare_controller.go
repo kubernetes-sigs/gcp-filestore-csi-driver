@@ -183,8 +183,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	// lock released. poll for op.
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		errCode := file.PollOpErrorCode(err)
-		return nil, status.Errorf(*errCode, "Create Volume failed, operation %q poll error: %v", workflow.opName, err)
+		return nil, status.Errorf(*file.CodeForError(err), "Create Volume failed, operation %q poll error: %v", workflow.opName, err)
 	}
 
 	klog.Infof("Poll for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
@@ -211,8 +210,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	// lock released. poll for share create op.
 	err = m.waitOnWorkflow(ctx, shareCreateWorkflow)
 	if err != nil {
-		errCode := file.PollOpErrorCode(err)
-		return nil, status.Errorf(*errCode, "%s operation %q poll error: %v", shareCreateWorkflow.opType.String(), shareCreateWorkflow.opName, err)
+		return nil, status.Errorf(*file.CodeForError(err), "%s operation %q poll error: %v", shareCreateWorkflow.opType.String(), shareCreateWorkflow.opName, err)
 	}
 	return m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes)
 }
@@ -271,8 +269,7 @@ func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.Delete
 	if workflow != nil {
 		err = m.waitOnWorkflow(ctx, workflow)
 		if err != nil {
-			errCode := file.PollOpErrorCode(err)
-			return nil, status.Errorf(*errCode, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
+			return nil, status.Errorf(*file.CodeForError(err), "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
 		}
 	}
 
@@ -306,8 +303,7 @@ func (m *MultishareController) startAndWaitForInstanceDeleteOrShrink(ctx context
 	}
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		errCode := file.PollOpErrorCode(err)
-		return status.Errorf(*errCode, "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
+		return status.Errorf(*file.CodeForError(err), "%s operation %q poll error: %v", workflow.opType.String(), workflow.opName, err)
 	}
 	return nil
 }
@@ -379,8 +375,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		errCode := file.PollOpErrorCode(err)
-		return nil, status.Errorf(*errCode, "wait on %s operation %q failed with error: %v", workflow.opType.String(), workflow.opName, err)
+		return nil, status.Errorf(*file.CodeForError(err), "wait on %s operation %q failed with error: %v", workflow.opType.String(), workflow.opName, err)
 	}
 	klog.Infof("Wait for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
 
@@ -398,8 +393,7 @@ func (m *MultishareController) ControllerExpandVolume(ctx context.Context, req *
 
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		errCode := file.PollOpErrorCode(err)
-		return nil, status.Errorf(*errCode, "wait on share expansion op %q failed with error: %v", workflow.opName, err)
+		return nil, status.Errorf(*file.CodeForError(err), "wait on share expansion op %q failed with error: %v", workflow.opName, err)
 	}
 
 	return m.getShareAndGenerateCSIControllerExpandVolumeResponse(ctx, share, reqBytes)
