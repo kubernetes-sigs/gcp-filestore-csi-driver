@@ -528,21 +528,21 @@ func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi
 	filestoreIP := attr[attrIP]
 	if cm == nil {
 		data := map[string]string{lockInfoKey: filestoreIP}
-		klog.Infof("NodeStageVolume creating configmap %s/%s with data %v for volume %s", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID)
+		klog.Infof("NodeStageVolume creating configmap %+v with data %v for volume %s", klog.KObj(cm), data, volumeID)
 		start := time.Now()
 		cm, err := s.lockReleaseController.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data)
 		duration := time.Since(start)
 		s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.CreateOpType, metrics.NodeStageOpSource, duration)
 		if err != nil {
-			klog.Errorf("NodeStageVolume failed to create configmap %s/%s with data %s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, data, volumeID, err)
+			klog.Errorf("NodeStageVolume failed to create configmap %+v with data %s for volume %s: %v", klog.KObj(cm), data, volumeID, err)
 			return err
 		}
-		klog.Infof("NodeStageVolume successfully created configmap %s/%s with data %v for volume %s", cm.Name, cm.Name, cm.Data, volumeID)
+		klog.Infof("NodeStageVolume successfully created configmap %+v with data %v for volume %s", klog.KObj(cm), cm.Data, volumeID)
 		return nil
 	}
 
 	if err := s.lockReleaseController.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP); err != nil {
-		klog.Errorf("NodeStageVolume failed to update configmap %s/%s with lock info {%s: %s} for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
+		klog.Errorf("NodeStageVolume failed to update configmap %+v with lock info {%s: %s} for volume %s: %v", klog.KObj(cm), lockInfoKey, filestoreIP, volumeID, err)
 		return err
 	}
 
@@ -560,7 +560,7 @@ func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *c
 	duration := time.Since(start)
 	s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.NodeUnstageOpSource, duration)
 	if err != nil {
-		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
+		klog.Errorf("NodeStageVolume failed to get configmap %+v for volume %s: %v", klog.KObj(cm), volumeID, err)
 		return err
 	}
 	if cm == nil {
@@ -575,7 +575,7 @@ func (s *nodeServer) nodeUnstageVolumeUpdateLockInfo(ctx context.Context, req *c
 	}
 
 	if err := s.lockReleaseController.RemoveKeyFromConfigMap(ctx, cm, lockInfoKey); err != nil {
-		klog.Infof("NodeUnstageVolume failed to remove key %s from configmap %s/%s for volume %s: %v", lockInfoKey, cm.Namespace, cm.Name, volumeID, err)
+		klog.Infof("NodeUnstageVolume failed to remove key %s from configmap %+v for volume %s: %v", lockInfoKey, klog.KObj(cm), volumeID, err)
 		return err
 	}
 

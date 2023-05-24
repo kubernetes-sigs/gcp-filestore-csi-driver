@@ -140,10 +140,10 @@ func (c *LockReleaseController) UpdateConfigMapWithKeyValue(ctx context.Context,
 	}
 	// No-op if lock info key already exists in configmap.
 	if _, keyExists := cm.Data[key]; keyExists {
-		klog.Infof("NodeStageVolume skippped storing lock info {%s: %s} in configmap %s/%s since key %s already exists in configmap.data %v", key, value, cm.Namespace, cm.Name, cm.Data)
+		klog.Infof("NodeStageVolume skipped storing lock info {%s: %s} in configmap %+v since key %s already exists in configmap.data %v", key, value, klog.KObj(cm), key, cm.Data)
 		return nil
 	}
-	klog.Infof("NodeStageVolume storing lock info {%s: %s} in configmap %s/%s with data %v", key, value, cm.Namespace, cm.Name, cm.Data)
+	klog.Infof("NodeStageVolume storing lock info {%s: %s} in configmap %+v with data %v", key, value, klog.KObj(cm), cm.Data)
 	cm.Data[key] = value
 	start := time.Now()
 	updatedCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
@@ -152,7 +152,7 @@ func (c *LockReleaseController) UpdateConfigMapWithKeyValue(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	klog.Infof("NodeStageVolume successfully stored lock info {%s: %s} in configmap %s/%s with new data %v", key, value, updatedCM.Namespace, updatedCM.Name, updatedCM.Data)
+	klog.Infof("NodeStageVolume successfully stored lock info {%s: %s} in configmap %+v with new data %v", key, value, klog.KObj(updatedCM), updatedCM.Data)
 	return nil
 }
 
@@ -161,11 +161,11 @@ func (c *LockReleaseController) UpdateConfigMapWithKeyValue(ctx context.Context,
 // RemoveKeyFromConfigMap is only called in NodeUnstageVolume.
 func (c *LockReleaseController) RemoveKeyFromConfigMap(ctx context.Context, cm *corev1.ConfigMap, key string) error {
 	if _, keyExists := cm.Data[key]; !keyExists {
-		klog.Infof("NodeUnstageVolume skipped updating configmap %s/%s since key %s not found in configmap.data", cm.Namespace, cm.Name, key)
+		klog.Infof("NodeUnstageVolume skipped updating configmap %+v since key %s not found in configmap.data", klog.KObj(cm), key)
 		return nil
 	}
 
-	klog.Infof("NodeUnstageVolume removing key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
+	klog.Infof("NodeUnstageVolume removing key %s from configmap %+v with data %v", key, klog.KObj(cm), cm.Data)
 	delete(cm.Data, key)
 	start := time.Now()
 	updatedCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Update(ctx, cm, metav1.UpdateOptions{})
@@ -174,7 +174,7 @@ func (c *LockReleaseController) RemoveKeyFromConfigMap(ctx context.Context, cm *
 	if err != nil {
 		return err
 	}
-	klog.Infof("NodeUnstageVolume successfully removed key %s from configmap %s/%s, remaning data: %v", key, updatedCM.Namespace, updatedCM.Name, updatedCM.Data)
+	klog.Infof("NodeUnstageVolume successfully removed key %s from configmap %+v, remaning data: %v", key, klog.KObj(updatedCM), updatedCM.Data)
 	return nil
 }
 
@@ -193,7 +193,7 @@ func (c *LockReleaseController) RemoveKeyFromConfigMapWithRetry(ctx context.Cont
 			return err
 		}
 		if _, keyExists := cm.Data[key]; !keyExists {
-			klog.Infof("Skip updating configmap %s/%s: key %s not found in configmap.data", cm.Namespace, cm.Name, key)
+			klog.Infof("Skip updating configmap %+v: key %s not found in configmap.data", klog.KObj(cm), key)
 			return nil
 		}
 		delete(latestCM.Data, key)
