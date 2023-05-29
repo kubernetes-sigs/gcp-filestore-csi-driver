@@ -54,21 +54,22 @@ const (
 )
 
 type GCFSDriverConfig struct {
-	Name             string          // Driver name
-	Version          string          // Driver version
-	NodeName         string          // Node name
-	RunController    bool            // Run CSI controller service
-	RunNode          bool            // Run CSI node service
-	Mounter          mount.Interface // Mount library
-	Cloud            *cloud.Cloud    // Cloud provider
-	MetadataService  metadataservice.Service
-	EnableMultishare bool
-	Reconciler       *MultishareReconciler
-	Metrics          *metrics.MetricsManager
-	EcfsDescription  string
-	IsRegional       bool
-	ClusterName      string
-	FeatureOptions   *GCFSDriverFeatureOptions
+	Name              string          // Driver name
+	Version           string          // Driver version
+	NodeName          string          // Node name
+	RunController     bool            // Run CSI controller service
+	RunNode           bool            // Run CSI node service
+	Mounter           mount.Interface // Mount library
+	Cloud             *cloud.Cloud    // Cloud provider
+	MetadataService   metadataservice.Service
+	EnableMultishare  bool
+	Reconciler        *MultishareReconciler
+	Metrics           *metrics.MetricsManager
+	EcfsDescription   string
+	IsRegional        bool
+	ClusterName       string
+	FeatureOptions    *GCFSDriverFeatureOptions
+	ExtraVolumeLabels map[string]string
 }
 
 type GCFSDriver struct {
@@ -181,17 +182,18 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 		}
 		// Configure controller server
 		driver.cs = newControllerServer(&controllerServerConfig{
-			driver:           driver,
-			fileService:      config.Cloud.File,
-			cloud:            config.Cloud,
-			volumeLocks:      util.NewVolumeLocks(),
-			enableMultishare: config.EnableMultishare,
-			reconciler:       config.Reconciler,
-			metricsManager:   config.Metrics,
-			ecfsDescription:  config.EcfsDescription,
-			isRegional:       config.IsRegional,
-			clusterName:      config.ClusterName,
-			features:         config.FeatureOptions,
+			driver:            driver,
+			fileService:       config.Cloud.File,
+			cloud:             config.Cloud,
+			volumeLocks:       util.NewVolumeLocks(),
+			enableMultishare:  config.EnableMultishare,
+			reconciler:        config.Reconciler,
+			metricsManager:    config.Metrics,
+			ecfsDescription:   config.EcfsDescription,
+			isRegional:        config.IsRegional,
+			clusterName:       config.ClusterName,
+			features:          config.FeatureOptions,
+			extraVolumeLabels: config.ExtraVolumeLabels,
 		})
 	}
 

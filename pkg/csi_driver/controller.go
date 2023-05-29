@@ -122,6 +122,7 @@ type controllerServerConfig struct {
 	isRegional           bool
 	clusterName          string
 	features             *GCFSDriverFeatureOptions
+	extraVolumeLabels    map[string]string
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
@@ -273,6 +274,10 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		labels, err := extractLabels(param, s.config.driver.config.Name)
 		if err != nil {
 			return nil, err
+		}
+		// Append extra lables from the command line option
+		for k, v := range s.config.extraVolumeLabels {
+			labels[k] = v
 		}
 		newFiler.Labels = labels
 

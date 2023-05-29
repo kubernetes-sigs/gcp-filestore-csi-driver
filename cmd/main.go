@@ -48,6 +48,7 @@ var (
 	ecfsDescription                 = flag.String("ecfs-description", "", "Filestore multishare instance descrption. ecfs-version=<version>,image-project-id=<projectid>")
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
+	extraVolumeLabelsStr            = flag.String("extra-labels", "", "Extra labels to attach to each volume created. It is a comma separated list of key value pairs like '<key1>=<value1>,<key2>=<value2>'. See https://cloud.google.com/compute/docs/labeling-resources for details")
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
 	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
@@ -89,6 +90,7 @@ func main() {
 	defer cancel()
 	var meta metadata.Service
 	var mm *metrics.MetricsManager
+	var extraVolumeLabels map[string]string
 	if *runController {
 		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
 			mm = metrics.NewMetricsManager()
@@ -103,10 +105,18 @@ func main() {
 			}
 		}
 
+		extraVolumeLabels, err = util.ConvertLabelsStringToMap(*extraVolumeLabelsStr)
+		if err != nil {
+			klog.Fatalf("Bad extra volume labels: %v", err.Error())
+		}
+
 		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *primaryFilestoreServiceEndpoint, *testFilestoreServiceEndpoint)
 	} else {
 		if *nodeID == "" {
 			klog.Fatalf("nodeid cannot be empty for node service")
+		}
+		if len(*extraVolumeLabelsStr) > 0 {
+			klog.Fatalf("Extra volume labels provided but not running controller")
 		}
 
 		meta, err = metadataservice.NewMetadataService()
@@ -171,20 +181,21 @@ func main() {
 
 	mounter := mount.New("")
 	config := &driver.GCFSDriverConfig{
-		Name:             driverName,
-		Version:          version,
-		NodeName:         *nodeID,
-		RunController:    *runController,
-		RunNode:          *runNode,
-		Mounter:          mounter,
-		Cloud:            provider,
-		MetadataService:  meta,
-		EnableMultishare: *enableMultishare,
-		Metrics:          mm,
-		EcfsDescription:  *ecfsDescription,
-		IsRegional:       *isRegional,
-		ClusterName:      *gkeClusterName,
-		FeatureOptions:   featureOptions,
+		Name:              driverName,
+		Version:           version,
+		NodeName:          *nodeID,
+		RunController:     *runController,
+		RunNode:           *runNode,
+		Mounter:           mounter,
+		Cloud:             provider,
+		MetadataService:   meta,
+		EnableMultishare:  *enableMultishare,
+		Metrics:           mm,
+		EcfsDescription:   *ecfsDescription,
+		IsRegional:        *isRegional,
+		ClusterName:       *gkeClusterName,
+		FeatureOptions:    featureOptions,
+		ExtraVolumeLabels: extraVolumeLabels,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)
