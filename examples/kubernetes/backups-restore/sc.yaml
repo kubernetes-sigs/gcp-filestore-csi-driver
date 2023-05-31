@@ -3,5 +3,8 @@ kind: StorageClass
 metadata:
   name: csi-filestore
 provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: enterprise
 volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
 allowVolumeExpansion: true
