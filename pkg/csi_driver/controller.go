@@ -93,6 +93,7 @@ const (
 	tagKeyCreatedForClaimName      = "kubernetes_io_created-for_pvc_name"
 	tagKeyCreatedForVolumeName     = "kubernetes_io_created-for_pv_name"
 	tagKeyCreatedBy                = "storage_gke_io_created-by"
+	tagKeySnapshotName             = "storage_gke_io_created-for_csi_snapshot_name"
 	TagKeyClusterName              = "storage_gke_io_cluster_name"
 	TagKeyClusterLocation          = "storage_gke_io_cluster_location"
 )
@@ -908,6 +909,13 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		}, nil
 	}
 
+	// Add labels.
+	labels, err := extractBackupLabels(req.GetParameters(), s.config.driver.config.Name, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	filer.Labels = labels
+
 	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
 	if err != nil {
 		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
@@ -930,6 +938,15 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	}
 	klog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
 	return resp, nil
+}
+
+func extractBackupLabels(parameters map[string]string, driverName string, snapshotName string) (map[string]string, error) {
+	labels, err := extractLabels(parameters, driverName)
+	if err != nil {
+		return nil, err
+	}
+	labels[tagKeySnapshotName] = snapshotName
+	return labels, nil
 }
 
 func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
