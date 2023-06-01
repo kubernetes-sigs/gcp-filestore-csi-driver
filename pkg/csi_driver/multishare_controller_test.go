@@ -42,6 +42,7 @@ const (
 	testPVName               = "testPV"
 	instanceUriFmt           = "projects/%s/locations/%s/instances/%s"
 	shareUriFmt              = "projects/%s/locations/%s/instances/%s/shares/%s"
+	backupURIFmt             = "projects/%s/locations/%s/backups/%s"
 	multishareVolIdFmt       = modeMultishare + "/%s/%s/%s/%s/%s"
 )
 
@@ -77,6 +78,7 @@ func initTestMultishareControllerWithFeatureOpts(t *testing.T, features *GCFSDri
 	if err != nil {
 		t.Fatalf("Failed to get cloud provider: %v", err)
 	}
+	cloudProvider.File = fileService
 	config := &controllerServerConfig{
 		driver:          initTestDriver(t),
 		fileService:     fileService,
@@ -808,30 +810,6 @@ func TestMultishareCreateVolume(t *testing.T) {
 		checkOnlyVolidFmt bool // for auto generated instance, the instance name is not known
 	}{
 		{
-			name: "create volume called with volume content source",
-			req: &csi.CreateVolumeRequest{
-				Name: testVolName,
-				CapacityRange: &csi.CapacityRange{
-					RequiredBytes: 100 * util.Gb,
-				},
-				Parameters: map[string]string{
-					ParamMultishareInstanceScLabel: testInstanceScPrefix,
-				},
-				VolumeCapabilities: []*csi.VolumeCapability{
-					{
-						AccessType: &csi.VolumeCapability_Mount{
-							Mount: &csi.VolumeCapability_MountVolume{},
-						},
-						AccessMode: &csi.VolumeCapability_AccessMode{
-							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
-						},
-					},
-				},
-				VolumeContentSource: &csi.VolumeContentSource{},
-			},
-			errorExpected: true,
-		},
-		{
 			name: "create volume called with volume size < 100G in required bytes",
 			req: &csi.CreateVolumeRequest{
 				Name: testVolName,
@@ -1180,6 +1158,461 @@ func TestMultishareCreateVolume(t *testing.T) {
 				t.Errorf("unexpected error")
 			}
 			if tc.checkOnlyVolidFmt {
+				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
+					t.Errorf("unexpected vol id %s", resp.Volume.VolumeId)
+				}
+			} else {
+				if tc.resp != nil && resp == nil {
+					t.Errorf("mismatch in response")
+				}
+				if tc.resp == nil && resp != nil {
+					t.Errorf("mismatch in response")
+				}
+				if !reflect.DeepEqual(resp, tc.resp) {
+					t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+				}
+			}
+		})
+	}
+}
+
+func TestMultishareCreateVolumeFromBackup(t *testing.T) {
+	type BackupTestInfo struct {
+		backup *file.BackupInfo
+		state  string
+	}
+	testVolName := "pvc-" + string(uuid.NewUUID())
+	testShareName := util.ConvertVolToShareName(testVolName)
+	testInstanceName1 := "fs-" + string(uuid.NewUUID())
+	testInstanceName2 := "fs-" + string(uuid.NewUUID())
+	volumeCapabilities := []*csi.VolumeCapability{
+		{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+	}
+	features := &GCFSDriverFeatureOptions{
+		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+	}
+
+	defaultBackup := &BackupTestInfo{
+		backup: &file.BackupInfo{
+			Project:            testProject,
+			Location:           testRegion,
+			SourceInstanceName: testInstanceName1,
+			SourceShare:        testShareName,
+			Name:               "mybackup",
+			BackupURI:          "projects/test-project/locations/us-central1/backups/mybackup",
+			SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+		},
+	}
+	type OpItem struct {
+		id     string
+		target string
+		verb   string
+		done   bool
+	}
+	tests := []struct {
+		name              string
+		prefix            string
+		ops               []OpItem
+		initInstances     []*file.MultishareInstance
+		initShares        []*file.Share
+		req               *csi.CreateVolumeRequest
+		resp              *csi.CreateVolumeResponse
+		checkOnlyVolidFmt bool
+		initialBackup     *BackupTestInfo
+		features          *GCFSDriverFeatureOptions
+		errorExpected     bool
+	}{
+		{
+			name: "create volume called with volume content source, but multishare backup feature is disabled",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: &GCFSDriverFeatureOptions{
+				FeatureMultishareBackups: &FeatureMultishareBackups{
+					Enabled: false,
+				},
+			},
+			initialBackup:     defaultBackup,
+			checkOnlyVolidFmt: true,
+			errorExpected:     true,
+		},
+		{
+			name: "create volume called with volume content source, no existing instance or share",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup:     defaultBackup,
+			checkOnlyVolidFmt: true,
+		},
+		{
+			name: "1 initial ready 1Tib instance with 0 shares, 1 busy instance,  create 100Gib share with content source in free instance, success response",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "enterprise",
+					Network: file.Network{
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
+					},
+					State: "READY",
+				},
+				{
+					Name:     testInstanceName2,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "enterprise",
+					Network: file.Network{
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
+					},
+					State: "READY",
+				},
+			},
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(instanceUriFmt, testProject, testRegion, testInstanceName2),
+					verb:   "create",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramTier:                      "enterprise",
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup: defaultBackup,
+		},
+		{
+			name: "1 initial ready 1Tib instance with 0 shares, create 100Gib share with content source in same instance, success response",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "enterprise",
+					Network: file.Network{
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
+					},
+					State: "READY",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramTier:                      "enterprise",
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup: defaultBackup,
+		},
+		{
+			name: "share already exists, return success",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+					State: "READY",
+				},
+			},
+			initShares: []*file.Share{
+				{
+					Name: testShareName,
+					Parent: &file.MultishareInstance{
+						Name:     testInstanceName1,
+						Location: "us-central1",
+						Project:  "test-project",
+						Labels: map[string]string{
+							util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						},
+						CapacityBytes: 1 * util.Tb,
+						Tier:          "Enterprise",
+						Network: file.Network{
+							Ip: testIP,
+						},
+						State: "READY",
+					},
+					CapacityBytes:  100 * util.Gb,
+					MountPointName: testShareName,
+					State:          "READY",
+					BackupId:       "projects/test-project/locations/us-central1/backups/mybackup",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup: defaultBackup,
+		},
+		{
+			name: "share op in progress found, return retry error to client",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "Enterprise",
+					Network: file.Network{
+						Ip: testIP,
+					},
+				},
+			},
+			features: features,
+			ops: []OpItem{
+				{
+					id:     "op1",
+					target: fmt.Sprintf(shareUriFmt, testProject, testRegion, testInstanceName1, testShareName),
+					verb:   "create",
+				},
+			},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			initialBackup: defaultBackup,
+			errorExpected: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var v1beta1ops []*filev1beta1multishare.Operation
+			for _, item := range tc.ops {
+				var meta filev1beta1multishare.OperationMetadata
+				meta.Target = item.target
+				meta.Verb = item.verb
+				bytes, _ := json.Marshal(meta)
+				v1beta1ops = append(v1beta1ops, &filev1beta1multishare.Operation{
+					Name:     item.id,
+					Done:     item.done,
+					Metadata: bytes,
+				})
+			}
+
+			s, err := file.NewFakeServiceForMultishare(tc.initInstances, tc.initShares, v1beta1ops)
+			if err != nil {
+				t.Fatalf("failed to fake service: %v", err)
+			}
+			cloudProvider, _ := cloud.NewFakeCloud()
+			cloudProvider.File = s
+			config := &controllerServerConfig{
+				driver:          initTestDriver(t),
+				fileService:     s,
+				cloud:           cloudProvider,
+				volumeLocks:     util.NewVolumeLocks(),
+				ecfsDescription: "",
+				features:        tc.features,
+			}
+			mcs := NewMultishareController(config)
+
+			if tc.initialBackup != nil {
+				existingBackup, _ := s.CreateBackup(context.TODO(), tc.initialBackup.backup)
+				if tc.initialBackup.state != "" {
+					existingBackup.State = tc.initialBackup.state
+				}
+			}
+			resp, err := mcs.CreateVolume(context.Background(), tc.req)
+			if tc.errorExpected && err == nil {
+				t.Errorf("expected error not found")
+			}
+			if !tc.errorExpected && err != nil {
+				t.Errorf("unexpected error")
+			}
+			if tc.checkOnlyVolidFmt && !tc.errorExpected {
 				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
 					t.Errorf("unexpected vol id %s", resp.Volume.VolumeId)
 				}
@@ -2046,5 +2479,227 @@ func TestParseMaxVolumeSizeParam(t *testing.T) {
 				t.Errorf("failed")
 			}
 		})
+	}
+}
+
+func TestCreateMultishareSnapshot(t *testing.T) {
+
+	type BackupTestInfo struct {
+		backup *file.BackupInfo
+		state  string
+	}
+	backupName := "mybackup"
+	testInstanceName1 := "fs-" + string(uuid.NewUUID())
+	defaultSourceVolumeID := modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName
+	defaultBackupUri := fmt.Sprintf("projects/%s/locations/%s/backups/%s", testProject, testRegion, backupName)
+
+	features := &GCFSDriverFeatureOptions{
+		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+	}
+	cases := []struct {
+		name          string
+		req           *csi.CreateSnapshotRequest
+		resp          *csi.CreateSnapshotResponse
+		initialBackup *BackupTestInfo
+		features      *GCFSDriverFeatureOptions
+		expectErr     bool
+	}{
+		//Failure test cases/
+		{
+			name: "Feature multisharebackups is not enabled",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: modeMultishare + "/" + testRegion + "/" + "differnetInstanceName" + "/" + testShareName,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Existing backup found, with different instance ID, error expected",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: modeMultishare + "/" + testRegion + "/" + "differnetInstanceName" + "/" + testShareName,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Existing backup found, with different share name, error expected",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + "differentsharename",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "Existing backup found in state CREATING, error expected",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+				state: "CREATING",
+			},
+			expectErr: true,
+		},
+		{
+			name: "Existing backup found in state FINALIZING, error expected",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+				state: "FINALIZING",
+			},
+			expectErr: true,
+		},
+		//Success test cases
+		{
+			name: "No existing backup",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			resp: &csi.CreateSnapshotResponse{
+				Snapshot: &csi.Snapshot{
+					SizeBytes:      1 * util.Tb,
+					SnapshotId:     defaultBackupUri,
+					SourceVolumeId: defaultSourceVolumeID,
+					ReadyToUse:     true,
+				},
+			},
+			initialBackup: nil,
+		},
+		{
+			name: "Existing backup found, with same volume Id, in state READY",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+				state: "READY",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
+			fileService := m.fileService
+
+			if tc.initialBackup != nil {
+				existingBackup, _ := fileService.CreateBackup(context.TODO(), tc.initialBackup.backup)
+				if tc.initialBackup.state != "" {
+					existingBackup.State = tc.initialBackup.state
+				}
+			}
+			resp, err := m.CreateSnapshot(context.TODO(), tc.req)
+			if !tc.expectErr && err != nil {
+				t.Errorf("test %q failed: %v", tc.name, err)
+			}
+			if tc.expectErr && err == nil {
+				t.Errorf("test %q failed; got success", tc.name)
+			}
+
+			if tc.resp != nil {
+				if resp.Snapshot.SizeBytes != tc.resp.Snapshot.SizeBytes {
+					t.Errorf("test %q failed, %v, mismatch, got %v, want %v", tc.name, "SizeBytes", resp.Snapshot.SizeBytes, tc.resp.Snapshot.SizeBytes)
+				}
+				if resp.Snapshot.SnapshotId != tc.resp.Snapshot.SnapshotId {
+					t.Errorf("test %q failed, %v, mismatch, got %v, want %v", tc.name, "SnapshotId", resp.Snapshot.SnapshotId, tc.resp.Snapshot.SnapshotId)
+				}
+				if resp.Snapshot.SourceVolumeId != tc.resp.Snapshot.SourceVolumeId {
+					t.Errorf("test %q failed, %v, mismatch, got %v, want %v", tc.name, "SourceVolumeId", resp.Snapshot.SourceVolumeId, tc.resp.Snapshot.SourceVolumeId)
+				}
+				if resp.Snapshot.ReadyToUse != tc.resp.Snapshot.ReadyToUse {
+					t.Errorf("test %q failed, %v, mismatch, got %v, want %v", tc.name, "ReadyToUse", resp.Snapshot.ReadyToUse, tc.resp.Snapshot.ReadyToUse)
+				}
+			}
+			if !tc.expectErr && tc.initialBackup == nil {
+				backup, _ := fileService.GetBackup(context.TODO(), defaultBackupUri)
+				if backup.Backup.Labels[tagKeyCreatedBy] != "test-driver" {
+					t.Errorf("labels check for %v failed on test %q, got %v, want %v", tagKeyCreatedBy, tc.name, backup.Backup.Labels[tagKeyCreatedBy], "test-driver")
+				}
+				if backup.Backup.Labels[tagKeySnapshotName] != tc.req.Name {
+					t.Errorf("labels check for %v failed on test %q, got %v, want %v", tagKeySnapshotName, tc.name, backup.Backup.Labels[tagKeySnapshotName], tc.req.Name)
+				}
+			}
+		})
+
 	}
 }

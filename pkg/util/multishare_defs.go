@@ -22,6 +22,7 @@ const (
 	InstanceURISplitLen        = 6
 	ShareURISplitLen           = 8
 	MultishareCSIVolIdSplitLen = 6
+	SourceVolumeIdSplitLen     = 4
 
 	MinMultishareInstanceSizeBytes    int64 = 1 * Tb
 	MaxMultishareInstanceSizeBytes    int64 = 10 * Tb

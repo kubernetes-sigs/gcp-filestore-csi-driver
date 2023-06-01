@@ -64,7 +64,7 @@ func NewMultishareOpsManager(cloud *cloud.Cloud, mcs *MultishareController) *Mul
 }
 
 // setupEligibleInstanceAndStartWorkflow returns a workflow object (to indicate an instance or share level workflow is started), or a share object (if existing share already found), or error.
-func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context.Context, req *csi.CreateVolumeRequest, instance *file.MultishareInstance) (*Workflow, *file.Share, error) {
+func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context.Context, req *csi.CreateVolumeRequest, instance *file.MultishareInstance, sourceSnapshotId string) (*Workflow, *file.Share, error) {
 	m.Lock()
 	defer m.Unlock()
 
@@ -110,7 +110,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 		// pick a random eligible instance
 		index := rand.Intn(len(eligible))
 		klog.V(5).Infof("For share %s, using instance %s as placeholder", shareName, eligible[index].String())
-		share, err := generateNewShare(shareName, eligible[index], req)
+		share, err := generateNewShare(shareName, eligible[index], req, sourceSnapshotId)
 		if err != nil {
 			return nil, nil, status.Error(codes.Internal, err.Error())
 		}
