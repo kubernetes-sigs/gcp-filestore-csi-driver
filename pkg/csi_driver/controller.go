@@ -849,9 +849,11 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	}
 
 	// Check for existing snapshot
-	backupUri, _, err := file.CreateBackupURI(filer, req.Name, util.GetBackupLocation(req.GetParameters()))
+	backupLocation := util.GetBackupLocation(req.GetParameters())
+	backupUri, _, err := file.CreateBackupURI(filer, req.Name, backupLocation)
 	if err != nil {
-		return nil, err
+		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", req.Name, backupLocation, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	backupInfo, err := s.config.fileService.GetBackup(ctx, backupUri)
 	if err != nil {
