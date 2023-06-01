@@ -507,7 +507,8 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
 	backupUri, region, err := CreateBackpURI(obj, backupName, backupLocation)
 	if err != nil {
-		return nil, err
+		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", backupName, backupLocation, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
