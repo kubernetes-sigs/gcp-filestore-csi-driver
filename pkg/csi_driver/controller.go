@@ -285,7 +285,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 		if createErr != nil {
 			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
-			return nil, status.Error(*file.CodeForError(err), err.Error())
+			return nil, status.Error(*file.CodeForError(createErr), createErr.Error())
 		}
 	}
 	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
