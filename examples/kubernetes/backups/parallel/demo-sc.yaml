@@ -1,0 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  # "CIDR range to allocate Filestore IP Ranges from"
+  # reserved-ipv4-cidr: 192.168.92.22/26
+  # # standard (default) or premier or enterprise
+  # tier: premier
+  # # Name of the VPC. Note that non-default VPCs require special firewall rules to be setup: TODO
+  # network: default
+allowVolumeExpansion: true
