@@ -313,7 +313,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if needsCreateDir {
 		klog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
 		if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
-			return nil, fmt.Errorf("mkdir failed for path %s (%w)", stagingTargetPath, err)
+			return nil, status.Errorf(codes.Internal, "mkdir failed for path %s: %v", stagingTargetPath, err.Error())
 		}
 	}
 
@@ -330,6 +330,9 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		klog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
 			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr.Error())
+		}
+		if strings.Contains(err.Error(), "exit status 32") {
+			klog.Errorf("Mount %q failed, please check if Filestore instance is in the same VPC network with GKE cluster.")
 		}
 		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", stagingTargetPath, err.Error())
 	}
