@@ -636,7 +636,8 @@ func IsUserError(err error) *codes.Code {
 	// Upwrap the error
 	var apiErr *googleapi.Error
 	if !errors.As(err, &apiErr) {
-		return nil
+		// Fallback to check for expected error code in the error string
+		return containsUserErrStr(err)
 	}
 
 	userErrors := map[int]codes.Code{
@@ -651,7 +652,28 @@ func IsUserError(err error) *codes.Code {
 	return nil
 }
 
-// IsContextError returns a pointer to the grpc error code DeadlineExceeded
+func containsUserErrStr(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
+
+	// Error string picked up from https://cloud.google.com/apis/design/errors#handling_errors
+	if strings.Contains(err.Error(), "PERMISSION_DENIED") {
+		return util.ErrCodePtr(codes.PermissionDenied)
+	}
+	if strings.Contains(err.Error(), "RESOURCE_EXHAUSTED") {
+		return util.ErrCodePtr(codes.ResourceExhausted)
+	}
+	if strings.Contains(err.Error(), "INVALID_ARGUMENT") {
+		return util.ErrCodePtr(codes.InvalidArgument)
+	}
+	if strings.Contains(err.Error(), "NOT_FOUND") {
+		return util.ErrCodePtr(codes.NotFound)
+	}
+	return nil
+}
+
+// isContextError returns a pointer to the grpc error code DeadlineExceeded
 // if the passed in error contains the "context deadline exceeded" string and returns
 // the grpc error code Canceled if the error contains the "context canceled" string.
 func IsContextError(err error) *codes.Code {
