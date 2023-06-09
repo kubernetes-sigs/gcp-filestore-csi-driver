@@ -906,7 +906,8 @@ func (recon *MultishareReconciler) reconstructInstanceInfo(iiName string, instan
 	// between migrated instances and driver-created instances.
 	instanceInfo = &v1beta1.InstanceInfo{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: iiName,
+			Name:       iiName,
+			Finalizers: []string{util.FilestoreResourceCleanupFinalizer},
 			Labels: map[string]string{
 				ParamMultishareInstanceScLabel: instance.Labels[util.ParamMultishareInstanceScLabelKey],
 			},
