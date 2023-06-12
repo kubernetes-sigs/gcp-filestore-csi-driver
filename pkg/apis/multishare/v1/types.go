@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1beta1
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,10 +35,11 @@ type ShareInfo struct {
 
 // ShareInfoSpec is the spec for a Foo resource
 type ShareInfoSpec struct {
-	ShareName       string `json:"shareName"`
-	CapacityBytes   int64  `json:"capacityBytes"`
-	Region          string `json:"region"`
-	InstancePoolTag string `json:"instancePoolTag"`
+	ShareName       string            `json:"shareName"`
+	CapacityBytes   int64             `json:"capacityBytes"`
+	Region          string            `json:"region"`
+	InstancePoolTag string            `json:"instancePoolTag"`
+	Parameters      map[string]string `json:"parameters,omitempty"`
 }
 
 // ShareInfoStatus is the status for a Foo resource
@@ -85,8 +86,9 @@ type InstanceInfo struct {
 
 // ShareInfoSpec is the spec for a Foo resource
 type InstanceInfoSpec struct {
-	CapacityBytes    int64  `json:"capacityBytes"`
-	StorageClassName string `json:"storageClassName"`
+	CapacityBytes    int64             `json:"capacityBytes"`
+	StorageClassName string            `json:"storageClassName"`
+	Parameters       map[string]string `json:"parameters,omitempty"`
 }
 
 // ShareInfoStatus is the status for a Foo resource
