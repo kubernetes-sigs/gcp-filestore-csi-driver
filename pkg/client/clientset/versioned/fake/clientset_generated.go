@@ -25,8 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
-	multisharev1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1beta1"
-	fakemultisharev1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1beta1/fake"
+	multisharev1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1"
+	fakemultisharev1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/typed/multishare/v1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -79,7 +79,7 @@ var (
 	_ testing.FakeClient  = &Clientset{}
 )
 
-// MultishareV1beta1 retrieves the MultishareV1beta1Client
-func (c *Clientset) MultishareV1beta1() multisharev1beta1.MultishareV1beta1Interface {
-	return &fakemultisharev1beta1.FakeMultishareV1beta1{Fake: &c.Fake}
+// MultishareV1 retrieves the MultishareV1Client
+func (c *Clientset) MultishareV1() multisharev1.MultishareV1Interface {
+	return &fakemultisharev1.FakeMultishareV1{Fake: &c.Fake}
 }

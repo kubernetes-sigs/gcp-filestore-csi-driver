@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"k8s.io/utils/strings/slices"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
+	v1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -225,13 +225,13 @@ func TestManagedInstanceAndShare(t *testing.T) {
 func TestInstanceEmpty(t *testing.T) {
 	cases := []struct {
 		name     string
-		instance *v1beta1.InstanceInfo
+		instance *v1.InstanceInfo
 		expected bool
 	}{
 		{
 			name: "empty instance",
-			instance: &v1beta1.InstanceInfo{
-				Status: &v1beta1.InstanceInfoStatus{
+			instance: &v1.InstanceInfo{
+				Status: &v1.InstanceInfoStatus{
 					ShareNames: []string{},
 				},
 			},
@@ -239,8 +239,8 @@ func TestInstanceEmpty(t *testing.T) {
 		},
 		{
 			name: "non-empty instance",
-			instance: &v1beta1.InstanceInfo{
-				Status: &v1beta1.InstanceInfoStatus{
+			instance: &v1.InstanceInfo{
+				Status: &v1.InstanceInfoStatus{
 					ShareNames: []string{"share1"},
 				},
 			},
@@ -248,7 +248,7 @@ func TestInstanceEmpty(t *testing.T) {
 		},
 		{
 			name:     "nil status instance",
-			instance: &v1beta1.InstanceInfo{},
+			instance: &v1.InstanceInfo{},
 			expected: false,
 		},
 	}

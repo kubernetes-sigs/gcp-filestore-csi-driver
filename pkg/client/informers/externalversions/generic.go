@@ -23,7 +23,7 @@ import (
 
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
-	v1beta1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
+	v1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1"
 )
 
 // GenericInformer is type of SharedIndexInformer which will locate and delegate to other
@@ -52,11 +52,11 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=multishare.filestore.csi.storage.gke.io, Version=v1beta1
-	case v1beta1.SchemeGroupVersion.WithResource("instanceinfos"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Multishare().V1beta1().InstanceInfos().Informer()}, nil
-	case v1beta1.SchemeGroupVersion.WithResource("shareinfos"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Multishare().V1beta1().ShareInfos().Informer()}, nil
+	// Group=multishare.filestore.csi.storage.gke.io, Version=v1
+	case v1.SchemeGroupVersion.WithResource("instanceinfos"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Multishare().V1().InstanceInfos().Informer()}, nil
+	case v1.SchemeGroupVersion.WithResource("shareinfos"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Multishare().V1().ShareInfos().Informer()}, nil
 
 	}
 

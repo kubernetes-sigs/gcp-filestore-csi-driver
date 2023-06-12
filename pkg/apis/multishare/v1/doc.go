@@ -17,5 +17,5 @@ limitations under the License.
 // +k8s:deepcopy-gen=package
 // +groupName=multishare.filestore.csi.storage.gke.io
 
-// Package v1beta1 is the v1beta1 version of the API.
-package v1beta1 // import "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare_filestore/v1beta1"
+// Package v1 is the v1 version of the API.
+package v1 // import "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare_filestore/v1"
