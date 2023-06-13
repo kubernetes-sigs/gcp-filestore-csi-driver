@@ -1,3 +1,19 @@
+# v1.5.4 - Changelog since v1.5.3
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Fix lock release logs ([#524](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/524), [@tyuchn](https://github.com/tyuchn))
+- Update debian base image to latest version for CVE fixes ([#528](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/528), [@amacaskill](https://github.com/amacaskill))
+- Fix bug where err is passed to CodeForError instead of createErr ([#532](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/532), [@amacaskill](https://github.com/amacaskill))
+
+### Uncategorized
+
+- replace PollOpErrorCode and IsUserError with CodeForError ([#521](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/521), [@amacaskill](https://github.com/amacaskill))
+- Handle CreateBackupURI errors as InvalidArgument ([#527](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/527), [@hsadoyan](https://github.com/hsadoyan))
+- Handle user error which is not wrapped as googleapi.Error ([#535](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/535), [@hsadoyan](https://github.com/saikat-royc))
+
 # v1.5.3 - Changelog since v1.5.2
 
 ## Changes by Kind
