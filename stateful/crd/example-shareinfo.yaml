@@ -1,4 +1,4 @@
-apiVersion: multishare.filestore.csi.storage.gke.io/v1alpha1
+apiVersion: multishare.filestore.csi.storage.gke.io/v1
 kind: ShareInfo
 metadata:
   name: pvc-abcd-efghe
@@ -7,5 +7,7 @@ spec:
   shareName: pvc-abcd-efgh
   capacityBytes: 107374182400
   region: us-central1
+  parameters:
+    tier: enterprise
 status:
   instanceHandle: projects/test-project/locations/us-central1/instances/fs-abbb-asoi-djk3-42hi
