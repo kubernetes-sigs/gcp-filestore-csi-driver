@@ -1,3 +1,11 @@
+# v1.4.6 - Changelog since v1.4.5
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update debian base image to latest version for CVE fixes ([#529](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/529), [@amacaskill](https://github.com/amacaskill))
+
 # v1.4.5 - Changelog since v1.4.4
 
 ## Changes by Kind
