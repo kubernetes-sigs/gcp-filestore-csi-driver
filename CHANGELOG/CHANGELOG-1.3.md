@@ -1,6 +1,14 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.15 - Changelog since v1.3.14
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Move to bullseye base image ([#543](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/543), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.3.14 - Changelog since v1.3.13
 
 ## Changes by Kind
