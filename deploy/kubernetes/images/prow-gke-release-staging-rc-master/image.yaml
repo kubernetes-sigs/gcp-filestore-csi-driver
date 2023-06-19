@@ -41,5 +41,5 @@ metadata:
 imageTag:
   name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
   newName: gcr.io/k8s-staging-cloud-provider-gcp/gcp-filestore-csi-driver
-  newTag: "v1.4.6-rc1"
+  newTag: "v1.3.16-rc1"
 ---
