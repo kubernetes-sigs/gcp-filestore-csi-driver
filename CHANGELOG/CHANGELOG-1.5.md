@@ -1,3 +1,11 @@
+# v1.5.5 - Changelog since v1.5.4
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update go version to 1.20.5 for CVE fixes ([#549](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/549), [@saikat-royc](https://github.com/saikat-royc))
+
 # v1.5.4 - Changelog since v1.5.3
 
 ## Changes by Kind
