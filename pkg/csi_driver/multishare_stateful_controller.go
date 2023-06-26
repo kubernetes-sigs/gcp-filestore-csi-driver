@@ -72,7 +72,18 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
+	_, maxShareSizeBytes, err := m.mc.parseMaxVolumeSizeParam(req.GetParameters())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	var reqBytes int64
+	if m.mc.featureMaxSharePerInstance {
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.ConfigurablePackMinShareSizeBytes, maxShareSizeBytes)
+	} else {
+		reqBytes, err = getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
+	}
+
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -139,7 +150,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 	if err != nil {
 		return nil, err
 	}
-	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, util.MaxShareSizeBytes)
+	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, maxShareSizeBytes)
 }
 
 func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -234,7 +245,21 @@ func (m *MultishareStatefulController) deleteShareInfo(ctx context.Context, siNa
 }
 
 func (m *MultishareStatefulController) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
-	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange(), util.MinShareSizeBytes, util.MaxShareSizeBytes)
+	volumeId := req.GetVolumeId()
+	if len(volumeId) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
+	}
+
+	maxShareSizeBytes := util.MaxShareSizeBytes
+	if m.mc.featureMaxSharePerInstance {
+		var err error
+		maxShareSizeBytes, err = m.mc.GetShareMaxSizeFromPV(ctx, volumeId)
+		if err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		klog.Infof("maxShareSizeBytes %d", maxShareSizeBytes)
+	}
+	reqBytes, err := getShareRequestCapacity(req.GetCapacityRange(), util.ConfigurablePackMinShareSizeBytes, maxShareSizeBytes)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -275,7 +300,7 @@ func (m *MultishareStatefulController) ControllerExpandVolume(ctx context.Contex
 	}
 
 	if shareInfo.Status.CapacityBytes >= reqBytes && shareInfo.Status.ShareStatus == v1.READY {
-		klog.Infof("Controller expand volume succeeded for volume %v, size(bytes): %v", req.VolumeId, shareInfo.Status.CapacityBytes)
+		klog.Infof("Controller expand volume succeeded for volume %v, size(bytes): %v", volumeId, shareInfo.Status.CapacityBytes)
 
 		share, err := generateFileShareFromShareInfo(shareInfo)
 		if err != nil {
