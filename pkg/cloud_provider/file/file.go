@@ -35,7 +35,6 @@ import (
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
-	filev1beta1 "google.golang.org/api/file/v1beta1"
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 )
 
@@ -110,7 +109,7 @@ type Network struct {
 }
 
 type BackupInfo struct {
-	Backup         *filev1beta1.Backup
+	Backup         *filev1beta1multishare.Backup
 	SourceInstance string
 	SourceShare    string
 }
@@ -122,7 +121,7 @@ type Service interface {
 	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
 	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error)
-	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
+	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1multishare.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
@@ -144,10 +143,10 @@ type Service interface {
 }
 
 type gcfsServiceManager struct {
-	fileService       *filev1beta1.Service
-	instancesService  *filev1beta1.ProjectsLocationsInstancesService
-	operationsService *filev1beta1.ProjectsLocationsOperationsService
-	backupService     *filev1beta1.ProjectsLocationsBackupsService
+	fileService       *filev1beta1multishare.Service
+	instancesService  *filev1beta1multishare.ProjectsLocationsInstancesService
+	operationsService *filev1beta1multishare.ProjectsLocationsOperationsService
+	backupService     *filev1beta1multishare.ProjectsLocationsBackupsService
 
 	// multishare definitions
 	fileMultishareService            *filev1beta1multishare.Service
@@ -194,7 +193,7 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 		fsOpts = append(fsOpts, option.WithEndpoint(endpoint))
 	}
 
-	fileService, err := filev1beta1.NewService(ctx, fsOpts...)
+	fileService, err := filev1beta1multishare.NewService(ctx, fsOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -210,9 +209,9 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 
 	return &gcfsServiceManager{
 		fileService:                      fileService,
-		instancesService:                 filev1beta1.NewProjectsLocationsInstancesService(fileService),
-		operationsService:                filev1beta1.NewProjectsLocationsOperationsService(fileService),
-		backupService:                    filev1beta1.NewProjectsLocationsBackupsService(fileService),
+		instancesService:                 filev1beta1multishare.NewProjectsLocationsInstancesService(fileService),
+		operationsService:                filev1beta1multishare.NewProjectsLocationsOperationsService(fileService),
+		backupService:                    filev1beta1multishare.NewProjectsLocationsBackupsService(fileService),
 		fileMultishareService:            fileMultishareService,
 		multishareInstancesService:       filev1beta1multishare.NewProjectsLocationsInstancesService(fileMultishareService),
 		multishareInstancesSharesService: filev1beta1multishare.NewProjectsLocationsInstancesSharesService(fileMultishareService),
@@ -221,15 +220,15 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 }
 
 func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	betaObj := &filev1beta1.Instance{
+	betaObj := &filev1beta1multishare.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1beta1.FileShareConfig{
+		FileShares: []*filev1beta1multishare.FileShareConfig{
 			{
 				Name:       obj.Volume.Name,
 				CapacityGb: util.RoundBytesToGb(obj.Volume.SizeBytes),
 			},
 		},
-		Networks: []*filev1beta1.NetworkConfig{
+		Networks: []*filev1beta1multishare.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -272,16 +271,16 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 }
 
 func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
-	instance := &filev1beta1.Instance{
+	instance := &filev1beta1multishare.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1beta1.FileShareConfig{
+		FileShares: []*filev1beta1multishare.FileShareConfig{
 			{
 				Name:         obj.Volume.Name,
 				CapacityGb:   util.RoundBytesToGb(obj.Volume.SizeBytes),
 				SourceBackup: sourceSnapshotId,
 			},
 		},
-		Networks: []*filev1beta1.NetworkConfig{
+		Networks: []*filev1beta1multishare.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -340,7 +339,7 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
 }
 
-func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceInstance, error) {
+func cloudInstanceToServiceInstance(instance *filev1beta1multishare.Instance) (*ServiceInstance, error) {
 	project, location, name, err := GetInstanceNameFromURI(instance.Name)
 	if err != nil {
 		return nil, err
@@ -455,16 +454,16 @@ func (manager *gcfsServiceManager) ListInstances(ctx context.Context, obj *Servi
 func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
 	instanceuri := instanceURI(obj.Project, obj.Location, obj.Name)
 	// Create a file instance for the Patch request.
-	betaObj := &filev1beta1.Instance{
+	betaObj := &filev1beta1multishare.Instance{
 		Tier: obj.Tier,
-		FileShares: []*filev1beta1.FileShareConfig{
+		FileShares: []*filev1beta1multishare.FileShareConfig{
 			{
 				Name: obj.Volume.Name,
 				// This is the updated instance size requested.
 				CapacityGb: util.BytesToGb(obj.Volume.SizeBytes),
 			},
 		},
-		Networks: []*filev1beta1.NetworkConfig{
+		Networks: []*filev1beta1multishare.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
 				Modes:           []string{"MODE_IPV4"},
@@ -516,7 +515,7 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 	}, nil
 }
 
-func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
+func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1multishare.Backup, error) {
 	backupUri, region, err := CreateBackupURI(obj, backupName, backupLocation)
 	if err != nil {
 		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", backupName, backupLocation, err.Error())
@@ -524,7 +523,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *Servic
 	}
 
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
-	backupobj := &filev1beta1.Backup{
+	backupobj := &filev1beta1multishare.Backup{
 		SourceInstance:  backupSource,
 		SourceFileShare: obj.Volume.Name,
 	}
@@ -569,7 +568,7 @@ func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId st
 	return nil
 }
 
-func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta1.Operation) error {
+func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta1multishare.Operation) error {
 	return wait.Poll(5*time.Second, 5*time.Minute, func() (bool, error) {
 		pollOp, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
 		if err != nil {
@@ -580,7 +579,7 @@ func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta
 }
 
 // TODO: unify this function behavior with IsOpDone
-func isOpDone(op *filev1beta1.Operation) (bool, error) {
+func isOpDone(op *filev1beta1multishare.Operation) (bool, error) {
 	if op == nil {
 		return false, nil
 	}
@@ -784,7 +783,7 @@ func hasRegionPattern(location string) bool {
 
 func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
 	uri := instanceURI(obj.Project, obj.Location, obj.Name)
-	var totalFilteredOps []*filev1beta1.Operation
+	var totalFilteredOps []*filev1beta1multishare.Operation
 	var nextToken string
 	for {
 		resp, err := manager.operationsService.List(locationURI(obj.Project, obj.Location)).PageToken(nextToken).Context(ctx).Do()
@@ -807,10 +806,10 @@ func (manager *gcfsServiceManager) HasOperations(ctx context.Context, obj *Servi
 	return len(totalFilteredOps) > 0, nil
 }
 
-func ApplyFilter(ops []*filev1beta1.Operation, uri string, opType string, done bool) ([]*filev1beta1.Operation, error) {
-	var res []*filev1beta1.Operation
+func ApplyFilter(ops []*filev1beta1multishare.Operation, uri string, opType string, done bool) ([]*filev1beta1multishare.Operation, error) {
+	var res []*filev1beta1multishare.Operation
 	for _, op := range ops {
-		var meta filev1beta1.OperationMetadata
+		var meta filev1beta1multishare.OperationMetadata
 		if op.Metadata == nil {
 			continue
 		}

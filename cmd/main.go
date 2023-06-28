@@ -26,7 +26,6 @@ import (
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	driver "sigs.k8s.io/gcp-filestore-csi-driver/pkg/csi_driver"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
@@ -88,7 +87,7 @@ func main() {
 	var err error
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var meta metadata.Service
+	var meta metadataservice.Service
 	var mm *metrics.MetricsManager
 	var extraVolumeLabels map[string]string
 	if *runController {

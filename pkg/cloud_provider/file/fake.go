@@ -22,7 +22,6 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
-	filev1beta1 "google.golang.org/api/file/v1beta1"
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
@@ -156,7 +155,7 @@ func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
-func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
+func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1multishare.Backup, error) {
 	backupUri, _, err := CreateBackupURI(obj, backupName, backupLocation)
 	if err != nil {
 		return nil, err
@@ -171,7 +170,7 @@ func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		return backupInfo.Backup, nil
 	}
 
-	backupToCreate := &filev1beta1.Backup{
+	backupToCreate := &filev1beta1multishare.Backup{
 		Name:               backupUri,
 		SourceFileShare:    obj.Volume.Name,
 		SourceInstance:     backupSource,
@@ -387,7 +386,7 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 	}
 	manager.createdMultishares[share.Name] = share
 
-	meta := &filev1beta1.OperationMetadata{
+	meta := &filev1beta1multishare.OperationMetadata{
 		Target: fmt.Sprintf(shareURIFmt, share.Parent.Project, share.Parent.Location, share.Parent.Name, share.Name),
 		Verb:   "create",
 	}

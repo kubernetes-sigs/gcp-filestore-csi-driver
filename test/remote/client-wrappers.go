@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/container-storage-interface/spec/lib/go/csi"
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
@@ -95,8 +94,8 @@ func (c *CsiClient) CreateVolume(volName, zone, snapshotID string, parameters ma
 		Parameters:         parameters,
 	}
 	if zone != "" {
-		cvr.AccessibilityRequirements = &csi.TopologyRequirement{
-			Requisite: []*csi.Topology{
+		cvr.AccessibilityRequirements = &csipb.TopologyRequirement{
+			Requisite: []*csipb.Topology{
 				{
 					Segments: map[string]string{"topology.gke.io/zone": zone},
 				},
