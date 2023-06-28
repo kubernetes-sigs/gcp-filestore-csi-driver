@@ -12,7 +12,7 @@ spec:
     - si
   scope: Namespaced
   versions:
-    - name: v1beta1
+    - name: v1
       served: true
       storage: true
       schema:
@@ -32,6 +32,10 @@ spec:
                   type: string
                 capacityBytes:
                   type: integer
+                parameters:
+                  additionalProperties:
+                    type: string
+                  type: object
             status:
               type: object
               properties:
@@ -68,7 +72,7 @@ spec:
     - ii
   scope: Namespaced
   versions:
-    - name: v1beta1
+    - name: v1
       served: true
       storage: true
       schema:
@@ -83,6 +87,10 @@ spec:
                   type: string
                 capacityBytes:
                   type: integer
+                parameters:
+                  additionalProperties:
+                    type: string
+                  type: object
             status:
               type: object
               properties:

@@ -1,4 +1,4 @@
-apiVersion: multishare.filestore.csi.storage.gke.io/v1alpha1
+apiVersion: multishare.filestore.csi.storage.gke.io/v1
 kind: InstanceInfo
 metadata:
   name: projects.test-project.locations.us-central1.instances.fs-abbb-asoi-djk3-42hi

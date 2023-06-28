@@ -38,7 +38,7 @@ import (
 	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
 	sharescheme "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/scheme"
 	fsInformers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions"
-	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1beta1"
+	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
@@ -353,13 +353,13 @@ func initMultishareReconciler(driverConfig *GCFSDriverConfig) (*MultishareReconc
 	recon := NewMultishareReconciler(
 		fsClient,
 		driverConfig,
-		factory.Multishare().V1beta1().ShareInfos(),
-		factory.Multishare().V1beta1().InstanceInfos(),
+		factory.Multishare().V1().ShareInfos(),
+		factory.Multishare().V1().InstanceInfos(),
 		coreFactory.Storage().V1().StorageClasses().Lister(),
 	)
 	driverConfig.Reconciler = recon
 	driverConfig.FeatureOptions.FeatureStateful.DriverClientSet = driverfsClient
-	driverConfig.FeatureOptions.FeatureStateful.ShareLister = driverFactory.Multishare().V1beta1().ShareInfos().Lister()
+	driverConfig.FeatureOptions.FeatureStateful.ShareLister = driverFactory.Multishare().V1().ShareInfos().Lister()
 
 	if err := ensureCustomResourceDefinitionsExist(fsClient); err != nil {
 		klog.Errorf("Exiting due to failure to ensure CRDs exist during startup: %+v", err)
@@ -416,15 +416,15 @@ func runMultishareReconciler(driverConfig *GCFSDriverConfig, recon *MultishareRe
 	}
 }
 
-// Checks that the ShareInfo v1beta1 CRDs exist.
+// Checks that the ShareInfo v1 CRDs exist.
 func ensureCustomResourceDefinitionsExist(client *clientset.Clientset) error {
 	condition := func() (bool, error) {
 		var err error
 
 		// scoping to an empty namespace makes `List` work across all namespaces
-		_, err = client.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).List(context.TODO(), metav1.ListOptions{})
+		_, err = client.MultishareV1().ShareInfos(util.ManagedFilestoreCSINamespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
-			klog.Errorf("Failed to list v1beta1 shareinfos with error=%+v", err)
+			klog.Errorf("Failed to list v1 shareinfos with error=%+v", err)
 			return false, nil
 		}
 

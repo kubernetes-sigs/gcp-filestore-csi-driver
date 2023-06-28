@@ -24,7 +24,7 @@ import (
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1beta1"
+	v1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned/fake"
 	informers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/informers/externalversions"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -62,7 +62,7 @@ func initTestMultishareStatefulController(t *testing.T) *MultishareStatefulContr
 	client := fake.NewSimpleClientset()
 	factory := informers.NewSharedInformerFactory(client, 0)
 	msc.clientset = client
-	msc.shareLister = factory.Multishare().V1beta1().ShareInfos().Lister()
+	msc.shareLister = factory.Multishare().V1().ShareInfos().Lister()
 	return msc
 }
 
@@ -74,11 +74,11 @@ func TestStatefulCreateVolume(t *testing.T) {
 
 	tests := []struct {
 		name          string
-		initSi        []*v1beta1.ShareInfo
+		initSi        []*v1.ShareInfo
 		req           *csi.CreateVolumeRequest
 		resp          *csi.CreateVolumeResponse
 		errorExpected bool
-		expectedSi    []*v1beta1.ShareInfo
+		expectedSi    []*v1.ShareInfo
 	}{
 		{
 			name: "first create call, return waiting error",
@@ -102,7 +102,7 @@ func TestStatefulCreateVolume(t *testing.T) {
 				},
 			},
 			errorExpected: true,
-			expectedSi: []*v1beta1.ShareInfo{
+			expectedSi: []*v1.ShareInfo{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       testVolName_0,
@@ -110,11 +110,14 @@ func TestStatefulCreateVolume(t *testing.T) {
 						Labels:     map[string]string{},
 						Namespace:  util.ManagedFilestoreCSINamespace,
 					},
-					Spec: v1beta1.ShareInfoSpec{
+					Spec: v1.ShareInfoSpec{
 						ShareName:       testShareName_0,
 						CapacityBytes:   100 * util.Gb,
 						InstancePoolTag: testInstanceScPrefix,
 						Region:          testRegion,
+						Parameters: map[string]string{
+							ParamMultishareInstanceScLabel: testInstanceScPrefix,
+						},
 					},
 				},
 			},
@@ -141,23 +144,26 @@ func TestStatefulCreateVolume(t *testing.T) {
 				},
 			},
 			errorExpected: true,
-			initSi: []*v1beta1.ShareInfo{
+			initSi: []*v1.ShareInfo{
 				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       testVolName_0,
 						Finalizers: []string{util.FilestoreResourceCleanupFinalizer},
 						Labels:     map[string]string{},
 					},
-					Spec: v1beta1.ShareInfoSpec{
+					Spec: v1.ShareInfoSpec{
 						ShareName:       testShareName_0,
 						CapacityBytes:   100 * util.Gb,
 						InstancePoolTag: testInstanceScPrefix,
 						Region:          testRegion,
+						Parameters: map[string]string{
+							ParamMultishareInstanceScLabel: testInstanceScPrefix,
+						},
 					},
-					Status: &v1beta1.ShareInfoStatus{
+					Status: &v1.ShareInfoStatus{
 						InstanceHandle: testInstanceName_0,
 						CapacityBytes:  100 * util.Gb,
-						ShareStatus:    v1beta1.READY,
+						ShareStatus:    v1.READY,
 					},
 				},
 			},
@@ -167,7 +173,7 @@ func TestStatefulCreateVolume(t *testing.T) {
 	for _, tc := range tests {
 		msc := initTestMultishareStatefulController(t)
 		for _, si := range tc.initSi {
-			msc.clientset.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).Create(context.TODO(), si, metav1.CreateOptions{})
+			msc.clientset.MultishareV1().ShareInfos(util.ManagedFilestoreCSINamespace).Create(context.TODO(), si, metav1.CreateOptions{})
 		}
 		resp, err := msc.CreateVolume(context.TODO(), tc.req)
 		if tc.errorExpected && err == nil {
@@ -179,7 +185,7 @@ func TestStatefulCreateVolume(t *testing.T) {
 		if !reflect.DeepEqual(resp, tc.resp) {
 			t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
 		}
-		shareInfoList, err := msc.clientset.MultishareV1beta1().ShareInfos(util.ManagedFilestoreCSINamespace).List(context.TODO(), metav1.ListOptions{})
+		shareInfoList, err := msc.clientset.MultishareV1().ShareInfos(util.ManagedFilestoreCSINamespace).List(context.TODO(), metav1.ListOptions{})
 		if err != nil {
 			t.Errorf("unexpected list error")
 		}
