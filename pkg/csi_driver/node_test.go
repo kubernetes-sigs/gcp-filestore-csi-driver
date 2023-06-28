@@ -18,7 +18,6 @@ package driver
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -115,7 +114,7 @@ func TestNodePublishVolume(t *testing.T) {
 	defaultPerm := os.FileMode(0750) + os.ModeDir
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -373,7 +372,7 @@ func testWindowsNodePublishVolume(t *testing.T) {
 	defaultOsString := goOs
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -471,7 +470,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	defaultPerm := os.FileMode(0750) + os.ModeDir
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -600,7 +599,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	ns := testEnv.ns
 
 	// Setup mount target path
-	tempDir, err := ioutil.TempDir("", "ngvs")
+	tempDir, err := os.MkdirTemp("", "ngvs")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -755,7 +754,7 @@ func TestConcurrentMounts(t *testing.T) {
 	// A channel of size 1 is sufficient, because the caller of runRequest() in below steps immediately blocks and retrieves the channel of empty struct from 'operationUnblocker' channel. The test steps are such that, atmost one function pushes items on the 'operationUnblocker' channel, to indicate that the function is blocked and waiting for a signal to proceed futher in the execution.
 	operationUnblocker := make(chan chan struct{}, 1)
 	ns := initBlockingTestNodeServer(t, operationUnblocker)
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -886,7 +885,7 @@ func TestConcurrentMounts(t *testing.T) {
 }
 
 func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -1035,7 +1034,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 }
 
 func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}

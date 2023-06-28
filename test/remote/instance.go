@@ -19,7 +19,6 @@ package remote
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
@@ -277,7 +276,7 @@ func GetComputeClient(ctx context.Context, computeEndpoint string) (*compute.Ser
 }
 
 func generateMetadataWithPublicKey(pubKeyFile string) (*compute.Metadata, error) {
-	publicKeyByte, err := ioutil.ReadFile(pubKeyFile)
+	publicKeyByte, err := os.ReadFile(pubKeyFile)
 	if err != nil {
 		return nil, err
 	}
