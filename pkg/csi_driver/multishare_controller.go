@@ -131,7 +131,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	maxSharesPerInstance, maxShareSizeSizeBytes, err := m.parseMaxVolumeSizeParam(req)
+	maxSharesPerInstance, maxShareSizeSizeBytes, err := m.parseMaxVolumeSizeParam(req.GetParameters())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -712,8 +712,7 @@ func generateInstanceDescFromEcfsDesc(desc string) string {
 	return d
 }
 
-func (m *MultishareController) parseMaxVolumeSizeParam(req *csi.CreateVolumeRequest) (int, int64, error) {
-	params := req.GetParameters()
+func (m *MultishareController) parseMaxVolumeSizeParam(params map[string]string) (int, int64, error) {
 	v, ok := params[paramMaxVolumeSize]
 	if !m.featureMaxSharePerInstance && ok {
 		return 0, 0, fmt.Errorf("configurable max shares per instance feature not enabled")

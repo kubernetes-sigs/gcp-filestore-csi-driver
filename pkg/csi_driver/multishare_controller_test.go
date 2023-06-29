@@ -2035,7 +2035,7 @@ func TestParseMaxVolumeSizeParam(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
-			sharePerInstance, maxShareCapacity, err := m.parseMaxVolumeSizeParam(tc.req)
+			sharePerInstance, maxShareCapacity, err := m.parseMaxVolumeSizeParam(tc.req.GetParameters())
 			if tc.expectError && err == nil {
 				t.Errorf("failed")
 			}

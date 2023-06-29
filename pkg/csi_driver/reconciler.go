@@ -505,6 +505,10 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 		Description: generateInstanceDescFromEcfsDesc(recon.config.EcfsDescription),
 	}
 
+	if recon.controllerServer.config.multiShareController.featureMaxSharePerInstance {
+		instance.MaxShareCount = recon.parseMaxSharePerInstance(instanceInfo.Spec.Parameters)
+	}
+
 	// reserve ip range
 	var reservedIPRange string
 	if connectMode == privateServiceAccess {
@@ -591,7 +595,7 @@ func (recon *MultishareReconciler) fixTwoWayPointers(shareInfos map[string]*v1.S
 					var err error
 					if !ok {
 						klog.Errorf("Share %q is assigned to instance %q but instanceInfo does not exist. Trying to create one", shareName, shareInfo.Status.InstanceHandle)
-						actualAssigned, err = recon.generateInstanceInfo(shareInfo.Status.InstanceHandle, shareInfo.Spec.InstancePoolTag)
+						actualAssigned, err = recon.generateInstanceInfo(shareInfo.Status.InstanceHandle, shareInfo.Spec.InstancePoolTag, shareInfo.Spec.Parameters)
 						if err != nil {
 							klog.Errorf("Failed to create instanceInfo %q: %v", shareInfo.Status.InstanceHandle, err)
 							continue
@@ -649,7 +653,7 @@ func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInf
 					// if InstanceStatus is not empty but instance is no longer present, instance might have been manually deleted by user and can no longer be used
 					klog.Warningf("instanceInfo %s has non empty InstanceStatus but underlying instance does not exist. Skip assignment to that instance", instanceInfo.Name)
 				}
-				if instanceFitShare(instanceInfo, shareInfo) {
+				if recon.instanceFitShare(instanceInfo, shareInfo) {
 					instanceURI = util.InstanceInfoNameToInstanceURI(instanceInfo.Name)
 					instanceInfo, err = recon.assignShareToInstanceInfo(instanceInfo, shareInfo.Name)
 					if err != nil {
@@ -674,7 +678,7 @@ func (recon *MultishareReconciler) assignSharesToEligibleOrNewInstances(shareInf
 					Name:     util.NewMultishareInstancePrefix + string(uuid.NewUUID()),
 				})
 
-				instanceInfo, err := recon.generateInstanceInfo(instanceURI, shareInfo.Spec.InstancePoolTag)
+				instanceInfo, err := recon.generateInstanceInfo(instanceURI, shareInfo.Spec.InstancePoolTag, shareInfo.Spec.Parameters)
 				if err != nil {
 					klog.Errorf("Failed to create new instanceInfo %q: %v", instanceURI, err)
 					continue
@@ -732,7 +736,7 @@ func (recon *MultishareReconciler) deleteOrResizeInstances(instanceInfos map[str
 }
 
 // generateInstanceInfo generates and creates a new instanceInfo object based on instanceURI and storage class tag.
-func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTag string) (*v1.InstanceInfo, error) {
+func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTag string, shareParams map[string]string) (*v1.InstanceInfo, error) {
 	storageClass, err := recon.storageClassFromTag(scTag)
 	if err != nil {
 		return nil, err
@@ -748,6 +752,7 @@ func (recon *MultishareReconciler) generateInstanceInfo(instanceURI string, scTa
 		Spec: v1.InstanceInfoSpec{
 			CapacityBytes:    util.MinMultishareInstanceSizeBytes,
 			StorageClassName: storageClass.Name,
+			Parameters:       shareParams,
 		},
 	}
 	return recon.createInstanceInfo(context.TODO(), newInstanceInfo)
@@ -1256,7 +1261,7 @@ func (recon *MultishareReconciler) listMultishareResourceOps(ctx context.Context
 }
 
 // instanceFitShare returns true if shareInfo can be assigned to instanceInfo.
-func instanceFitShare(instanceInfo *v1.InstanceInfo, shareInfo *v1.ShareInfo) bool {
+func (recon *MultishareReconciler) instanceFitShare(instanceInfo *v1.InstanceInfo, shareInfo *v1.ShareInfo) bool {
 	// Instance needs to be:
 	// 1. not up for delete 2.of the same storage class and 3. has less than max number of shares assigned already.
 	if instanceInfo.DeletionTimestamp != nil ||
@@ -1264,7 +1269,9 @@ func instanceFitShare(instanceInfo *v1.InstanceInfo, shareInfo *v1.ShareInfo) bo
 		return false
 	}
 
-	if instanceInfo.Status != nil && len(instanceInfo.Status.ShareNames) >= util.MaxSharesPerInstance {
+	maxSharePerInstance := recon.parseMaxSharePerInstance(instanceInfo.Spec.Parameters)
+
+	if instanceInfo.Status != nil && len(instanceInfo.Status.ShareNames) >= maxSharePerInstance {
 		return false
 	}
 
@@ -1275,6 +1282,15 @@ func instanceFitShare(instanceInfo *v1.InstanceInfo, shareInfo *v1.ShareInfo) bo
 	}
 
 	return true
+}
+
+// parseMaxSharePerInstance assumes that params has valid parameter of max volume size and returns max share per instance
+func (recon *MultishareReconciler) parseMaxSharePerInstance(params map[string]string) int {
+	maxSharePerInstance, _, _ := recon.controllerServer.config.multiShareController.parseMaxVolumeSizeParam(params)
+	if maxSharePerInstance == 0 {
+		maxSharePerInstance = util.MaxSharesPerInstance
+	}
+	return maxSharePerInstance
 }
 
 // instanceEmpty returns true if instanceInfo.Status.ShareNames has zero entries.
