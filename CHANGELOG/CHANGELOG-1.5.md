@@ -1,3 +1,8 @@
+# v1.5.6 - Changelog since v1.5.5
+
+## Changes by Kind
+_Nothing has changed._
+
 # v1.5.5 - Changelog since v1.5.4
 
 ## Changes by Kind
