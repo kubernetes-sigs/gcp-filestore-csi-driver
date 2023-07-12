@@ -303,6 +303,9 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 	if filer.Tier == enterpriseTier {
 		ipRangeSize = util.IpRangeSizeEnterprise
 	}
+	if filer.Tier == highScaleTier {
+		ipRangeSize = util.IpRangeSizeHighScale
+	}
 	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
 	if err != nil {
 		return "", err
@@ -594,9 +597,6 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
-	}
-	if kmsKeyName != "" && tier != enterpriseTier {
-		return nil, fmt.Errorf("KMS Key data encryption is only supported for enterprise tier instances")
 	}
 	return &file.ServiceInstance{
 		Project:  s.config.cloud.Project,

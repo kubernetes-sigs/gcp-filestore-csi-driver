@@ -887,12 +887,29 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			},
 		},
 		{
+			// not going to error here, instead, pushing the decision to the Filestore API
 			name: "non-enterprise tier, customer kms key",
 			params: map[string]string{
-				paramTier:                     "foo-tier",
-				ParamInstanceEncryptionKmsKey: "foo-key",
+				paramTier:                       basicHDDTier,
+				ParamInstanceEncryptionKmsKey:   "foo-key",
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
 			},
-			expectErr: true,
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: testLocation,
+				Tier:     basicHDDTier,
+				Network: file.Network{
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+				KmsKeyName: "foo-key",
+			},
 		},
 		{
 			name: "invalid params",
