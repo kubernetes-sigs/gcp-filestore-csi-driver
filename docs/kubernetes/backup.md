@@ -1,4 +1,4 @@
-# Filestore Backups User Guide (Beta)
+# Filestore Backups User Guide
 
 >**Attention:** Filestore Backup relies on CSI VolumeSnapshot which is a Beta feature in k8s enabled by default in
 Kubernetes 1.17+. CSI VolumeSnapshot should not be confused with Filestore Backups. Filestore CSI driver leverages CSI VolumeSnapshot capability to support Filestore Backups by specifying a `type` parameter in the VolumeSnapshotClass object.
@@ -31,7 +31,6 @@ The [CSI Snapshot](https://github.com/container-storage-interface/spec/blob/mast
     name: csi-filestore
     provisioner: filestore.csi.storage.gke.io
     parameters:
-      tier: enterprise
       network: <network name> # Change this network as per the deployment
     volumeBindingMode: WaitForFirstConsumer
     allowVolumeExpansion: true
