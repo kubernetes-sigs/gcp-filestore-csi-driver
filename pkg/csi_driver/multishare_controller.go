@@ -46,6 +46,8 @@ const (
 	methodCreateVolume              = "CreateVolume"
 	methodDeleteVolume              = "DeleteVolume"
 	methodExpandVolume              = "ExpandVolume"
+	methodCreateSnapshot            = "CreateSnapshot"
+	methodDeleteSnapshot            = "DeleteSnapshot"
 	ecfsDataPlaneVersionFormat      = "GoogleReserved-CustomVMImage=clh.image.ems.path:projects/%s/global/images/ems-filestore-scaleout-%s"
 	ecfsCustom100sharesConfigFormat = "GoogleReservedOverrides={\"CustomMultiShareConfig\":{\"MaxShareCount\": %d, \"MinShareSizeGB\":%d}}"
 
@@ -216,6 +218,101 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 	resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes)
 	return resp, file.StatusError(err)
+}
+
+func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	klog.Infof("CreateSnapshot called for multishare with request %+v", req)
+	name := req.GetName()
+	volumeID := req.GetSourceVolumeId()
+
+	if acquired := m.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer m.volumeLocks.Release(volumeID)
+
+	if req.GetParameters() != nil {
+		if _, err := util.IsSnapshotTypeSupported(req.GetParameters()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	_, location, instanceName, shareName, err := parseSourceVolId(volumeID)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	project := m.cloud.Project
+
+	backupLocation := util.GetBackupLocation(req.GetParameters()) //Optional provided locaiton for cross-region backups
+	backupURI, backupRegion, err := file.CreateBackupURI(location, project, name, backupLocation)
+	if err != nil {
+		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", req.Name, backupLocation, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	existingBackup, err := m.cloud.File.GetBackup(ctx, backupURI)
+	backupExists, err := file.CheckBackupExists(existingBackup, err)
+	if err != nil {
+		return nil, file.StatusError(err)
+	}
+
+	if backupExists {
+		// process existing backup
+
+		snapshot, err := file.ProcessExistingBackup(ctx, existingBackup, volumeID, modeMultishare)
+		if err != nil {
+			return nil, err
+		}
+		return &csi.CreateSnapshotResponse{
+			Snapshot: snapshot,
+		}, nil
+	} else {
+		//no existing backup
+		backupInfo := &file.BackupInfo{
+			Name:               name,
+			SourceVolumeId:     volumeID,
+			Project:            project,
+			Location:           backupRegion,
+			SourceShare:        shareName,
+			SourceInstanceName: instanceName,
+			BackupURI:          backupURI,
+		}
+
+		labels, err := extractBackupLabels(req.GetParameters(), m.driver.config.Name, req.Name)
+		if err != nil {
+			return nil, err
+		}
+		backupInfo.Labels = labels
+		snapshot, err := m.createNewBackup(ctx, backupInfo)
+		if err != nil {
+			return nil, err
+		}
+
+		resp := &csi.CreateSnapshotResponse{
+			Snapshot: snapshot,
+		}
+		return resp, nil
+	}
+}
+
+func (m *MultishareController) createNewBackup(ctx context.Context, backupInfo *file.BackupInfo) (*csi.Snapshot, error) {
+
+	backupObj, err := m.cloud.File.CreateBackup(ctx, backupInfo)
+	if err != nil {
+		klog.Errorf("Create snapshot for volume Id %s failed: %v", backupInfo.SourceVolumeId, err.Error())
+		return nil, file.StatusError(err)
+	}
+	tp, err := util.ParseTimestamp(backupObj.CreateTime)
+	if err != nil {
+		return nil, file.StatusError(err)
+	}
+	snapshot := &csi.Snapshot{
+		SizeBytes:      util.GbToBytes(backupObj.CapacityGb),
+		SnapshotId:     backupObj.Name,
+		SourceVolumeId: backupInfo.SourceVolumeId,
+		CreationTime:   tp,
+		ReadyToUse:     true,
+	}
+
+	return snapshot, nil
 }
 
 func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx context.Context, instancePrefix string, s *file.Share, maxShareSizeSizeBytes int64) (*csi.CreateVolumeResponse, error) {

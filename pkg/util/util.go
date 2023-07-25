@@ -50,7 +50,9 @@ const (
 	snapshotTotalElements = 6
 
 	// number of elements in backup Volume sources e.g. projects/{project name}/locations/{zone}/instances/{name}
-	volumeTotalElements = 6
+	singleShareVolumeTotalElements = 6
+	// number of elements in backup Volume sources e.g. projects/{project name}/locations/{zone}/instances/{name}/shares/{share}'
+	multiShareVolumeTotalElements = 8
 
 	ManagedFilestoreCSINamespace = "gke-managed-filestorecsi"
 )
@@ -203,12 +205,18 @@ func GetBackupLocation(params map[string]string) string {
 	return location
 }
 
-func BackupVolumeSourceToCSIVolumeHandle(sourceInstance, sourceShare string) (string, error) {
+func BackupVolumeSourceToCSIVolumeHandle(mode, sourceInstance, sourceShare string) (string, error) {
 	splitId := strings.Split(sourceInstance, "/")
-	if len(splitId) != volumeTotalElements {
-		return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", sourceInstance)
+	if mode == "modeInstance" {
+		if len(splitId) != singleShareVolumeTotalElements {
+			return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", sourceInstance)
+		}
+	} else {
+		if len(splitId) != multiShareVolumeTotalElements {
+			return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}/shares/{share}'. Got: %s", sourceInstance)
+		}
 	}
-	return fmt.Sprintf("modeInstance/%s/%s/%s", splitId[3], splitId[5], sourceShare), nil
+	return fmt.Sprintf("%s/%s/%s/%s", mode, splitId[3], splitId[5], sourceShare), nil
 }
 
 // Multishare util functions.
