@@ -20,6 +20,9 @@ import (
 	"fmt"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
@@ -46,6 +49,23 @@ func getVolumeIDFromFileInstance(obj *file.ServiceInstance, mode string) string 
 	return strings.Join(idElements, "/")
 }
 
+func gatherBackupInfo(name string, id string, project string) (*file.BackupInfo, error) {
+	filer, _, err := getFileInstanceFromID(id)
+	if err != nil {
+		klog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", id, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	backupInfo := &file.BackupInfo{
+		Name:               name,
+		SourceVolumeId:     id,
+		Project:            project,
+		Location:           filer.Location,
+		SourceShare:        filer.Volume.Name,
+		SourceInstanceName: filer.Name,
+	}
+	return backupInfo, nil
+}
+
 // getFileInstanceFromID generates a GCFS Instance object from the volume id
 func getFileInstanceFromID(id string) (*file.ServiceInstance, string, error) {
 	tokens := strings.Split(id, "/")
@@ -70,6 +90,22 @@ func generateMultishareVolumeIdFromShare(instancePrefix string, s *file.Share) (
 	}
 
 	return fmt.Sprintf("%s/%s/%s/%s/%s/%s", modeMultishare, instancePrefix, s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+}
+
+func parseSourceVolId(volId string) (string, string, string, string, error) {
+	tokens := strings.Split(volId, "/")
+	if len(tokens) != util.SourceVolumeIdSplitLen {
+		return "", "", "", "", fmt.Errorf("invalid source volume id %v", volId)
+	}
+
+	mode := tokens[0]
+	location := tokens[1]
+	instanceName := tokens[2]
+	shareName := tokens[3]
+	if (mode != modeMultishare && mode != modeInstance) || location == "" || instanceName == "" || shareName == "" {
+		return "", "", "", "", fmt.Errorf("invalid volume id %v", volId)
+	}
+	return mode, location, instanceName, shareName, nil
 }
 
 func parseMultishareVolId(volId string) (string, string, string, string, string, error) {

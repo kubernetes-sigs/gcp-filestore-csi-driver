@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -109,10 +110,38 @@ type Network struct {
 	Ip              string
 }
 
-type BackupInfo struct {
+type Backup struct {
 	Backup         *filev1beta1.Backup
 	SourceInstance string
 	SourceShare    string
+}
+
+type BackupInfo struct {
+	Name               string
+	SourceVolumeId     string
+	BackupURI          string
+	SourceInstance     string
+	SourceInstanceName string
+	SourceShare        string
+	Project            string
+	Location           string
+	Tier               string
+	Labels             map[string]string
+}
+
+func (bi *BackupInfo) SourceVolumeLocation() string {
+	splitId := strings.Split(bi.SourceVolumeId, "/")
+	// Format: "modeInstance/us-central1/myinstance/myshare",
+
+	return splitId[1]
+}
+
+func (bi *BackupInfo) BackupSource() string {
+	if isMultishareVolId(bi.SourceVolumeId) {
+		return shareURI(bi.Project, bi.SourceVolumeLocation(), bi.SourceInstanceName, bi.SourceShare)
+	} else {
+		return instanceURI(bi.Project, bi.SourceVolumeLocation(), bi.SourceInstanceName)
+	}
 }
 
 type Service interface {
@@ -121,8 +150,8 @@ type Service interface {
 	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
 	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
-	GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error)
-	CreateBackup(ctx context.Context, obj *ServiceInstance, backupId, backupLocation string) (*filev1beta1.Backup, error)
+	GetBackup(ctx context.Context, backupUri string) (*Backup, error)
+	CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
 	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
@@ -504,52 +533,47 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
-func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error) {
+func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri string) (*Backup, error) {
 	backup, err := manager.backupService.Get(backupUri).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
-	return &BackupInfo{
+	return &Backup{
 		Backup:         backup,
 		SourceInstance: backup.SourceInstance,
 		SourceShare:    backup.SourceFileShare,
 	}, nil
 }
 
-func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
-	backupUri, region, err := CreateBackupURI(obj, backupName, backupLocation)
-	if err != nil {
-		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", backupName, backupLocation, err.Error())
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
+func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
 
-	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
 	backupobj := &filev1beta1.Backup{
-		SourceInstance:  backupSource,
-		SourceFileShare: obj.Volume.Name,
+		SourceInstance:  backupInfo.BackupSource(),
+		SourceFileShare: backupInfo.SourceShare,
+		Labels:          backupInfo.Labels,
 	}
-	klog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupUri)
-	opbackup, err := manager.backupService.Create(locationURI(obj.Project, region), backupobj).BackupId(backupName).Context(ctx).Do()
+	klog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupInfo.BackupURI)
+	opbackup, err := manager.backupService.Create(locationURI(backupInfo.Project, backupInfo.Location), backupobj).BackupId(backupInfo.Name).Context(ctx).Do()
 
 	if err != nil {
 		klog.Errorf("Create Backup operation failed: %w", err)
 		return nil, err
 	}
 
-	klog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupUri, opbackup.Name)
+	klog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupInfo.BackupURI, opbackup.Name)
 	err = manager.waitForOp(ctx, opbackup)
 	if err != nil {
-		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %w", opbackup.Name, backupSource, backupUri, err)
+		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %w", opbackup.Name, backupInfo.BackupSource(), backupInfo.BackupURI, err)
 	}
 
-	backupObj, err := manager.backupService.Get(backupUri).Context(ctx).Do()
+	backupObj, err := manager.backupService.Get(backupInfo.BackupURI).Context(ctx).Do()
 	if err != nil {
 		return nil, err
 	}
 	if backupObj.State != "READY" {
-		return nil, fmt.Errorf("backup %v for source %v is not ready, current state: %v", backupUri, backupSource, backupObj.State)
+		return nil, fmt.Errorf("backup %v for source %v is not ready, current state: %v", backupInfo.BackupURI, backupInfo.BackupSource(), backupObj.State)
 	}
-	klog.Infof("Successfully created backup %+v for source instance %v", backupObj, backupSource)
+	klog.Infof("Successfully created backup %+v for source instance %v", backupObj, backupInfo.BackupSource())
 	return backupObj, nil
 }
 
@@ -755,9 +779,53 @@ func StatusError(err error) error {
 	return status.Error(*codeForError(err), err.Error())
 }
 
+// This function will process an existing backup
+func ProcessExistingBackup(ctx context.Context, backup *Backup, volumeID string, mode string) (*csi.Snapshot, error) {
+	backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(mode, backup.SourceInstance, backup.SourceShare)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "Cannot determine volume handle from back source instance %s, share %s", backup.SourceInstance, backup.SourceShare)
+	}
+	if backupSourceCSIHandle != volumeID {
+		return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupSourceCSIHandle, volumeID)
+	}
+	// Check if backup is in the process of getting created.
+	if backup.Backup.State == "CREATING" || backup.Backup.State == "FINALIZING" {
+		return nil, status.Errorf(codes.DeadlineExceeded, "Backup %v not yet ready, current state %s", backup.Backup.Name, backup.Backup.State)
+	}
+	if backup.Backup.State != "READY" {
+		return nil, status.Errorf(codes.Internal, "Backup %v not yet ready, current state %s", backup.Backup.Name, backup.Backup.State)
+	}
+	tp, err := util.ParseTimestamp(backup.Backup.CreateTime)
+	if err != nil {
+		err = fmt.Errorf("failed to parse create timestamp for backup %v: %w", backup.Backup.Name, err)
+		return nil, StatusError(err)
+	}
+	klog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backup.Backup.Name)
+	return &csi.Snapshot{
+		SizeBytes:      util.GbToBytes(backup.Backup.CapacityGb),
+		SnapshotId:     backup.Backup.Name,
+		SourceVolumeId: volumeID,
+		CreationTime:   tp,
+		ReadyToUse:     true,
+	}, nil
+}
+
+func CheckBackupExists(backupInfo *Backup, err error) (bool, error) {
+	if err != nil {
+		if !IsNotFoundErr(err) {
+			return false, StatusError(err)
+		} else {
+			//no backup exists
+			return false, nil
+		}
+	}
+	//process existing backup
+	return true, nil
+}
+
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
-func CreateBackupURI(obj *ServiceInstance, backupName string, backupLocation string) (string, string, error) {
-	region, err := deduceRegion(obj, backupLocation)
+func CreateBackupURI(serviceLocation, project, backupName, backupLocation string) (string, string, error) {
+	region, err := deduceRegion(serviceLocation, backupLocation)
 	if err != nil {
 		return "", "", err
 	}
@@ -765,19 +833,19 @@ func CreateBackupURI(obj *ServiceInstance, backupName string, backupLocation str
 	if !hasRegionPattern(region) {
 		return "", "", fmt.Errorf("provided location did not match region pattern: %s", backupLocation)
 	}
-	return backupURI(obj.Project, region, backupName), region, nil
+	return backupURI(project, region, backupName), region, nil
 }
 
 // deduceRegion will either return the provided backupLocation region or deduce
 // from the ServiceInstance
-func deduceRegion(obj *ServiceInstance, backupLocation string) (string, error) {
+func deduceRegion(serviceLocation, backupLocation string) (string, error) {
 	region := backupLocation
 	if region == "" {
-		if hasRegionPattern(obj.Location) {
-			region = obj.Location
+		if hasRegionPattern(serviceLocation) {
+			region = serviceLocation
 		} else {
 			var err error
-			region, err = util.GetRegionFromZone(obj.Location)
+			region, err = util.GetRegionFromZone(serviceLocation)
 			if err != nil {
 				return "", err
 			}
@@ -1251,4 +1319,8 @@ func GenerateShareURI(s *Share) (string, error) {
 	}
 
 	return shareURI(s.Parent.Project, s.Parent.Location, s.Parent.Name, s.Name), nil
+}
+
+func isMultishareVolId(volId string) bool {
+	return strings.Contains(volId, "modeMultishare")
 }

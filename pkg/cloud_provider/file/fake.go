@@ -40,7 +40,7 @@ const (
 
 type fakeServiceManager struct {
 	createdInstances          map[string]*ServiceInstance
-	backups                   map[string]*BackupInfo
+	backups                   map[string]*Backup
 	createdMultishareInstance map[string]*MultishareInstance
 	createdMultishares        map[string]*Share
 	multishareops             []*filev1beta1multishare.Operation
@@ -51,7 +51,7 @@ var _ Service = &fakeServiceManager{}
 func NewFakeService() (Service, error) {
 	return &fakeServiceManager{
 		createdInstances:          map[string]*ServiceInstance{},
-		backups:                   map[string]*BackupInfo{},
+		backups:                   map[string]*Backup{},
 		createdMultishareInstance: make(map[string]*MultishareInstance),
 		createdMultishares:        make(map[string]*Share),
 	}, nil
@@ -60,7 +60,7 @@ func NewFakeService() (Service, error) {
 func NewFakeServiceForMultishare(instances []*MultishareInstance, shares []*Share, ops []*filev1beta1multishare.Operation) (Service, error) {
 	s := &fakeServiceManager{
 		createdInstances:          map[string]*ServiceInstance{},
-		backups:                   map[string]*BackupInfo{},
+		backups:                   map[string]*Backup{},
 		createdMultishareInstance: make(map[string]*MultishareInstance),
 		createdMultishares:        make(map[string]*Share),
 		multishareops:             make([]*filev1beta1multishare.Operation, 0),
@@ -156,34 +156,36 @@ func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
-func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
-	backupUri, _, err := CreateBackupURI(obj, backupName, backupLocation)
-	if err != nil {
-		return nil, err
+func (manager *fakeServiceManager) CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
+	if backupInfo.SourceInstanceName == "" || backupInfo.SourceShare == "" || backupInfo.SourceVolumeId == "" || backupInfo.BackupURI == "" {
+		return nil, fmt.Errorf("BackupInfo fields are not set %+v", backupInfo)
 	}
 
-	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
-	if backupInfo, ok := manager.backups[backupUri]; ok {
-		if backupInfo.SourceInstance != backupSource && backupInfo.SourceShare != obj.Volume.Name {
+	backupUri := backupInfo.BackupURI
+
+	backupSource := backupInfo.BackupSource()
+	if backup, ok := manager.backups[backupUri]; ok {
+		if backup.SourceInstance != backupSource && backup.SourceShare != backupInfo.SourceShare {
 			// TODO: format the right info
-			return nil, fmt.Errorf("Mismatch in source for existing snapshot %v", backupInfo)
+			return nil, fmt.Errorf("Mismatch in source for existing snapshot %v", backup)
 		}
-		return backupInfo.Backup, nil
+		return backup.Backup, nil
 	}
 
 	backupToCreate := &filev1beta1.Backup{
 		Name:               backupUri,
-		SourceFileShare:    obj.Volume.Name,
+		SourceFileShare:    backupInfo.SourceShare,
 		SourceInstance:     backupSource,
-		SourceInstanceTier: obj.Tier,
+		SourceInstanceTier: backupInfo.Tier,
 		CreateTime:         "2020-10-02T15:01:23Z",
 		State:              "READY",
 		CapacityGb:         defaultCapacityGb,
+		Labels:             backupInfo.Labels,
 	}
-	manager.backups[backupUri] = &BackupInfo{
+	manager.backups[backupUri] = &Backup{
 		Backup:         backupToCreate,
 		SourceInstance: backupSource,
-		SourceShare:    obj.Volume.Name,
+		SourceShare:    backupInfo.SourceShare,
 	}
 	return backupToCreate, nil
 }
@@ -193,7 +195,7 @@ func (manager *fakeServiceManager) DeleteBackup(ctx context.Context, backupName 
 	return nil
 }
 
-func (manager *fakeServiceManager) GetBackup(ctx context.Context, backupUri string) (*BackupInfo, error) {
+func (manager *fakeServiceManager) GetBackup(ctx context.Context, backupUri string) (*Backup, error) {
 	backupInfo, ok := manager.backups[backupUri]
 	if !ok || backupInfo.Backup == nil {
 		return nil, notFoundError()
@@ -250,7 +252,7 @@ func NewFakeBlockingService(operationUnblocker chan chan struct{}) (Service, err
 	return &fakeBlockingServiceManager{
 		fakeServiceManager: &fakeServiceManager{
 			createdInstances: map[string]*ServiceInstance{},
-			backups:          map[string]*BackupInfo{},
+			backups:          map[string]*Backup{},
 		},
 		OperationUnblocker: operationUnblocker,
 	}, nil
