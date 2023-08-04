@@ -630,6 +630,26 @@ func TestIsUserError(t *testing.T) {
 			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusForbidden}),
 			expectedErrCode: util.ErrCodePtr(codes.PermissionDenied),
 		},
+		{
+			name:            "RESOURCE_EXHAUSTED error",
+			err:             fmt.Errorf("got error: RESOURCE_EXHAUSTED: Operation rate exceeded"),
+			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
+		},
+		{
+			name:            "INVALID_ARGUMENT error",
+			err:             fmt.Errorf("got error: INVALID_ARGUMENT"),
+			expectedErrCode: util.ErrCodePtr(codes.InvalidArgument),
+		},
+		{
+			name:            "PERMISSION_DENIED error",
+			err:             fmt.Errorf("got error: PERMISSION_DENIED"),
+			expectedErrCode: util.ErrCodePtr(codes.PermissionDenied),
+		},
+		{
+			name:            "NOT_FOUND error",
+			err:             fmt.Errorf("got error: NOT_FOUND"),
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
 	}
 
 	for _, test := range cases {
