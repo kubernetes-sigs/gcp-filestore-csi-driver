@@ -775,12 +775,12 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 	} else {
-		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceVolumeHandle)
+		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceInstance, backupInfo.SourceShare)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "Cannot determine volume handle from back source %s", backupInfo.SourceVolumeHandle)
+			return nil, status.Errorf(codes.Internal, "Cannot determine volume handle from back source instance %s, share %s", backupInfo.SourceInstance, backupInfo.SourceShare)
 		}
 		if backupSourceCSIHandle != volumeID {
-			return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupInfo.SourceVolumeHandle, volumeID)
+			return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupSourceCSIHandle, volumeID)
 		}
 		// Check if backup is in the process of getting created.
 		if backupInfo.Backup.State == "CREATING" || backupInfo.Backup.State == "FINALIZING" {

@@ -164,8 +164,9 @@ func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *Servic
 
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
 	if backupInfo, ok := manager.backups[backupUri]; ok {
-		if backupInfo.SourceVolumeHandle != backupSource {
-			return nil, fmt.Errorf("Mismatch in source volume handle for existing snapshot")
+		if backupInfo.SourceInstance != backupSource && backupInfo.SourceShare != obj.Volume.Name {
+			// TODO: format the right info
+			return nil, fmt.Errorf("Mismatch in source for existing snapshot %v", backupInfo)
 		}
 		return backupInfo.Backup, nil
 	}
@@ -179,8 +180,9 @@ func (manager *fakeServiceManager) CreateBackup(ctx context.Context, obj *Servic
 		CapacityGb:      defaultCapacityGb,
 	}
 	manager.backups[backupUri] = &BackupInfo{
-		Backup:             backupToCreate,
-		SourceVolumeHandle: backupSource,
+		Backup:         backupToCreate,
+		SourceInstance: backupSource,
+		SourceShare:    obj.Volume.Name,
 	}
 	return backupToCreate, nil
 }
