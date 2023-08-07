@@ -9,6 +9,7 @@ import (
 
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -524,7 +525,7 @@ func TestIsContextError(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		errCode := IsContextError(test.err)
+		errCode := isContextError(test.err)
 		if (test.expectedErrCode == nil) != (errCode == nil) {
 			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
 		}
@@ -534,7 +535,7 @@ func TestIsContextError(t *testing.T) {
 	}
 }
 
-func TestPollOpErrorCode(t *testing.T) {
+func TestCodeForError(t *testing.T) {
 	cases := []struct {
 		name            string
 		err             error
@@ -575,10 +576,15 @@ func TestPollOpErrorCode(t *testing.T) {
 			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusNotFound}),
 			expectedErrCode: util.ErrCodePtr(codes.NotFound),
 		},
+		{
+			name:            "status error with Aborted error code",
+			err:             status.Error(codes.Aborted, "aborted error"),
+			expectedErrCode: util.ErrCodePtr(codes.Aborted),
+		},
 	}
 
 	for _, test := range cases {
-		errCode := PollOpErrorCode(test.err)
+		errCode := CodeForError(test.err)
 		if (test.expectedErrCode == nil) != (errCode == nil) {
 			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
 		}
@@ -647,7 +653,7 @@ func TestIsUserError(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		errCode := IsUserError(test.err)
+		errCode := isUserError(test.err)
 		if (test.expectedErrCode == nil) != (errCode == nil) {
 			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
 		}

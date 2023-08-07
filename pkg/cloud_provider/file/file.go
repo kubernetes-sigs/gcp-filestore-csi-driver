@@ -30,6 +30,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -516,7 +517,8 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, obj *ServiceInstance, backupName string, backupLocation string) (*filev1beta1.Backup, error) {
 	backupUri, region, err := CreateBackupURI(obj, backupName, backupLocation)
 	if err != nil {
-		return nil, err
+		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", backupName, backupLocation, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	backupSource := fmt.Sprintf("projects/%s/locations/%s/instances/%s", obj.Project, obj.Location, obj.Name)
@@ -634,7 +636,7 @@ func IsNotFoundErr(err error) bool {
 	return false
 }
 
-// IsUserError returns a pointer to the grpc error code that maps to the http
+// isUserError returns a pointer to the grpc error code that maps to the http
 // error code for the passed in user googleapi error. Returns nil if the
 // given error is not a googleapi error caused by the user. The following
 // http error codes are considered user errors:
@@ -642,7 +644,7 @@ func IsNotFoundErr(err error) bool {
 // (2) http 403 Forbidden, returns grpc PermissionDenied,
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
-func IsUserError(err error) *codes.Code {
+func isUserError(err error) *codes.Code {
 	// Upwrap the error
 	var apiErr *googleapi.Error
 	if !errors.As(err, &apiErr) {
@@ -686,7 +688,7 @@ func containsUserErrStr(err error) *codes.Code {
 // isContextError returns a pointer to the grpc error code DeadlineExceeded
 // if the passed in error contains the "context deadline exceeded" string and returns
 // the grpc error code Canceled if the error contains the "context canceled" string.
-func IsContextError(err error) *codes.Code {
+func isContextError(err error) *codes.Code {
 	if err == nil {
 		return nil
 	}
@@ -701,22 +703,46 @@ func IsContextError(err error) *codes.Code {
 	return nil
 }
 
-// PollOpErrorCode returns a pointer to the grpc error code that maps to the http
-// error code for passed in googleapi error. Returns grpc DeadlineExceeded if the
-// given error contains the "context deadline exceeded" string. Returns the grpc Internal error
-// code if the passed in error is neither a user error or a deadline exceeded error.
-func PollOpErrorCode(err error) *codes.Code {
-	if errCode := IsUserError(err); errCode != nil {
+// existingErrorCode returns a pointer to the grpc error code for the passed in error.
+// Returns nil if the error is nil, or if the error cannot be converted to a grpc status.
+func existingErrorCode(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
+
+	if status, ok := status.FromError(err); ok {
+		return util.ErrCodePtr(status.Code())
+	}
+	return nil
+}
+
+// CodeForError returns a pointer to the grpc error code that maps to the http
+// error code for the passed in user googleapi error or context error. Returns
+// codes.Internal if the given error is not a googleapi error caused by the user.
+// The following http error codes are considered user errors:
+// (1) http 400 Bad Request, returns grpc InvalidArgument,
+// (2) http 403 Forbidden, returns grpc PermissionDenied,
+// (3) http 404 Not Found, returns grpc NotFound
+// (4) http 429 Too Many Requests, returns grpc ResourceExhausted
+// The following errors are considered context errors:
+// (1) "context deadline exceeded", returns grpc DeadlineExceeded,
+// (2) "context canceled", returns grpc Canceled
+func CodeForError(err error) *codes.Code {
+	if errCode := existingErrorCode(err); errCode != nil {
 		return errCode
 	}
-	if errCode := IsContextError(err); errCode != nil {
+	if errCode := isUserError(err); errCode != nil {
 		return errCode
 	}
+	if errCode := isContextError(err); errCode != nil {
+		return errCode
+	}
+
 	return util.ErrCodePtr(codes.Internal)
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
-func CreateBackupURI(obj *ServiceInstance, backupName, backupLocation string) (string, string, error) {
+func CreateBackupURI(obj *ServiceInstance, backupName string, backupLocation string) (string, string, error) {
 	region, err := deduceRegion(obj, backupLocation)
 	if err != nil {
 		return "", "", err
