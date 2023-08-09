@@ -1,3 +1,11 @@
+# v1.6.1 - Changelog since v1.6.0
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update go version to 1.20.6 to fix CVE-2023-29406 ([#576](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/576), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
 # v1.6.0 - Changelog since v1.5.6
 
 ## Changes by Kind

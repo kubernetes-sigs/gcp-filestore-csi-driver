@@ -1,3 +1,17 @@
+# v1.5.7 - Changelog since v1.5.6
+
+## Changes by Kind
+
+### Feature
+
+- Promote CRD to v1 ([#542](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/542), [@leiyiz](https://github.com/leiyiz))
+- 80 share support for stateful driver ([#559](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/559), [@leiyiz](https://github.com/leiyiz))
+
+### Bug or Regression
+
+- Update go version to 1.20.6 to fix CVE-2023-29406 ([#577](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/577), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+- Improve error code classification from Filestore API ([#562](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/562), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
 # v1.5.6 - Changelog since v1.5.5
 
 ## Changes by Kind
