@@ -1498,6 +1498,90 @@ func TestCreateSnapshot(t *testing.T) {
 	}
 }
 
+func TestDeleteSnapshot(t *testing.T) {
+	backupName := "mybackup"
+	project := "test-project"
+	zone := "us-central1-c"
+	region := "us-central1"
+	instanceName := "myinstance"
+	shareName := "myshare"
+	cases := []struct {
+		name        string
+		createReq   *csi.CreateSnapshotRequest
+		deleteReq   *csi.DeleteSnapshotRequest
+		backupState string
+		expectErr   bool
+	}{
+		{
+			name: "Create singleshare snapshot and delete it",
+			createReq: &csi.CreateSnapshotRequest{
+				SourceVolumeId: fmt.Sprintf("modeInstance/%s/%s/%s", zone, instanceName, shareName),
+				Name:           backupName,
+			},
+			deleteReq: &csi.DeleteSnapshotRequest{
+				SnapshotId: fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, region, backupName),
+			},
+			expectErr: false,
+		},
+		{
+			name: "Backup is already in state DELETING. Expect error",
+			createReq: &csi.CreateSnapshotRequest{
+				SourceVolumeId: fmt.Sprintf("modeInstance/%s/%s/%s", zone, instanceName, shareName),
+				Name:           backupName,
+			},
+			deleteReq: &csi.DeleteSnapshotRequest{
+				SnapshotId: fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, region, backupName),
+			},
+			expectErr:   true,
+			backupState: "DELETING",
+		},
+	}
+	for _, test := range cases {
+		fileService, err := file.NewFakeService()
+		if err != nil {
+			t.Fatalf("failed to initialize GCFS service: %v", err)
+		}
+
+		cloudProvider, err := cloud.NewFakeCloud()
+		if err != nil {
+			t.Fatalf("Failed to get cloud provider: %v", err)
+		}
+		cs := newControllerServer(&controllerServerConfig{
+			driver:      initTestDriver(t),
+			fileService: fileService,
+			cloud:       cloudProvider,
+			volumeLocks: util.NewVolumeLocks(),
+		})
+
+		_, err = cs.CreateSnapshot(context.TODO(), test.createReq)
+		if err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+
+		if test.backupState != "" {
+			backup, _ := fileService.GetBackup(context.TODO(), test.deleteReq.SnapshotId)
+			backup.Backup.State = test.backupState
+		}
+		_, err = cs.DeleteSnapshot(context.TODO(), test.deleteReq)
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if test.expectErr && err == nil {
+			t.Errorf("test %q failed; got success", test.name)
+		}
+		if !test.expectErr {
+			backup, err := fileService.GetBackup(context.TODO(), test.deleteReq.SnapshotId)
+			if err == nil {
+				t.Errorf("test %q failed; expected backup %+v to be deleted", test.name, backup)
+			}
+			if !file.IsNotFoundErr(err) {
+				t.Errorf("test %q failed; expected NotFound error, got  %+v", test.name, err)
+			}
+		}
+	}
+
+}
+
 func TestCreateBackupURI(t *testing.T) {
 	backupName := "mybackup"
 	project := "test-project"
