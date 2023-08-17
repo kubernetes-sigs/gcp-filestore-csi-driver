@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -88,6 +89,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 		s              *file.ServiceInstance
 		backupName     string
 		backupLocation string
+		SourceVolumeId string
 	}
 	backupName := "mybackup"
 	instanceName := "myinstance"
@@ -154,6 +156,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				},
 				backupName:     backupName,
 				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testZone + "/" + instanceName + "/" + shareName,
 			},
 		},
 		{
@@ -200,6 +203,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				},
 				backupName:     backupName,
 				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testZone + "/" + instanceName + "/" + shareName,
 			},
 		},
 		{
@@ -246,6 +250,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				},
 				backupName:     backupName,
 				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
 			},
 		},
 	}
@@ -254,7 +259,18 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 		cs := initTestController(t).(*controllerServer)
 
 		//Create initial backup
-		cs.config.fileService.CreateBackup(context.TODO(), test.initialBackup.s, test.initialBackup.backupName, test.initialBackup.backupLocation)
+		backupInfo := &file.BackupInfo{
+			Project:            test.initialBackup.s.Project,
+			Location:           test.initialBackup.backupLocation,
+			SourceInstanceName: test.initialBackup.s.Name,
+			SourceShare:        test.initialBackup.s.Volume.Name,
+			Name:               test.initialBackup.backupName,
+			SourceVolumeId:     test.initialBackup.SourceVolumeId,
+			BackupURI:          test.resp.Volume.ContentSource.GetSnapshot().SnapshotId,
+			Labels:             make(map[string]string),
+		}
+
+		cs.config.fileService.CreateBackup(context.TODO(), backupInfo)
 
 		// Restore from backup
 		resp, err := cs.CreateVolume(context.TODO(), test.req)
@@ -269,6 +285,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 		}
 	}
 }
+
 func TestCreateVolume(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -1253,10 +1270,9 @@ func ValidateExpectedError(t *testing.T, errResp <-chan error, operationUnblocke
 }
 
 func TestCreateSnapshot(t *testing.T) {
-	type BackupInfo struct {
-		s              *file.ServiceInstance
-		backupName     string
-		backupLocation string
+	type BackupTestInfo struct {
+		backup *file.BackupInfo
+		state  string
 	}
 	backupName := "mybackup"
 	project := "test-project"
@@ -1264,46 +1280,39 @@ func TestCreateSnapshot(t *testing.T) {
 	region := "us-central1"
 	instanceName := "myinstance"
 	shareName := "myshare"
+	defaultBackupUri := fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, region, backupName)
 	cases := []struct {
 		name          string
 		req           *csi.CreateSnapshotRequest
-		initialBackup *BackupInfo
+		resp          *csi.CreateSnapshotResponse
+		initialBackup *BackupTestInfo
 		expectErr     bool
 	}{
 		// Failure test cases
 		{
-			name: "Create snapshot request for multishare backed volumes",
-			req: &csi.CreateSnapshotRequest{
-				SourceVolumeId: "modeMultishare/mysc/test-project/location/myinstance/myshare",
-			},
-			expectErr: true,
-		},
-		{
 			name: "Existing backup found, with different volume Id (source zonal filestore instance), error expected",
 			req: &csi.CreateSnapshotRequest{
-				SourceVolumeId: "modeInstance/us-central1-c/myinstance1/myshare",
+				SourceVolumeId: modeInstance + "/" + zone + "/" + "myinstance1" + "/" + shareName,
 				Name:           backupName,
 				Parameters: map[string]string{
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
-			initialBackup: &BackupInfo{
-				s: &file.ServiceInstance{
-					Project:  project,
-					Location: zone,
-					Name:     instanceName,
-					Volume: file.Volume{
-						Name: shareName,
-					},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeInstance + "/" + zone + "/" + instanceName + "/" + shareName,
 				},
-				backupName:     backupName,
-				backupLocation: region,
 			},
 			expectErr: true,
 		},
-		// Success test cases
 		{
-			name: "Existing backup found, with same source volume Id (blank backup location)",
+			name: "Existing backup found in state CREATING",
 			req: &csi.CreateSnapshotRequest{
 				SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
 				Name:           backupName,
@@ -1311,18 +1320,78 @@ func TestCreateSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
-			initialBackup: &BackupInfo{
-				s: &file.ServiceInstance{
-					Project:  project,
-					Location: region,
-					Name:     instanceName,
-					Volume: file.Volume{
-						Name: shareName,
-					},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     "modeInstance/us-central1/myinstance/myshare",
 				},
-				backupName:     backupName,
-				backupLocation: "",
+				state: "CREATING",
 			},
+			expectErr: true,
+		},
+		// Success test cases
+		{
+			name: "No backup found",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			resp: &csi.CreateSnapshotResponse{
+				Snapshot: &csi.Snapshot{
+					SizeBytes:      1 * util.Tb,
+					SnapshotId:     defaultBackupUri,
+					SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
+					ReadyToUse:     true,
+				},
+			},
+			initialBackup: nil,
+		},
+		{
+			name: "No backup found, zonal source",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			resp: &csi.CreateSnapshotResponse{
+				Snapshot: &csi.Snapshot{
+					SizeBytes:      1 * util.Tb,
+					SnapshotId:     defaultBackupUri,
+					SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+					ReadyToUse:     true,
+				},
+			},
+			initialBackup: nil,
+		},
+		{
+			name: "No backup found, cross regional snapshot",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey:     "backup",
+					util.VolumeSnapshotLocationKey: "us-west1",
+				},
+			},
+			resp: &csi.CreateSnapshotResponse{
+				Snapshot: &csi.Snapshot{
+					SizeBytes:      1 * util.Tb,
+					SnapshotId:     fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, "us-west1", backupName),
+					SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+					ReadyToUse:     true,
+				},
+			},
+			initialBackup: nil,
 		},
 		{
 			name: "Existing backup found, with same source volume Id (source regional filestore instance)",
@@ -1333,17 +1402,16 @@ func TestCreateSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
-			initialBackup: &BackupInfo{
-				s: &file.ServiceInstance{
-					Project:  project,
-					Location: region,
-					Name:     instanceName,
-					Volume: file.Volume{
-						Name: shareName,
-					},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     "modeInstance/us-central1/myinstance/myshare",
 				},
-				backupName:     backupName,
-				backupLocation: region,
 			},
 		},
 		{
@@ -1355,17 +1423,16 @@ func TestCreateSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
-			initialBackup: &BackupInfo{
-				s: &file.ServiceInstance{
-					Project:  project,
-					Location: zone,
-					Name:     instanceName,
-					Volume: file.Volume{
-						Name: shareName,
-					},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     "modeInstance/us-central1-c/myinstance/myshare",
 				},
-				backupName:     backupName,
-				backupLocation: region,
 			},
 		},
 	}
@@ -1387,14 +1454,46 @@ func TestCreateSnapshot(t *testing.T) {
 		})
 
 		if test.initialBackup != nil {
-			fileService.CreateBackup(context.TODO(), test.initialBackup.s, test.initialBackup.backupName, test.initialBackup.backupLocation)
+			existingBackup, err := fileService.CreateBackup(context.TODO(), test.initialBackup.backup)
+			if err != nil {
+				t.Errorf("test %q failed to create snapshot: %v", test.name, err)
+			}
+			if test.initialBackup.state != "" {
+				klog.Infof("existingBackup looks like: %+v", existingBackup)
+
+				existingBackup.State = test.initialBackup.state
+			}
 		}
-		_, err = cs.CreateSnapshot(context.TODO(), test.req)
+		resp, err := cs.CreateSnapshot(context.TODO(), test.req)
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed; got success", test.name)
+		}
+		if test.resp != nil {
+			if resp.Snapshot.SizeBytes != test.resp.Snapshot.SizeBytes {
+				t.Errorf("test %q failed, %v, mismatch, got %v, want %v", test.name, "SizeBytes", resp.Snapshot.SizeBytes, test.resp.Snapshot.SizeBytes)
+			}
+			if resp.Snapshot.SnapshotId != test.resp.Snapshot.SnapshotId {
+				t.Errorf("test %q failed, %v, mismatch, got %v, want %v", test.name, "SnapshotId", resp.Snapshot.SnapshotId, test.resp.Snapshot.SnapshotId)
+			}
+			if resp.Snapshot.SourceVolumeId != test.resp.Snapshot.SourceVolumeId {
+				t.Errorf("test %q failed, %v, mismatch, got %v, want %v", test.name, "SourceVolumeId", resp.Snapshot.SourceVolumeId, test.resp.Snapshot.SourceVolumeId)
+			}
+			if resp.Snapshot.ReadyToUse != test.resp.Snapshot.ReadyToUse {
+				t.Errorf("test %q failed, %v, mismatch, got %v, want %v", test.name, "ReadyToUse", resp.Snapshot.ReadyToUse, test.resp.Snapshot.ReadyToUse)
+			}
+		}
+
+		if !test.expectErr && test.initialBackup == nil {
+			backup, _ := fileService.GetBackup(context.TODO(), resp.Snapshot.SnapshotId)
+			if backup.Backup.Labels[tagKeyCreatedBy] != "test-driver" {
+				t.Errorf("labels check for %v failed on test %q, got %v, want %v", tagKeyCreatedBy, test.name, backup.Backup.Labels[tagKeyCreatedBy], "test-driver")
+			}
+			if backup.Backup.Labels[tagKeySnapshotName] != test.req.Name {
+				t.Errorf("labels check for %v failed on test %q, got %v, want %v", tagKeySnapshotName, test.name, backup.Backup.Labels[tagKeySnapshotName], test.req.Name)
+			}
 		}
 	}
 }
@@ -1487,101 +1586,70 @@ func TestCreateBackupURI(t *testing.T) {
 	backupName := "mybackup"
 	project := "test-project"
 	region := "us-central1"
-	instanceName := "myinstance"
-	shareName := "myshare"
 	cases := []struct {
-		name           string
-		backupName     string
-		backupLocation string
-		instance       *file.ServiceInstance
-		expectedURL    string
-		expectedRegion string
-		expectErr      bool
+		name            string
+		backupName      string
+		backupLocation  string
+		serviceLocation string
+		project         string
+		expectedURL     string
+		expectedRegion  string
+		expectErr       bool
 	}{
 		//Failure cases
 		{
-			name:           "backupLocation is zone instead of region. Expect error",
-			backupName:     backupName,
-			backupLocation: "us-west1-c",
-			instance: &file.ServiceInstance{
-				Project:  project,
-				Location: "us-west1-c",
-				Name:     instanceName,
-				Volume: file.Volume{
-					Name: shareName,
-				},
-			},
-			expectedURL:    "",
-			expectedRegion: "",
-			expectErr:      true,
+			name:            "backupLocation is zone instead of region. Expect error",
+			backupName:      backupName,
+			backupLocation:  "us-west1-c",
+			serviceLocation: "us-west1-c",
+			project:         project,
+			expectedURL:     "",
+			expectedRegion:  "",
+			expectErr:       true,
 		},
 		{
-			name:           "Invalid location in ServiceInstance. Expect error",
-			backupName:     backupName,
-			backupLocation: "",
-			instance: &file.ServiceInstance{
-				Project:  project,
-				Location: "us-west1-c-b-d",
-				Name:     instanceName,
-				Volume: file.Volume{
-					Name: shareName,
-				},
-			},
-			expectedURL:    "",
-			expectedRegion: "",
-			expectErr:      true,
+			name:            "Invalid location in ServiceInstance. Expect error",
+			backupName:      backupName,
+			backupLocation:  "",
+			serviceLocation: "us-west1-c-b-d",
+			project:         project,
+			expectedURL:     "",
+			expectedRegion:  "",
+			expectErr:       true,
 		},
 		{
-			name:           "Region is not provided. ServiceInstance is regional.",
-			backupName:     backupName,
-			backupLocation: "",
-			instance: &file.ServiceInstance{
-				Project:  project,
-				Location: "us-west1",
-				Name:     instanceName,
-				Volume: file.Volume{
-					Name: shareName,
-				},
-			},
-			expectedURL:    "projects/test-project/locations/us-west1/backups/mybackup",
-			expectedRegion: "us-west1",
-			expectErr:      false,
+			name:            "Region is not provided. ServiceInstance is regional.",
+			backupName:      backupName,
+			backupLocation:  "",
+			serviceLocation: "us-west1",
+			project:         project,
+			expectedURL:     "projects/test-project/locations/us-west1/backups/mybackup",
+			expectedRegion:  "us-west1",
+			expectErr:       false,
 		},
 		{
-			name:           "Region is not provided. ServiceInstance is zonal.",
-			backupName:     backupName,
-			backupLocation: "",
-			instance: &file.ServiceInstance{
-				Project:  project,
-				Location: "us-west1-c",
-				Name:     instanceName,
-				Volume: file.Volume{
-					Name: shareName,
-				},
-			},
-			expectedURL:    "projects/test-project/locations/us-west1/backups/mybackup",
-			expectedRegion: "us-west1",
-			expectErr:      false,
+			name:            "Region is not provided. ServiceInstance is zonal.",
+			backupName:      backupName,
+			backupLocation:  "",
+			serviceLocation: "us-west1-c",
+			project:         project,
+			expectedURL:     "projects/test-project/locations/us-west1/backups/mybackup",
+			expectedRegion:  "us-west1",
+			expectErr:       false,
 		},
 		{
-			name:           "Region is provided and is different from ServiceInstance. Take region",
-			backupName:     backupName,
-			backupLocation: region,
-			instance: &file.ServiceInstance{
-				Project:  project,
-				Location: "us-west1-c",
-				Name:     instanceName,
-				Volume: file.Volume{
-					Name: shareName,
-				},
-			},
-			expectedURL:    "projects/test-project/locations/us-central1/backups/mybackup",
-			expectedRegion: "us-central1",
-			expectErr:      false,
+			name:            "Region is provided and is different from ServiceInstance. Take region",
+			backupName:      backupName,
+			backupLocation:  region,
+			serviceLocation: "us-west1-c",
+			project:         project,
+			expectedURL:     "projects/test-project/locations/us-central1/backups/mybackup",
+			expectedRegion:  "us-central1",
+			expectErr:       false,
 		},
 	}
 	for _, test := range cases {
-		returnedURL, returnedRegion, err := file.CreateBackupURI(test.instance, test.backupName, test.backupLocation)
+		returnedURL, returnedRegion, err := file.CreateBackupURI(test.serviceLocation, test.project, test.backupName, test.backupLocation)
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}

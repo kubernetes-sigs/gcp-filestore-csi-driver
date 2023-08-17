@@ -855,7 +855,15 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
 	}
 	if isMultishareVolId(volumeID) {
-		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for multishare backed volumes")
+		if s.config.multiShareController == nil {
+			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
+		}
+		start := time.Now()
+		response, err := s.config.multiShareController.CreateSnapshot(ctx, req)
+		duration := time.Since(start)
+		s.config.metricsManager.RecordOperationMetrics(err, methodCreateSnapshot, modeMultishare, duration)
+		klog.Infof("CreateSnapshot response %+v error %v, for request %+v", response, err, req)
+		return response, err
 	}
 
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
@@ -863,12 +871,11 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	}
 	defer s.config.volumeLocks.Release(volumeID)
 
-	filer, _, err := getFileInstanceFromID(volumeID)
+	backupInfo, err := gatherBackupInfo(req.Name, volumeID, s.config.cloud.Project)
 	if err != nil {
 		klog.Errorf("Failed to get instance for volumeID %v snapshot, error: %v", volumeID, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	filer.Project = s.config.cloud.Project
 	// If parameters are empty we assume 'backup' type by default.
 	if req.GetParameters() != nil {
 		if _, err := util.IsSnapshotTypeSupported(req.GetParameters()); err != nil {
@@ -878,75 +885,59 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 
 	// Check for existing snapshot
 	backupLocation := util.GetBackupLocation(req.GetParameters())
-	backupUri, _, err := file.CreateBackupURI(filer, req.Name, backupLocation)
+	backupUri, region, err := file.CreateBackupURI(backupInfo.Location, backupInfo.Project, backupInfo.Name, backupLocation)
+	backupInfo.Location = region
+	backupInfo.BackupURI = backupUri
 	if err != nil {
 		klog.Errorf("Failed to create backup URI from given name %s and location %s, error: %v", req.Name, backupLocation, err.Error())
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	backupInfo, err := s.config.fileService.GetBackup(ctx, backupUri)
+	existingBackup, err := s.config.fileService.GetBackup(ctx, backupUri)
+	backupExists, err := file.CheckBackupExists(existingBackup, err)
 	if err != nil {
-		if !file.IsNotFoundErr(err) {
-			return nil, file.StatusError(err)
-		}
-	} else {
-		backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(backupInfo.SourceInstance, backupInfo.SourceShare)
+		return nil, file.StatusError(err)
+	}
+
+	if backupExists {
+		// process existing backup
+		snapshot, err := file.ProcessExistingBackup(ctx, existingBackup, volumeID, modeInstance)
 		if err != nil {
-			return nil, status.Errorf(codes.InvalidArgument, "Cannot determine volume handle from back source instance %s, share %s", backupInfo.SourceInstance, backupInfo.SourceShare)
+			return nil, err
 		}
-		if backupSourceCSIHandle != volumeID {
-			return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backupSourceCSIHandle, volumeID)
-		}
-		// Check if backup is in the process of getting created.
-		if backupInfo.Backup.State == "CREATING" || backupInfo.Backup.State == "FINALIZING" {
-			return nil, status.Errorf(codes.DeadlineExceeded, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
-		}
-		if backupInfo.Backup.State != "READY" {
-			return nil, status.Errorf(codes.Internal, "Backup %v not yet ready, current state %s", backupInfo.Backup.Name, backupInfo.Backup.State)
-		}
-		tp, err := util.ParseTimestamp(backupInfo.Backup.CreateTime)
-		if err != nil {
-			err = fmt.Errorf("failed to parse create timestamp for backup %v: %w", backupInfo.Backup.Name, err)
-			return nil, file.StatusError(err)
-		}
-		klog.V(4).Infof("CreateSnapshot success for volume %v, Backup Id: %v", volumeID, backupInfo.Backup.Name)
 		return &csi.CreateSnapshotResponse{
+			Snapshot: snapshot,
+		}, nil
+	} else {
+		// create new backup
+
+		labels, err := extractBackupLabels(req.GetParameters(), s.config.driver.config.Name, req.Name)
+		if err != nil {
+			return nil, err
+		}
+		backupInfo.Labels = labels
+
+		backupObj, err := s.config.fileService.CreateBackup(ctx, backupInfo)
+		if err != nil {
+			klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
+			return nil, file.StatusError(err)
+		}
+		tp, err := util.ParseTimestamp(backupObj.CreateTime)
+		if err != nil {
+			return nil, file.StatusError(err)
+		}
+		resp := &csi.CreateSnapshotResponse{
 			Snapshot: &csi.Snapshot{
-				SizeBytes:      util.GbToBytes(backupInfo.Backup.CapacityGb),
-				SnapshotId:     backupInfo.Backup.Name,
+				SizeBytes:      util.GbToBytes(backupObj.CapacityGb),
+				SnapshotId:     backupObj.Name,
 				SourceVolumeId: volumeID,
 				CreationTime:   tp,
 				ReadyToUse:     true,
 			},
-		}, nil
+		}
+		klog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
+		return resp, nil
 	}
 
-	// Add labels.
-	labels, err := extractBackupLabels(req.GetParameters(), s.config.driver.config.Name, req.Name)
-	if err != nil {
-		return nil, err
-	}
-	filer.Labels = labels
-
-	backupObj, err := s.config.fileService.CreateBackup(ctx, filer, req.Name, util.GetBackupLocation(req.GetParameters()))
-	if err != nil {
-		klog.Errorf("Create snapshot for volume Id %s failed: %v", volumeID, err.Error())
-		return nil, file.StatusError(err)
-	}
-	tp, err := util.ParseTimestamp(backupObj.CreateTime)
-	if err != nil {
-		return nil, file.StatusError(err)
-	}
-	resp := &csi.CreateSnapshotResponse{
-		Snapshot: &csi.Snapshot{
-			SizeBytes:      util.GbToBytes(backupObj.CapacityGb),
-			SnapshotId:     backupObj.Name,
-			SourceVolumeId: volumeID,
-			CreationTime:   tp,
-			ReadyToUse:     true,
-		},
-	}
-	klog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
-	return resp, nil
 }
 
 func extractBackupLabels(parameters map[string]string, driverName string, snapshotName string) (map[string]string, error) {
@@ -976,7 +967,7 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 		return nil, status.Error(codes.InvalidArgument, "deletion is only supported for volume snapshots of type backup")
 	}
 
-	backupInfo, err := s.config.fileService.GetBackup(ctx, id)
+	backup, err := s.config.fileService.GetBackup(ctx, id)
 	if err != nil {
 		if file.IsNotFoundErr(err) {
 			klog.Infof("Volume snapshot with ID %v not found", id)
@@ -985,8 +976,8 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 		return nil, file.StatusError(err)
 	}
 
-	if backupInfo.Backup.State == "DELETING" {
-		return nil, status.Errorf(codes.DeadlineExceeded, "Volume snapshot with ID %v is in state %s", id, backupInfo.Backup.State)
+	if backup.Backup.State == "DELETING" {
+		return nil, status.Errorf(codes.DeadlineExceeded, "Volume snapshot with ID %v is in state %s", id, backup.Backup.State)
 	}
 
 	if err = s.config.fileService.DeleteBackup(ctx, id); err != nil {
