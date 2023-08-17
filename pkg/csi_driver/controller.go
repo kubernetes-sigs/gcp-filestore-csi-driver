@@ -135,9 +135,13 @@ func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
 	if config.enableMultishare {
 		config.multiShareController = NewMultishareController(config)
 		config.multiShareController.opsManager.controllerServer = cs
-		if config.features.FeatureStateful.Enabled {
-			config.statefulController = NewMultishareStatefulController(config)
-			config.statefulController.mc = config.multiShareController
+		features := config.features
+		if features != nil {
+			if features.FeatureStateful.Enabled {
+				config.statefulController = NewMultishareStatefulController(config)
+				config.statefulController.mc = config.multiShareController
+			}
+
 		}
 	}
 	if config.reconciler != nil {
