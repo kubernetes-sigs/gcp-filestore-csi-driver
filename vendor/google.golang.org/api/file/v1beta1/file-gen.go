@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC.
+// Copyright 2023 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -71,6 +71,7 @@ var _ = errors.New
 var _ = strings.Replace
 var _ = context.Canceled
 var _ = internaloption.WithDefaultEndpoint
+var _ = internal.Version
 
 const apiId = "file:v1beta1"
 const apiName = "file"
@@ -277,6 +278,8 @@ type Backup struct {
 	// performance scaling capabilities.
 	//   "ENTERPRISE" - ENTERPRISE instances offer the features and
 	// availability needed for mission-critical workloads.
+	//   "ZONAL" - ZONAL instances offer expanded capacity and performance
+	// scaling capabilities.
 	SourceInstanceTier string `json:"sourceInstanceTier,omitempty"`
 
 	// State: Output only. The backup state.
@@ -289,6 +292,8 @@ type Backup struct {
 	// reflected in the backup.
 	//   "READY" - Backup is available for use.
 	//   "DELETING" - Backup is being deleted.
+	//   "INVALID" - Backup is not valid and cannot be used for creating new
+	// instances or restoring existing instances.
 	State string `json:"state,omitempty"`
 
 	// StorageBytes: Output only. The size of the storage used by the
@@ -451,6 +456,38 @@ func (s *DenyMaintenancePeriod) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// DirectoryServicesConfig: Directory Services configuration for
+// Kerberos-based authentication.
+type DirectoryServicesConfig struct {
+	// ManagedActiveDirectory: Configuration for Managed Service for
+	// Microsoft Active Directory.
+	ManagedActiveDirectory *ManagedActiveDirectoryConfig `json:"managedActiveDirectory,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g.
+	// "ManagedActiveDirectory") to unconditionally include in API requests.
+	// By default, fields with empty or default values are omitted from API
+	// requests. However, any non-pointer, non-interface field appearing in
+	// ForceSendFields will be sent to the server regardless of whether the
+	// field is empty or not. This may be used to include empty fields in
+	// Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "ManagedActiveDirectory")
+	// to include in API requests with the JSON null value. By default,
+	// fields with empty values are omitted from API requests. However, any
+	// field with an empty value appearing in NullFields will be sent to the
+	// server as null. It is an error if a field in this list has a
+	// non-empty value. This may be used to include null fields in Patch
+	// requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *DirectoryServicesConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod DirectoryServicesConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // Empty: A generic empty message that you can re-use to avoid defining
 // duplicated empty messages in your APIs. A typical example is to use
 // it as the request or the response type of an API method. For
@@ -505,12 +542,34 @@ func (s *FileShareConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// GoogleCloudSaasacceleratorManagementProvidersV1Instance: Instance
+// represents the interface for SLM services to actuate the state of
+// control plane resources. Example Instance in JSON, where
+// consumer-project-number=123456, producer-project-id=cloud-sql:
+// ```json Instance: { "name":
+// "projects/123456/locations/us-east1/instances/prod-instance",
+// "create_time": { "seconds": 1526406431, }, "labels": { "env": "prod",
+// "foo": "bar" }, "state": READY, "software_versions": {
+// "software_update": "cloud-sql-09-28-2018", },
+// "maintenance_policy_names": { "UpdatePolicy":
+// "projects/123456/locations/us-east1/maintenancePolicies/prod-update-po
+// licy", } "tenant_project_id": "cloud-sql-test-tenant",
+// "producer_metadata": { "cloud-sql-tier": "basic",
+// "cloud-sql-instance-size": "1G", }, "provisioned_resources": [ {
+// "resource-type": "compute-instance", "resource-url":
+// "https://www.googleapis.com/compute/v1/projects/cloud-sql/zones/us-eas
+// t1-b/instances/vm-1", } ], "maintenance_schedules": { "csa_rollout":
+// { "start_time": { "seconds": 1526406431, }, "end_time": { "seconds":
+// 1535406431, }, }, "ncsa_rollout": { "start_time": { "seconds":
+// 1526406431, }, "end_time": { "seconds": 1535406431, }, } },
+// "consumer_defined_name": "my-sql-instance1", } ``` LINT.IfChange
 type GoogleCloudSaasacceleratorManagementProvidersV1Instance struct {
-	// ConsumerDefinedName: consumer_defined_name is the name that is set by
-	// the consumer. On the other hand Name field represents system-assigned
-	// id of an instance so consumers are not necessarily aware of it.
-	// consumer_defined_name is used for notification/UI purposes for
-	// consumer to recognize their instances.
+	// ConsumerDefinedName: consumer_defined_name is the name of the
+	// instance set by the service consumers. Generally this is different
+	// from the `name` field which reperesents the system-assigned id of the
+	// instance which the service consumers do not recognize. This is a
+	// required field for tenants onboarding to Maintenance Window
+	// notifications (go/slm-rollout-maintenance-policies#prerequisites).
 	ConsumerDefinedName string `json:"consumerDefinedName,omitempty"`
 
 	// CreateTime: Output only. Timestamp when the resource was created.
@@ -530,11 +589,12 @@ type GoogleCloudSaasacceleratorManagementProvidersV1Instance struct {
 	// value are arbitrary strings provided by the user.
 	Labels map[string]string `json:"labels,omitempty"`
 
-	// MaintenancePolicyNames: Optional. Deprecated. The MaintenancePolicies
-	// that have been attached to the instance. The key must be of the type
-	// name of the oneof policy name defined in MaintenancePolicy, and the
-	// referenced policy must define the same policy type. For complete
-	// details of MaintenancePolicy, please refer to go/cloud-saas-mw-ug.
+	// MaintenancePolicyNames: Optional. The MaintenancePolicies that have
+	// been attached to the instance. The key must be of the type name of
+	// the oneof policy name defined in MaintenancePolicy, and the
+	// referenced policy must define the same policy type. For details,
+	// please refer to go/cloud-saas-mw-ug. Should not be set if
+	// maintenance_settings.maintenance_policies is set.
 	MaintenancePolicyNames map[string]string `json:"maintenancePolicyNames,omitempty"`
 
 	// MaintenanceSchedules: The MaintenanceSchedule contains the scheduling
@@ -701,9 +761,10 @@ type GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSettings struct {
 	// MaintenancePolicies: Optional. The MaintenancePolicies that have been
 	// attached to the instance. The key must be of the type name of the
 	// oneof policy name defined in MaintenancePolicy, and the embedded
-	// policy must define the same policy type. For complete details of
-	// MaintenancePolicy, please refer to go/cloud-saas-mw-ug. If only the
-	// name is needed, then only populate MaintenancePolicy.name.
+	// policy must define the same policy type. For details, please refer to
+	// go/cloud-saas-mw-ug. Should not be set if maintenance_policy_names is
+	// set. If only the name is needed, then only populate
+	// MaintenancePolicy.name.
 	MaintenancePolicies map[string]MaintenancePolicy `json:"maintenancePolicies,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "Exclude") to
@@ -978,6 +1039,11 @@ type Instance struct {
 	// less).
 	Description string `json:"description,omitempty"`
 
+	// DirectoryServices: Directory Services configuration for
+	// Kerberos-based authentication. Should only be set if protocol is
+	// "NFS_V4_1".
+	DirectoryServices *DirectoryServicesConfig `json:"directoryServices,omitempty"`
+
 	// Etag: Server-specified ETag for the instance resource to prevent
 	// simultaneous updates from overwriting each other.
 	Etag string `json:"etag,omitempty"`
@@ -995,7 +1061,7 @@ type Instance struct {
 	// MaxCapacityGb: Output only. The max capacity of the instance.
 	MaxCapacityGb int64 `json:"maxCapacityGb,omitempty,string"`
 
-	// MaxShareCount: Output only. The max number of shares allowed.
+	// MaxShareCount: The max number of shares allowed.
 	MaxShareCount int64 `json:"maxShareCount,omitempty,string"`
 
 	// MultiShareEnabled: Indicates whether this instance uses a multi-share
@@ -1012,6 +1078,18 @@ type Instance struct {
 	// Networks: VPC networks to which the instance is connected. For this
 	// version, only a single network is supported.
 	Networks []*NetworkConfig `json:"networks,omitempty"`
+
+	// Protocol: Immutable. The protocol indicates the access protocol for
+	// all shares in the instance. This field is immutable and it cannot be
+	// changed after the instance has been created. Default value: `NFS_V3`.
+	//
+	// Possible values:
+	//   "FILE_PROTOCOL_UNSPECIFIED" - FILE_PROTOCOL_UNSPECIFIED serves a
+	// "not set" default value when a FileProtocol is a separate field in a
+	// message.
+	//   "NFS_V3" - NFS 3.0.
+	//   "NFS_V4_1" - NFS 4.1.
+	Protocol string `json:"protocol,omitempty"`
 
 	// SatisfiesPzs: Output only. Reserved for future use.
 	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
@@ -1071,6 +1149,8 @@ type Instance struct {
 	// performance scaling capabilities.
 	//   "ENTERPRISE" - ENTERPRISE instances offer the features and
 	// availability needed for mission-critical workloads.
+	//   "ZONAL" - ZONAL instances offer expanded capacity and performance
+	// scaling capabilities.
 	Tier string `json:"tier,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the
@@ -1342,7 +1422,7 @@ func (s *ListSnapshotsResponse) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// Location: A resource that represents Google Cloud Platform location.
+// Location: A resource that represents a Google Cloud location.
 type Location struct {
 	// DisplayName: The friendly name for this location, typically a nearby
 	// city name. For example, "Tokyo".
@@ -1392,7 +1472,8 @@ func (s *Location) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// MaintenancePolicy: Defines policies to service maintenance events.
+// MaintenancePolicy: LINT.IfChange Defines policies to service
+// maintenance events.
 type MaintenancePolicy struct {
 	// CreateTime: Output only. The time when the resource was created.
 	CreateTime string `json:"createTime,omitempty"`
@@ -1480,6 +1561,41 @@ type MaintenanceWindow struct {
 
 func (s *MaintenanceWindow) MarshalJSON() ([]byte, error) {
 	type NoMethod MaintenanceWindow
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// ManagedActiveDirectoryConfig: ManagedActiveDirectoryConfig contains
+// all the parameters for connecting to Managed Active Directory.
+type ManagedActiveDirectoryConfig struct {
+	// Computer: The computer name is used as a prefix to the mount remote
+	// target. Example: if the computer_name is `my-computer`, the mount
+	// command will look like: `$mount -o vers=4,sec=krb5
+	// my-computer.filestore.:`.
+	Computer string `json:"computer,omitempty"`
+
+	// Domain: Fully qualified domain name.
+	Domain string `json:"domain,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Computer") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Computer") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *ManagedActiveDirectoryConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ManagedActiveDirectoryConfig
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -1593,6 +1709,21 @@ type NfsExportOptions struct {
 	// NfsExportOptions.
 	IpRanges []string `json:"ipRanges,omitempty"`
 
+	// SecurityFlavors: The security flavors allowed for mount operations.
+	// The default is AUTH_SYS.
+	//
+	// Possible values:
+	//   "SECURITY_FLAVOR_UNSPECIFIED" - SecurityFlavor not set.
+	//   "AUTH_SYS" - The user's UNIX user-id and group-ids are transferred
+	// "in the clear" (not encrypted) on the network, unauthenticated by the
+	// NFS server (default).
+	//   "KRB5" - End-user authentication through Kerberos V5.
+	//   "KRB5I" - krb5 plus integrity protection (data packets are tamper
+	// proof).
+	//   "KRB5P" - krb5i plus privacy protection (data packets are tamper
+	// proof and encrypted).
+	SecurityFlavors []string `json:"securityFlavors,omitempty"`
+
 	// SquashMode: Either NO_ROOT_SQUASH, for allowing root access on the
 	// exported directory, or ROOT_SQUASH, for not allowing root access. The
 	// default is NO_ROOT_SQUASH.
@@ -1653,8 +1784,8 @@ type Operation struct {
 	// `operations/{unique_id}`.
 	Name string `json:"name,omitempty"`
 
-	// Response: The normal response of the operation in case of success. If
-	// the original method returns no data on success, such as `Delete`, the
+	// Response: The normal, successful response of the operation. If the
+	// original method returns no data on success, such as `Delete`, the
 	// response is `google.protobuf.Empty`. If the original method is
 	// standard `Get`/`Create`/`Update`, the response should be the
 	// resource. For other methods, the response should have the type
@@ -1743,10 +1874,10 @@ func (s *OperationMetadata) MarshalJSON() ([]byte, error) {
 }
 
 // RestoreInstanceRequest: RestoreInstanceRequest restores an existing
-// instance's file share from a snapshot or backup.
+// instance's file share from a backup.
 type RestoreInstanceRequest struct {
 	// FileShare: Required. Name of the file share in the Filestore instance
-	// that the snapshot is being restored to.
+	// that the backup is being restored to.
 	FileShare string `json:"fileShare,omitempty"`
 
 	// SourceBackup: The resource name of the backup, in the format
@@ -1862,6 +1993,13 @@ func (s *Schedule) MarshalJSON() ([]byte, error) {
 
 // Share: A Filestore share.
 type Share struct {
+	// Backup: Immutable. Full name of the Cloud Filestore Backup resource
+	// that this Share is restored from, in the format of
+	// projects/{project_id}/locations/{location_id}/backups/{backup_id}.
+	// Empty, if the Share is created from scratch and not restored from a
+	// backup.
+	Backup string `json:"backup,omitempty"`
+
 	// CapacityGb: File share capacity in gigabytes (GB). Filestore defines
 	// 1 GB as 1024^3 bytes. Must be greater than 0.
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
@@ -1903,7 +2041,7 @@ type Share struct {
 	// server.
 	googleapi.ServerResponse `json:"-"`
 
-	// ForceSendFields is a list of field names (e.g. "CapacityGb") to
+	// ForceSendFields is a list of field names (e.g. "Backup") to
 	// unconditionally include in API requests. By default, fields with
 	// empty or default values are omitted from API requests. However, any
 	// non-pointer, non-interface field appearing in ForceSendFields will be
@@ -1911,8 +2049,8 @@ type Share struct {
 	// This may be used to include empty fields in Patch requests.
 	ForceSendFields []string `json:"-"`
 
-	// NullFields is a list of field names (e.g. "CapacityGb") to include in
-	// API requests with the JSON null value. By default, fields with empty
+	// NullFields is a list of field names (e.g. "Backup") to include in API
+	// requests with the JSON null value. By default, fields with empty
 	// values are omitted from API requests. However, any field with an
 	// empty value appearing in NullFields will be sent to the server as
 	// null. It is an error if a field in this list has a non-empty value.
@@ -2096,9 +2234,9 @@ type UpdatePolicy struct {
 	Channel string `json:"channel,omitempty"`
 
 	// DenyMaintenancePeriods: Deny Maintenance Period that is applied to
-	// resource to indicate when maintenance is forbidden. User can specify
-	// zero or more non-overlapping deny periods. Maximum number of
-	// deny_maintenance_periods expected is one.
+	// resource to indicate when maintenance is forbidden. The protocol
+	// supports zero-to-many such periods, but the current SLM Rollout
+	// implementation only supports zero-to-one.
 	DenyMaintenancePeriods []*DenyMaintenancePeriod `json:"denyMaintenancePeriods,omitempty"`
 
 	// Window: Optional. Maintenance window that is applied to resources
@@ -2540,7 +2678,7 @@ type ProjectsLocationsBackupsCreateCall struct {
 //
 //   - parent: The backup's project and location, in the format
 //     `projects/{project_id}/locations/{location}`. In Filestore, backup
-//     locations map to GCP regions, for example **us-west1**.
+//     locations map to Google Cloud regions, for example **us-west1**.
 func (r *ProjectsLocationsBackupsService) Create(parent string, backup *Backup) *ProjectsLocationsBackupsCreateCall {
 	c := &ProjectsLocationsBackupsCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -2663,7 +2801,7 @@ func (c *ProjectsLocationsBackupsCreateCall) Do(opts ...googleapi.CallOption) (*
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The backup's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to GCP regions, for example **us-west1**.",
+	//       "description": "Required. The backup's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to Google Cloud regions, for example **us-west1**.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -2981,9 +3119,9 @@ type ProjectsLocationsBackupsListCall struct {
 //   - parent: The project and location for which to retrieve backup
 //     information, in the format
 //     `projects/{project_id}/locations/{location}`. In Filestore, backup
-//     locations map to GCP regions, for example **us-west1**. To retrieve
-//     backup information for all locations, use "-" for the `{location}`
-//     value.
+//     locations map to Google Cloud regions, for example **us-west1**. To
+//     retrieve backup information for all locations, use "-" for the
+//     `{location}` value.
 func (r *ProjectsLocationsBackupsService) List(parent string) *ProjectsLocationsBackupsListCall {
 	c := &ProjectsLocationsBackupsListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3147,7 +3285,7 @@ func (c *ProjectsLocationsBackupsListCall) Do(opts ...googleapi.CallOption) (*Li
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The project and location for which to retrieve backup information, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to GCP regions, for example **us-west1**. To retrieve backup information for all locations, use \"-\" for the `{location}` value.",
+	//       "description": "Required. The project and location for which to retrieve backup information, in the format `projects/{project_id}/locations/{location}`. In Filestore, backup locations map to Google Cloud regions, for example **us-west1**. To retrieve backup information for all locations, use \"-\" for the `{location}` value.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -3361,7 +3499,7 @@ type ProjectsLocationsInstancesCreateCall struct {
 //
 //   - parent: The instance's project and location, in the format
 //     `projects/{project_id}/locations/{location}`. In Filestore,
-//     locations map to GCP zones, for example **us-west1-b**.
+//     locations map to Google Cloud zones, for example **us-west1-b**.
 func (r *ProjectsLocationsInstancesService) Create(parent string, instance *Instance) *ProjectsLocationsInstancesCreateCall {
 	c := &ProjectsLocationsInstancesCreateCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.parent = parent
@@ -3484,7 +3622,7 @@ func (c *ProjectsLocationsInstancesCreateCall) Do(opts ...googleapi.CallOption) 
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The instance's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, locations map to GCP zones, for example **us-west1-b**.",
+	//       "description": "Required. The instance's project and location, in the format `projects/{project_id}/locations/{location}`. In Filestore, locations map to Google Cloud zones, for example **us-west1-b**.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -3816,8 +3954,8 @@ type ProjectsLocationsInstancesListCall struct {
 //   - parent: The project and location for which to retrieve instance
 //     information, in the format
 //     `projects/{project_id}/locations/{location}`. In Cloud Filestore,
-//     locations map to GCP zones, for example **us-west1-b**. To retrieve
-//     instance information for all locations, use "-" for the
+//     locations map to Google Cloud zones, for example **us-west1-b**. To
+//     retrieve instance information for all locations, use "-" for the
 //     `{location}` value.
 func (r *ProjectsLocationsInstancesService) List(parent string) *ProjectsLocationsInstancesListCall {
 	c := &ProjectsLocationsInstancesListCall{s: r.s, urlParams_: make(gensupport.URLParams)}
@@ -3982,7 +4120,7 @@ func (c *ProjectsLocationsInstancesListCall) Do(opts ...googleapi.CallOption) (*
 	//       "type": "string"
 	//     },
 	//     "parent": {
-	//       "description": "Required. The project and location for which to retrieve instance information, in the format `projects/{project_id}/locations/{location}`. In Cloud Filestore, locations map to GCP zones, for example **us-west1-b**. To retrieve instance information for all locations, use \"-\" for the `{location}` value.",
+	//       "description": "Required. The project and location for which to retrieve instance information, in the format `projects/{project_id}/locations/{location}`. In Cloud Filestore, locations map to Google Cloud zones, for example **us-west1-b**. To retrieve instance information for all locations, use \"-\" for the `{location}` value.",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+$",
 	//       "required": true,
@@ -6558,14 +6696,7 @@ type ProjectsLocationsOperationsListCall struct {
 
 // List: Lists operations that match the specified filter in the
 // request. If the server doesn't support this method, it returns
-// `UNIMPLEMENTED`. NOTE: the `name` binding allows API services to
-// override the binding to use different resource name schemes, such as
-// `users/*/operations`. To override the binding, API services can add a
-// binding such as "/v1/{name=users/*}/operations" to their service
-// configuration. For backwards compatibility, the default name includes
-// the operations collection id, however overriding users must ensure
-// the name binding is the parent resource, without the operations
-// collection id.
+// `UNIMPLEMENTED`.
 //
 // - name: The name of the operation's parent resource.
 func (r *ProjectsLocationsOperationsService) List(name string) *ProjectsLocationsOperationsListCall {
@@ -6694,7 +6825,7 @@ func (c *ProjectsLocationsOperationsListCall) Do(opts ...googleapi.CallOption) (
 	}
 	return ret, nil
 	// {
-	//   "description": "Lists operations that match the specified filter in the request. If the server doesn't support this method, it returns `UNIMPLEMENTED`. NOTE: the `name` binding allows API services to override the binding to use different resource name schemes, such as `users/*/operations`. To override the binding, API services can add a binding such as `\"/v1/{name=users/*}/operations\"` to their service configuration. For backwards compatibility, the default name includes the operations collection id, however overriding users must ensure the name binding is the parent resource, without the operations collection id.",
+	//   "description": "Lists operations that match the specified filter in the request. If the server doesn't support this method, it returns `UNIMPLEMENTED`.",
 	//   "flatPath": "v1beta1/projects/{projectsId}/locations/{locationsId}/operations",
 	//   "httpMethod": "GET",
 	//   "id": "file.projects.locations.operations.list",
