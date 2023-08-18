@@ -1524,6 +1524,17 @@ func TestDeleteSnapshot(t *testing.T) {
 			expectErr: false,
 		},
 		{
+			name: "Create mutltishare snapshot and delete it",
+			createReq: &csi.CreateSnapshotRequest{
+				SourceVolumeId: fmt.Sprintf("modeMultishare/%s/%s/%s", zone, instanceName, shareName),
+				Name:           backupName,
+			},
+			deleteReq: &csi.DeleteSnapshotRequest{
+				SnapshotId: fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, region, backupName),
+			},
+			expectErr: false,
+		},
+		{
 			name: "Backup is already in state DELETING. Expect error",
 			createReq: &csi.CreateSnapshotRequest{
 				SourceVolumeId: fmt.Sprintf("modeInstance/%s/%s/%s", zone, instanceName, shareName),
@@ -1546,13 +1557,14 @@ func TestDeleteSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to get cloud provider: %v", err)
 		}
-		cs := newControllerServer(&controllerServerConfig{
-			driver:      initTestDriver(t),
-			fileService: fileService,
-			cloud:       cloudProvider,
-			volumeLocks: util.NewVolumeLocks(),
-		})
 
+		cs := newControllerServer(&controllerServerConfig{
+			driver:           initTestDriver(t),
+			fileService:      fileService,
+			cloud:            cloudProvider,
+			volumeLocks:      util.NewVolumeLocks(),
+			enableMultishare: true,
+		})
 		_, err = cs.CreateSnapshot(context.TODO(), test.createReq)
 		if err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
