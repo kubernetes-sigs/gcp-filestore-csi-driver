@@ -124,8 +124,9 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	if err := m.driver.validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	if req.GetVolumeContentSource() != nil {
-		return nil, status.Error(codes.InvalidArgument, "Multishare backed volumes do not support volume content source")
+	sourceSnapshotId, err := m.checkVolumeContentSource(ctx, req)
+	if err != nil {
+		return nil, err
 	}
 
 	instanceScPrefix, err := getInstanceSCLabel(req)
@@ -155,7 +156,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 	defer m.volumeLocks.Release(name)
 
-	// If no eligible instance found, the ops manager may decide to create a new instance. Prepare a multishare instacne object for such a scenario.
+	// If no eligible instance found, the ops manager may decide to create a new instance. Prepare a multishare instance object for such a scenario.
 	instance, err := m.generateNewMultishareInstance(util.NewMultishareInstancePrefix+string(uuid.NewUUID()), req, maxSharesPerInstance)
 	if err != nil {
 		return nil, file.StatusError(err)
@@ -173,7 +174,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		instance.Description = fmt.Sprintf(ecfsCustom100sharesConfigFormat, sharesPerInstance, minShareSizeGB)
 	}
 
-	workflow, share, err := m.opsManager.setupEligibleInstanceAndStartWorkflow(ctx, req, instance)
+	workflow, share, err := m.opsManager.setupEligibleInstanceAndStartWorkflow(ctx, req, instance, sourceSnapshotId)
 	if err != nil {
 		return nil, file.StatusError(err)
 	}
@@ -199,7 +200,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	var newShare *file.Share
 	switch workflow.opType {
 	case util.InstanceCreate, util.InstanceUpdate:
-		newShare, err = generateNewShare(util.ConvertVolToShareName(req.Name), workflow.instance, req)
+		newShare, err = generateNewShare(util.ConvertVolToShareName(req.Name), workflow.instance, req, sourceSnapshotId)
 		if err != nil {
 			return nil, file.StatusError(err)
 		}
@@ -612,7 +613,30 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	return f, nil
 }
 
-func generateNewShare(name string, parent *file.MultishareInstance, req *csi.CreateVolumeRequest) (*file.Share, error) {
+func (m *MultishareController) checkVolumeContentSource(ctx context.Context, req *csi.CreateVolumeRequest) (string, error) {
+	if req.GetVolumeContentSource() != nil {
+		if req.GetVolumeContentSource().GetVolume() != nil {
+			return "", status.Error(codes.InvalidArgument, "Unsupported volume content source type \"volume\"")
+		}
+
+		if req.GetVolumeContentSource().GetSnapshot() != nil {
+			id := req.GetVolumeContentSource().GetSnapshot().GetSnapshotId()
+			isBackupSource, err := util.IsBackupHandle(id)
+			if err != nil || !isBackupSource {
+				return "", status.Errorf(codes.InvalidArgument, "Unsupported volume content source %v", id)
+			}
+			_, err = m.cloud.File.GetBackup(ctx, id)
+			if err != nil {
+				klog.Errorf("Failed to get volume %v source snapshot %v: %v", req.GetName(), id, err.Error())
+				return "", file.StatusError(err)
+			}
+			return id, nil
+		}
+	}
+	return "", nil
+
+}
+func generateNewShare(name string, parent *file.MultishareInstance, req *csi.CreateVolumeRequest, sourceSnapshotId string) (*file.Share, error) {
 	if parent == nil {
 		return nil, status.Error(codes.Internal, "parent multishare instance is empty")
 	}
@@ -621,13 +645,16 @@ func generateNewShare(name string, parent *file.MultishareInstance, req *csi.Cre
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	return &file.Share{
+
+	share := &file.Share{
 		Name:           name,
 		Parent:         parent,
 		CapacityBytes:  targetSizeBytes,
 		Labels:         extractShareLabels(req.Parameters),
 		MountPointName: name,
-	}, nil
+		BackupId:       sourceSnapshotId,
+	}
+	return share, nil
 }
 
 func (m *MultishareController) pickRegion(top *csi.TopologyRequirement) (string, error) {
@@ -756,6 +783,16 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 				attrIP: s.Parent.Network.Ip,
 			},
 		},
+	}
+	if s.BackupId != "" {
+		contentSource := &csi.VolumeContentSource{
+			Type: &csi.VolumeContentSource_Snapshot{
+				Snapshot: &csi.VolumeContentSource_SnapshotSource{
+					SnapshotId: s.BackupId,
+				},
+			},
+		}
+		resp.Volume.ContentSource = contentSource
 	}
 	if m.driver.config.FeatureOptions.FeatureLockRelease.Enabled {
 		resp.Volume.VolumeContext[attrSupportLockRelease] = "true"
