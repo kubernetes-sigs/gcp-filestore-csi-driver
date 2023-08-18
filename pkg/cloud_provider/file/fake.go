@@ -385,6 +385,7 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 		CapacityBytes:  obj.CapacityBytes,
 		Labels:         obj.Labels,
 		MountPointName: obj.Name,
+		BackupId:       obj.BackupId,
 		State:          "READY",
 	}
 	manager.createdMultishares[share.Name] = share
