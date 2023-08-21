@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"regexp"
 	"runtime"
@@ -196,6 +197,10 @@ const (
 	fileShareUpdateMask          = "file_shares"
 	multishareCapacityUpdateMask = "capacity_gb"
 	prodBasePath                 = "https://file.googleapis.com/"
+)
+
+const (
+	crdCheckRetryFactor = 1.5
 )
 
 var _ Service = &gcfsServiceManager{}
@@ -561,7 +566,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo 
 	}
 
 	klog.V(4).Infof("For backup uri %s, waiting for backup op %v to complete", backupInfo.BackupURI, opbackup.Name)
-	err = manager.waitForOp(ctx, opbackup)
+	err = manager.waitForOpExponential(ctx, opbackup)
 	if err != nil {
 		return nil, fmt.Errorf("WaitFor CreateBackup op %s for source instance %v, backup uri: %v, operation failed: %w", opbackup.Name, backupInfo.BackupSource(), backupInfo.BackupURI, err)
 	}
@@ -591,6 +596,34 @@ func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId st
 
 	klog.Infof("Backup %v successfully deleted", backupId)
 	return nil
+}
+
+func (manager *gcfsServiceManager) waitForOpExponential(ctx context.Context, op *filev1beta1.Operation) error {
+	crdCheckInitialDurationMs := (5 * time.Second).Milliseconds()
+	maxMs := (5 * time.Minute).Milliseconds()
+	if maxMs < crdCheckInitialDurationMs {
+		maxMs = crdCheckInitialDurationMs
+	}
+	steps := int(math.Ceil(math.Log(float64(maxMs)/float64(crdCheckInitialDurationMs)) / math.Log(crdCheckRetryFactor)))
+	if steps < 1 {
+		steps = 1
+	}
+	backoff := wait.Backoff{
+		Duration: time.Duration(crdCheckInitialDurationMs) * time.Millisecond,
+		Factor:   crdCheckRetryFactor,
+		Steps:    steps,
+	}
+	condition := func() (bool, error) {
+
+		pollOp, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
+		if err != nil {
+			return false, err
+		}
+		return isOpDone(pollOp)
+	}
+
+	return wait.ExponentialBackoff(backoff, condition)
+
 }
 
 func (manager *gcfsServiceManager) waitForOp(ctx context.Context, op *filev1beta1.Operation) error {
