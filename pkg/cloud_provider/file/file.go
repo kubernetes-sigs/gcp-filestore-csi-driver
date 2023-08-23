@@ -58,6 +58,7 @@ type Share struct {
 	MountPointName string
 	Labels         map[string]string
 	CapacityBytes  int64
+	BackupId       string
 }
 
 type MultishareInstance struct {
@@ -1008,6 +1009,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 		CapacityGb: util.BytesToGb(share.CapacityBytes),
 		Labels:     share.Labels,
 		MountName:  share.MountPointName,
+		Backup:     share.BackupId,
 	}
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
