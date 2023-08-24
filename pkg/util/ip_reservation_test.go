@@ -127,6 +127,15 @@ func TestGetUnReservedIPRange(t *testing.T) {
 			errorExpected:                 false,
 		},
 		{
+			name:                          "0 Pending, 0 Used high scale",
+			cidr:                          "192.168.92.0/22",
+			ipRangeSize:                   IpRangeSizeHighScale,
+			pendingIPRanges:               make(map[string]bool),
+			cloudProviderReservedIPRanges: make(map[string]bool),
+			expected:                      "192.168.92.0/24",
+			errorExpected:                 false,
+		},
+		{
 			name:            "0 Pending, 1 /29 Used",
 			cidr:            "192.168.92.0/27",
 			ipRangeSize:     IpRangeSize,

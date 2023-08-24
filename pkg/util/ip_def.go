@@ -22,4 +22,7 @@ const (
 
 	// the ipRangeSize for enterprise tier Filestore instances
 	IpRangeSizeEnterprise = 26
+
+	// the ipRangeSize for High Scale tier Filestore instances
+	IpRangeSizeHighScale = 24
 )
