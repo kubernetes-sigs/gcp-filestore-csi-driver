@@ -1,3 +1,15 @@
+# v1.6.2 - Changelog since v1.6.1
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update go version to 1.20.7 to fix CVE-2023-29409 CVE-2023-39533 ([#592](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/592), [@Sneha-at](https://github.com/Sneha-at))
+
+### Uncategorized
+
+- Now supports tier "zonal" with large band. small band is actively blocked ([#588](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/588), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
 # v1.6.1 - Changelog since v1.6.0
 
 ## Changes by Kind
