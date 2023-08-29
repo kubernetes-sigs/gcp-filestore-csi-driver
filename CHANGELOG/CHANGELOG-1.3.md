@@ -1,6 +1,15 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.17 - Changelog since v1.3.16
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Fix backup source comparison logic for single share instances ([#572](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/572), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+- Update go version to 1.20.6 to fix CVE-2023-29406 ([#578](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/578), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
 # v1.3.16 - Changelog since v1.3.15
 
 ## Changes by Kind

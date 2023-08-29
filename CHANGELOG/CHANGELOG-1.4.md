@@ -1,3 +1,11 @@
+# v1.4.7 - Changelog since v1.4.6
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Improve error code logging ([#574](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/574), [@judemars](https://github.com/judemars))
+
 # v1.4.6 - Changelog since v1.4.5
 
 ## Changes by Kind
