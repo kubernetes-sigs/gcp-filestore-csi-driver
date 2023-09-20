@@ -832,6 +832,30 @@ func TestMultishareCreateVolume(t *testing.T) {
 			errorExpected: true,
 		},
 		{
+			name: "create volume called with volume content source",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				VolumeContentSource: &csi.VolumeContentSource{},
+			},
+			errorExpected: true,
+		},
+		{
 			name: "create volume called with volume size < 100G in limit bytes",
 			req: &csi.CreateVolumeRequest{
 				Name: testVolName,
@@ -1175,6 +1199,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 	}
 }
 
+/*
 func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 	type BackupTestInfo struct {
 		backup *file.BackupInfo
@@ -1589,6 +1614,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 		})
 	}
 }
+*/
 
 func TestMultishareDeleteVolume(t *testing.T) {
 	testVolName := "pvc-" + string(uuid.NewUUID())
@@ -2441,6 +2467,7 @@ func TestParseMaxVolumeSizeParam(t *testing.T) {
 	}
 }
 
+/*
 func TestCreateMultishareSnapshot(t *testing.T) {
 
 	type BackupTestInfo struct {
@@ -2652,3 +2679,4 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 
 	}
 }
+*/

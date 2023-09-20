@@ -124,9 +124,10 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	if err := m.driver.validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
-	sourceSnapshotId, err := m.checkVolumeContentSource(ctx, req)
-	if err != nil {
-		return nil, err
+
+	sourceSnapshotId := ""
+	if req.GetVolumeContentSource() != nil {
+		return nil, status.Error(codes.InvalidArgument, "Multishare backed volumes do not support volume content source")
 	}
 
 	instanceScPrefix, err := getInstanceSCLabel(req)

@@ -869,15 +869,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
 	}
 	if isMultishareVolId(volumeID) {
-		if s.config.multiShareController == nil {
-			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
-		}
-		start := time.Now()
-		response, err := s.config.multiShareController.CreateSnapshot(ctx, req)
-		duration := time.Since(start)
-		s.config.metricsManager.RecordOperationMetrics(err, methodCreateSnapshot, modeMultishare, duration)
-		klog.Infof("CreateSnapshot response %+v error %v, for request %+v", response, err, req)
-		return response, err
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for multishare backed volumes")
 	}
 
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {

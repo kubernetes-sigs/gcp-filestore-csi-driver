@@ -1524,17 +1524,6 @@ func TestDeleteSnapshot(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name: "Create mutltishare snapshot and delete it",
-			createReq: &csi.CreateSnapshotRequest{
-				SourceVolumeId: fmt.Sprintf("modeMultishare/%s/%s/%s", zone, instanceName, shareName),
-				Name:           backupName,
-			},
-			deleteReq: &csi.DeleteSnapshotRequest{
-				SnapshotId: fmt.Sprintf("projects/%s/locations/%s/backups/%s", project, region, backupName),
-			},
-			expectErr: false,
-		},
-		{
 			name: "Backup is already in state DELETING. Expect error",
 			createReq: &csi.CreateSnapshotRequest{
 				SourceVolumeId: fmt.Sprintf("modeInstance/%s/%s/%s", zone, instanceName, shareName),
