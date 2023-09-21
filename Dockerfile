@@ -15,7 +15,7 @@
 ARG BUILDPLATFORM
 
 # Build driver go binary
-FROM --platform=$BUILDPLATFORM golang:1.20.7 as builder
+FROM --platform=$BUILDPLATFORM golang:1.20.8 as builder
 
 ARG STAGINGVERSION
 ARG TARGETPLATFORM
