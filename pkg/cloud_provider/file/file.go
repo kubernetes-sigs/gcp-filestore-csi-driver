@@ -732,7 +732,7 @@ func CodeForError(err error) *codes.Code {
 }
 
 // This function returns the backup URI, the region that was picked to be the backup resource location and error.
-func CreateBackpURI(obj *ServiceInstance, backupName, backupLocation string) (string, string, error) {
+func CreateBackpURI(obj *ServiceInstance, backupName string, backupLocation string) (string, string, error) {
 	region := backupLocation
 	if region == "" {
 		var err error
