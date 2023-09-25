@@ -638,7 +638,8 @@ func isUserError(err error) *codes.Code {
 	// Upwrap the error
 	var apiErr *googleapi.Error
 	if !errors.As(err, &apiErr) {
-		return nil
+		// Fallback to check for expected error code in the error string
+		return containsUserErrStr(err)
 	}
 
 	userErrors := map[int]codes.Code{
@@ -649,6 +650,27 @@ func isUserError(err error) *codes.Code {
 	}
 	if code, ok := userErrors[apiErr.Code]; ok {
 		return &code
+	}
+	return nil
+}
+
+func containsUserErrStr(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
+
+	// Error string picked up from https://cloud.google.com/apis/design/errors#handling_errors
+	if strings.Contains(err.Error(), "PERMISSION_DENIED") {
+		return util.ErrCodePtr(codes.PermissionDenied)
+	}
+	if strings.Contains(err.Error(), "RESOURCE_EXHAUSTED") {
+		return util.ErrCodePtr(codes.ResourceExhausted)
+	}
+	if strings.Contains(err.Error(), "INVALID_ARGUMENT") {
+		return util.ErrCodePtr(codes.InvalidArgument)
+	}
+	if strings.Contains(err.Error(), "NOT_FOUND") {
+		return util.ErrCodePtr(codes.NotFound)
 	}
 	return nil
 }
