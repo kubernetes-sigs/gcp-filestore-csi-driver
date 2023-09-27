@@ -60,6 +60,9 @@ var (
 	descOverrideMinShareSizeGB = flag.String("desc-override-min-shares-size-gb", "", "If non-empty, the filestore instance description override is used to configure min share size. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
 	coreInformerResyncPeriod   = flag.Duration("core-informer-resync-repriod", 15*time.Minute, "Core informer resync period.")
 
+	// Feature multishare backups enabled
+	featureMultishareBackups = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
+
 	// Feature stateful CSI driver specific parameters
 	featureStateful      = flag.Bool("feature-stateful-multishare", false, "if set to true, the controller will run stateful multishare controller, if set to true, enable-multishare must be set to true as well")
 	statefulResyncPeriod = flag.Duration("stateful-resync-period", 15*time.Minute, "Resync interval of the stateful driver.")
@@ -176,6 +179,9 @@ func main() {
 			LeaderElectionLeaseDuration: *leaderElectionLeaseDuration,
 			LeaderElectionRenewDeadline: *leaderElectionRenewDeadline,
 			LeaderElectionRetryPeriod:   *leaderElectionRetryPeriod,
+		},
+		FeatureMultishareBackups: &driver.FeatureMultishareBackups{
+			Enabled: *featureMultishareBackups,
 		},
 	}
 
