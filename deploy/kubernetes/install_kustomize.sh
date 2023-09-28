@@ -7,7 +7,7 @@
 set -o nounset
 set -o errexit
 
-readonly INSTALL_DIR="${GOPATH}/src/sigs.k8s.io/gcp-filestore-csi-driver/bin"
+readonly INSTALL_DIR="${GOPATH}/src/github.com/kubernetes-sigs/gcp-filestore-csi-driver/bin"
 readonly KUSTOMIZE_PATH="${INSTALL_DIR}/kustomize"
 
 if [ ! -f "${INSTALL_DIR}" ]; then
