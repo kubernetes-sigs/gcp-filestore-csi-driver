@@ -3,7 +3,7 @@
 set -o nounset
 set -o errexit
 
-readonly PKGDIR=${GOPATH}/src/sigs.k8s.io/gcp-filestore-csi-driver
+readonly PKGDIR=${GOPATH}/src/github.com/kubernetes-sigs/gcp-filestore-csi-driver
 readonly SCRIPTDIR="$( realpath -s "$(dirname $BASH_SOURCE[0])" )"
 readonly K8S_E2E_SCRIPT_PARENT_DIR="$( realpath -s "$(dirname "$SCRIPTDIR")" )"
 
