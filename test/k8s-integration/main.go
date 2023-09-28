@@ -198,7 +198,7 @@ func handle() error {
 		return fmt.Errorf("could not find env variable GOPATH")
 	}
 	testParams.goPath = goPath
-	testParams.pkgDir = filepath.Join(goPath, "src", "sigs.k8s.io", "gcp-filestore-csi-driver")
+	testParams.pkgDir = filepath.Join(goPath, "src", "github.com", "kubernetes-sigs", "gcp-filestore-csi-driver")
 	// If running in Prow, then acquire and set up a project through Boskos
 	if *inProw {
 		oldProject, err := exec.Command("gcloud", "config", "get-value", "project").CombinedOutput()
