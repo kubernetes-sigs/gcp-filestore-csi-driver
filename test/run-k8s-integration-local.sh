@@ -1,4 +1,4 @@
-readonly PKGDIR=${GOPATH}/src/sigs.k8s.io/gcp-filestore-csi-driver
+readonly PKGDIR=${GOPATH}/src/github.com/kubernetes-sigs/gcp-filestore-csi-driver
 
 # Some commonly run subset of tests focus strings.
 all_external_tests_focus="External.*Storage"
