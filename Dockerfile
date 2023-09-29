@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG BUILDPLATFORM
-
 # Build driver go binary
 FROM --platform=$BUILDPLATFORM golang:1.17.8 as builder
 
