@@ -1,3 +1,15 @@
+# v1.5.8 - Changelog since v1.5.7
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update go version to 1.20.7 to fix CVE-2023-29409 CVE-2023-39533 ([#593](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/593), [@Sneha-at](https://github.com/Sneha-at))
+
+### Uncategorized
+
+- CMEK support now won't be checked in the CSI driver, trying to create basic or premium tier instances with cmek will result in invalid argument error from the Filestore API. high scale tier instance creation with IP reservation is now supported ([#589](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/589), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
 # v1.5.7 - Changelog since v1.5.6
 
 ## Changes by Kind

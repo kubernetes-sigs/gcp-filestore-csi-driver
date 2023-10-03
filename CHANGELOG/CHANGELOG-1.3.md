@@ -1,6 +1,14 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.18 - Changelog since v1.3.17
+
+## Changes by Kind
+
+### Bug or Regression
+
+- Update go version to 1.20.7 to fix CVE-2023-29409 CVE-2023-39533 ([#594](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/594), [@Sneha-at](https://github.com/Sneha-at))
+
 # v1.3.17 - Changelog since v1.3.16
 
 ## Changes by Kind
