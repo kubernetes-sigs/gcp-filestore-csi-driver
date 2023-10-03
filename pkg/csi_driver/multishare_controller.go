@@ -66,6 +66,7 @@ type MultishareController struct {
 	isRegional                 bool
 	clustername                string
 	featureMaxSharePerInstance bool
+	featureMultishareBackups   bool
 
 	// Filestore instance description overrides
 	descOverrideMaxSharesPerInstance string
@@ -99,6 +100,10 @@ func NewMultishareController(config *controllerServerConfig) *MultishareControll
 		c.pvListerSynced = pvInformer.Informer().HasSynced
 	}
 
+	if config.features != nil && config.features.FeatureMultishareBackups != nil {
+		c.featureMultishareBackups = config.features.FeatureMultishareBackups.Enabled
+	}
+
 	return c
 }
 
@@ -124,6 +129,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	if err := m.driver.validateVolumeCapabilities(req.GetVolumeCapabilities()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
 	sourceSnapshotId, err := m.checkVolumeContentSource(ctx, req)
 	if err != nil {
 		return nil, err
@@ -222,6 +228,9 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 }
 
 func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	if !m.featureMultishareBackups {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for multishare backed volumes")
+	}
 	klog.Infof("CreateSnapshot called for multishare with request %+v", req)
 	name := req.GetName()
 	volumeID := req.GetSourceVolumeId()
@@ -615,6 +624,9 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 
 func (m *MultishareController) checkVolumeContentSource(ctx context.Context, req *csi.CreateVolumeRequest) (string, error) {
 	if req.GetVolumeContentSource() != nil {
+		if !m.featureMultishareBackups {
+			return "", status.Error(codes.InvalidArgument, "Multishare backed volumes do not support volume content source")
+		}
 		if req.GetVolumeContentSource().GetVolume() != nil {
 			return "", status.Error(codes.InvalidArgument, "Unsupported volume content source type \"volume\"")
 		}

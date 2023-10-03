@@ -78,6 +78,7 @@ func initTestMultishareControllerWithFeatureOpts(t *testing.T, features *GCFSDri
 	if err != nil {
 		t.Fatalf("Failed to get cloud provider: %v", err)
 	}
+	cloudProvider.File = fileService
 	config := &controllerServerConfig{
 		driver:          initTestDriver(t),
 		fileService:     fileService,
@@ -1194,6 +1195,11 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 			},
 		},
 	}
+	features := &GCFSDriverFeatureOptions{
+		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+	}
 
 	defaultBackup := &BackupTestInfo{
 		backup: &file.BackupInfo{
@@ -1222,8 +1228,37 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 		resp              *csi.CreateVolumeResponse
 		checkOnlyVolidFmt bool
 		initialBackup     *BackupTestInfo
+		features          *GCFSDriverFeatureOptions
 		errorExpected     bool
 	}{
+		{
+			name: "create volume called with volume content source, but multishare backup feature is disabled",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: &GCFSDriverFeatureOptions{
+				FeatureMultishareBackups: &FeatureMultishareBackups{
+					Enabled: false,
+				},
+			},
+			initialBackup:     defaultBackup,
+			checkOnlyVolidFmt: true,
+			errorExpected:     true,
+		},
 		{
 			name: "create volume called with volume content source, no existing instance or share",
 			req: &csi.CreateVolumeRequest{
@@ -1243,6 +1278,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 100 * util.Gb,
@@ -1327,6 +1363,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 100 * util.Gb,
@@ -1385,6 +1422,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 100 * util.Gb,
@@ -1463,6 +1501,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 100 * util.Gb,
@@ -1500,6 +1539,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			ops: []OpItem{
 				{
 					id:     "op1",
@@ -1555,6 +1595,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 				cloud:           cloudProvider,
 				volumeLocks:     util.NewVolumeLocks(),
 				ecfsDescription: "",
+				features:        tc.features,
 			}
 			mcs := NewMultishareController(config)
 
@@ -1571,7 +1612,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 			if !tc.errorExpected && err != nil {
 				t.Errorf("unexpected error")
 			}
-			if tc.checkOnlyVolidFmt {
+			if tc.checkOnlyVolidFmt && !tc.errorExpected {
 				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
 					t.Errorf("unexpected vol id %s", resp.Volume.VolumeId)
 				}
@@ -2452,14 +2493,31 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 	defaultSourceVolumeID := modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName
 	defaultBackupUri := fmt.Sprintf("projects/%s/locations/%s/backups/%s", testProject, testRegion, backupName)
 
+	features := &GCFSDriverFeatureOptions{
+		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+	}
 	cases := []struct {
 		name          string
 		req           *csi.CreateSnapshotRequest
 		resp          *csi.CreateSnapshotResponse
 		initialBackup *BackupTestInfo
+		features      *GCFSDriverFeatureOptions
 		expectErr     bool
 	}{
 		//Failure test cases/
+		{
+			name: "Feature multisharebackups is not enabled",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: modeMultishare + "/" + testRegion + "/" + "differnetInstanceName" + "/" + testShareName,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			expectErr: true,
+		},
 		{
 			name: "Existing backup found, with different instance ID, error expected",
 			req: &csi.CreateSnapshotRequest{
@@ -2469,6 +2527,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			initialBackup: &BackupTestInfo{
 				backup: &file.BackupInfo{
 					Project:            testProject,
@@ -2491,6 +2550,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			initialBackup: &BackupTestInfo{
 				backup: &file.BackupInfo{
 					Project:            testProject,
@@ -2513,6 +2573,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			initialBackup: &BackupTestInfo{
 				backup: &file.BackupInfo{
 					Project:            testProject,
@@ -2536,6 +2597,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			initialBackup: &BackupTestInfo{
 				backup: &file.BackupInfo{
 					Project:            testProject,
@@ -2560,6 +2622,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			resp: &csi.CreateSnapshotResponse{
 				Snapshot: &csi.Snapshot{
 					SizeBytes:      1 * util.Tb,
@@ -2579,6 +2642,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					util.VolumeSnapshotTypeKey: "backup",
 				},
 			},
+			features: features,
 			initialBackup: &BackupTestInfo{
 				backup: &file.BackupInfo{
 					Project:            testProject,
@@ -2595,21 +2659,8 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			fileService, err := file.NewFakeService()
-			if err != nil {
-				t.Fatalf("failed to initialize GCFS service: %v", err)
-			}
-
-			cloudProvider, _ := cloud.NewFakeCloud()
-			cloudProvider.File = fileService
-			config := &controllerServerConfig{
-				driver:          initTestDriver(t),
-				fileService:     fileService,
-				cloud:           cloudProvider,
-				volumeLocks:     util.NewVolumeLocks(),
-				ecfsDescription: "",
-			}
-			mcs := NewMultishareController(config)
+			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
+			fileService := m.fileService
 
 			if tc.initialBackup != nil {
 				existingBackup, _ := fileService.CreateBackup(context.TODO(), tc.initialBackup.backup)
@@ -2617,7 +2668,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 					existingBackup.State = tc.initialBackup.state
 				}
 			}
-			resp, err := mcs.CreateSnapshot(context.TODO(), tc.req)
+			resp, err := m.CreateSnapshot(context.TODO(), tc.req)
 			if !tc.expectErr && err != nil {
 				t.Errorf("test %q failed: %v", tc.name, err)
 			}
