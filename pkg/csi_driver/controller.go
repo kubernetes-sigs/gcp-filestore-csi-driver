@@ -42,6 +42,7 @@ const (
 	basicHDDTier   = "basic_hdd"
 	basicSSDTier   = "basic_ssd"
 	highScaleTier  = "high_scale_ssd"
+	zonalTier      = "zonal"
 	defaultNetwork = "default"
 
 	defaultTierMinSize    = 1 * util.Tb
@@ -50,6 +51,8 @@ const (
 	enterpriseTierMaxSize = 10 * util.Tb
 	highScaleTierMinSize  = 10 * util.Tb
 	highScaleTierMaxSize  = 100 * util.Tb
+	zonalTierMinSize      = 1 * util.Tb
+	zonalTierMaxSize      = 100 * util.Tb
 	premiumTierMinSize    = 25 * util.Tb / 10
 	premiumTierMaxSize    = 639 * util.Tb / 10
 
@@ -185,6 +188,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+
+	// we do not yet support zonal small
+	if tier == zonalTier && capBytes < highScaleTierMinSize {
+		return nil, status.Error(codes.InvalidArgument, "gke does not support zonal small band yet.")
+	}
+
 	klog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
@@ -303,7 +312,7 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 	if filer.Tier == enterpriseTier {
 		ipRangeSize = util.IpRangeSizeEnterprise
 	}
-	if filer.Tier == highScaleTier {
+	if filer.Tier == highScaleTier || filer.Tier == zonalTier {
 		ipRangeSize = util.IpRangeSizeHighScale
 	}
 	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
@@ -467,8 +476,7 @@ func getTierFromParams(params map[string]string) string {
 }
 
 // validator function to check for invalid capacity size requests
-func invalidCapacityRange(capRange *csi.CapacityRange, tier string) error {
-	validRange := provisionableCapacityForTier(tier)
+func invalidCapacityRange(capRange *csi.CapacityRange, tier string, validRange *capacityRangeForTier) error {
 
 	requiredCap := capRange.GetRequiredBytes()
 	requireSet := requiredCap > 0
@@ -504,15 +512,17 @@ func invalidCapacityRange(capRange *csi.CapacityRange, tier string) error {
 }
 
 // init function to get min and max volume sizes per tier
-func provisionableCapacityForTier(tier string) capacityRangeForTier {
+func provisionableCapacityForTier(tier string) *capacityRangeForTier {
 	defaultRange := capacityRangeForTier{min: defaultTierMinSize, max: defaultTierMaxSize}
 	enterpriseRange := capacityRangeForTier{min: enterpriseTierMinSize, max: enterpriseTierMaxSize}
 	highScaleRange := capacityRangeForTier{min: highScaleTierMinSize, max: highScaleTierMaxSize}
 	premiumRange := capacityRangeForTier{min: premiumTierMinSize, max: premiumTierMaxSize}
+	zonalRange := capacityRangeForTier{min: zonalTierMinSize, max: zonalTierMaxSize}
 	provisionableCapacityForTier := map[string]capacityRangeForTier{
 		defaultTier:    defaultRange,
 		enterpriseTier: enterpriseRange,
 		highScaleTier:  highScaleRange,
+		zonalTier:      zonalRange,
 		premiumTier:    premiumRange,
 		basicSSDTier:   premiumRange, //these two are aliases
 		basicHDDTier:   defaultRange, //these two are aliases
@@ -522,7 +532,7 @@ func provisionableCapacityForTier(tier string) capacityRangeForTier {
 	if !ok {
 		validRange = provisionableCapacityForTier[defaultTier]
 	}
-	return validRange
+	return &validRange
 }
 
 // getRequestCapacity returns the volume size that should be provisioned
@@ -533,7 +543,7 @@ func getRequestCapacity(capRange *csi.CapacityRange, tier string) (int64, error)
 		return validRange.min, nil
 	}
 
-	if err := invalidCapacityRange(capRange, tier); err != nil {
+	if err := invalidCapacityRange(capRange, tier, validRange); err != nil {
 		return 0, err
 	}
 
