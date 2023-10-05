@@ -1,6 +1,19 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.21 - Changelog since v1.3.18
+## Changes by Kind
+
+### Uncategorized
+
+- Bump go version to 1.20.8 ([#607](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/607))
+- Remove ARG BUILDPLATFORM from Dockerfile ([#615](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/615))
+- Make pkgdir match k8s_e2e dir ([#622](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/622))
+- Bump webhook go version to 1.20.8 ([#634](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/634))
+- Handle user error which is not wrapped as googleapi.Err ([#601](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/601))
+- Enable parsing regional backup location ([#600](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/601))
+- Check min and max capacity per tier ([#629](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/601))
+
 # v1.3.18 - Changelog since v1.3.17
 
 ## Changes by Kind
