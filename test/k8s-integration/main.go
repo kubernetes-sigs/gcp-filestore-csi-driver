@@ -100,7 +100,7 @@ type testParameters struct {
 }
 
 func init() {
-	flag.Set("logtostderr", "true")
+	// flag.Set("logtostderr", "true")
 }
 
 func main() {
