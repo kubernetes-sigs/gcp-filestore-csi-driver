@@ -1,3 +1,12 @@
+# v1.5.11 - Changelog since v1.5.8
+## Changes by Kind
+
+### Uncategorized
+- Bump go version to 1.20.8 ([#607](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/607))
+- Remove ARG BUILDPLATFORM from Dockerfile ([#615](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/615))
+- Make pkgdir match k8s_e2e dir ([#622](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/622))
+- Bump webhook go version to 1.20.8 ([#634](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/634))
+
 # v1.5.8 - Changelog since v1.5.7
 
 ## Changes by Kind
