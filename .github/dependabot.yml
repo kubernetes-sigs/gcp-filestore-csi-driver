@@ -1,0 +1,54 @@
+version: 2
+enable-beta-ecosystems: true
+updates:
+- package-ecosystem: "docker"
+  directory: "/"
+  schedule:
+    interval: weekly
+  labels:
+    - "area/dependency"
+    - "release-note-none"
+    - "ok-to-test"
+    - "kind/cleanup"
+- package-ecosystem: "docker"
+  directory: "/cmd/webhook"
+  schedule:
+    interval: weekly
+  labels:
+    - "area/dependency"
+    - "release-note-none"
+    - "ok-to-test"
+    - "kind/cleanup"
+- package-ecosystem: gomod
+  directory: "/"
+  allow:
+  - dependency-type: "all"
+  schedule:
+    interval: weekly
+  groups:
+    github-google:
+      patterns:
+        - "github.com/google*"
+    golang-x:
+      patterns:
+        - "golang.org/x*"
+    google-golang:
+      patterns:
+        - "google.golang.org*"
+    onsi:
+      patterns:
+        - "github.com/onsi*"
+    spf13:
+      patterns:
+        - "github.com/spf13*"
+    k8s-dependencies:
+      patterns:
+        - "k8s.io*"
+        - "sigs.k8s.io*"
+        - "github.com/kubernetes-csi*"
+  labels:
+    - "area/dependency"
+    - "release-note-none"
+    - "ok-to-test"
+    - "kind/cleanup"
+  open-pull-requests-limit: 10
