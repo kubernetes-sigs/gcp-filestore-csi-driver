@@ -39,7 +39,7 @@ func GCFSClientAndDriverSetup(instance *remote.InstanceInfo) (*remote.TestContex
 	if !ok {
 		return nil, fmt.Errorf("Could not find environment variable GOPATH")
 	}
-	pkgPath := path.Join(goPath, "src/sigs.k8s.io/gcp-filestore-csi-driver/")
+	pkgPath := path.Join(goPath, "src/github.com/kubernetes-sigs/gcp-filestore-csi-driver/")
 	binPath := path.Join(pkgPath, "bin/gcp-filestore-csi-driver")
 
 	// Install NFS Libraries
