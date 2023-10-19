@@ -15,9 +15,9 @@ require (
 	github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
 	github.com/spf13/cobra v1.6.0
 	github.com/spf13/pflag v1.0.5
-	golang.org/x/net v0.7.0
+	golang.org/x/net v0.17.0
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.13.0
 	google.golang.org/api v0.103.0
 	google.golang.org/genproto v0.0.0-20221202195650-67e5cbc046fd
 	google.golang.org/grpc v1.51.0
@@ -75,8 +75,8 @@ require (
 	github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/term v0.5.0 // indirect
-	golang.org/x/text v0.7.0 // indirect
+	golang.org/x/term v0.13.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/time v0.0.0-20220411224347-583f2d630306 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	gopkg.in/check.v1 v1.0.0-20200902074654-038fdea0a05b // indirect
