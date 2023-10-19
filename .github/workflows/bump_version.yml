@@ -2,9 +2,9 @@ name: Bump version
 on:
   pull_request:
     types:
-      - merged
+      - closed
     branches:
-      - 'release-*'
+      - 'release-1.4'
 
 jobs:
   build:
