@@ -3,8 +3,10 @@ on:
   pull_request:
     types:
       - closed
+      - merged
     branches:
       - 'release-*'
+      - master
 
 jobs:
   build:
