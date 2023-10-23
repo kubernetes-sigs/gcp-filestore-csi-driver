@@ -27,7 +27,7 @@ require (
 	k8s.io/apimachinery v0.26.0
 	k8s.io/client-go v11.0.1-0.20190805182717-6502b5e7b1b5+incompatible
 	k8s.io/component-base v0.26.0
-	k8s.io/klog/v2 v2.80.1
+	k8s.io/klog/v2 v2.100.1
 	k8s.io/kubernetes v1.24.1
 	k8s.io/mount-utils v0.24.1
 	k8s.io/utils v0.0.0-20221107191617-1a15be271d1d
