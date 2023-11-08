@@ -1,4 +1,4 @@
-// Copyright 2022 Google LLC.
+// Copyright 2023 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -566,7 +566,9 @@ type AutoprovisioningNodePoolDefaults struct {
 	// 'pd-standard'
 	DiskType string `json:"diskType,omitempty"`
 
-	// ImageType: The image type to use for NAP created node.
+	// ImageType: The image type to use for NAP created node. Please see
+	// https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+	// for available image types.
 	ImageType string `json:"imageType,omitempty"`
 
 	// Management: NodeManagement configuration for this NodePool.
@@ -580,9 +582,9 @@ type AutoprovisioningNodePoolDefaults struct {
 	// platform
 	// (https://cloud.google.com/compute/docs/instances/specify-min-cpu-platform).
 	// This field is deprecated, min_cpu_platform should be specified using
-	// https://cloud.google.com/requested-min-cpu-platform label selector on
-	// the pod. To unset the min cpu platform field pass "automatic" as
-	// field value.
+	// `cloud.google.com/requested-min-cpu-platform` label selector on the
+	// pod. To unset the min cpu platform field pass "automatic" as field
+	// value.
 	MinCpuPlatform string `json:"minCpuPlatform,omitempty"`
 
 	// OauthScopes: The set of Google API scopes to be made available on all
@@ -702,8 +704,7 @@ type BinaryAuthorization struct {
 	// EVALUATION_MODE_UNSPECIFIED, this field is ignored.
 	Enabled bool `json:"enabled,omitempty"`
 
-	// EvaluationMode: Mode of operation for binauthz policy evaluation.
-	// Currently the only options are equivalent to enable/disable. If
+	// EvaluationMode: Mode of operation for binauthz policy evaluation. If
 	// unspecified, defaults to DISABLED.
 	//
 	// Possible values:
@@ -1072,6 +1073,11 @@ type Cluster struct {
 	// `https://username:password@endpoint/`. See the `masterAuth` property
 	// of this resource for username and password information.
 	Endpoint string `json:"endpoint,omitempty"`
+
+	// Etag: This checksum is computed by the server based on the value of
+	// cluster fields, and may be sent on update requests to ensure the
+	// client has an up-to-date value before proceeding.
+	Etag string `json:"etag,omitempty"`
 
 	// ExpireTime: [Output only] The time the cluster will be automatically
 	// deleted in RFC3339 (https://www.ietf.org/rfc/rfc3339.txt) text
@@ -1659,7 +1665,7 @@ type ClusterUpdate struct {
 	// from Google Services
 	//   "PRIVATE_IPV6_GOOGLE_ACCESS_TO_GOOGLE" - Enables private IPv6
 	// access to Google Services from GKE
-	//   "PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL" - Enables priate IPv6
+	//   "PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL" - Enables private IPv6
 	// access to and from Google Services
 	DesiredPrivateIpv6GoogleAccess string `json:"desiredPrivateIpv6GoogleAccess,omitempty"`
 
@@ -1681,6 +1687,18 @@ type ClusterUpdate struct {
 	// DesiredShieldedNodes: Configuration for Shielded Nodes.
 	DesiredShieldedNodes *ShieldedNodes `json:"desiredShieldedNodes,omitempty"`
 
+	// DesiredStackType: The desired stack type of the cluster. If a stack
+	// type is provided and does not match the current stack type of the
+	// cluster, update will attempt to change the stack type to the new
+	// type.
+	//
+	// Possible values:
+	//   "STACK_TYPE_UNSPECIFIED" - By default, the clusters will be IPV4
+	// only
+	//   "IPV4" - The value used if the cluster is a IPV4 only
+	//   "IPV4_IPV6" - The value used if the cluster is a dual stack cluster
+	DesiredStackType string `json:"desiredStackType,omitempty"`
+
 	// DesiredTpuConfig: The desired Cloud TPU configuration.
 	DesiredTpuConfig *TpuConfig `json:"desiredTpuConfig,omitempty"`
 
@@ -1698,6 +1716,11 @@ type ClusterUpdate struct {
 
 	// DesiredWorkloadIdentityConfig: Configuration for Workload Identity.
 	DesiredWorkloadIdentityConfig *WorkloadIdentityConfig `json:"desiredWorkloadIdentityConfig,omitempty"`
+
+	// Etag: The current etag of the cluster. If an etag is provided and
+	// does not match the current etag of the cluster, update will be
+	// blocked and an ABORTED error will be returned.
+	Etag string `json:"etag,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "DesiredAddonsConfig")
 	// to unconditionally include in API requests. By default, fields with
@@ -2258,6 +2281,70 @@ type EphemeralStorageConfig struct {
 
 func (s *EphemeralStorageConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod EphemeralStorageConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// EphemeralStorageLocalSsdConfig: EphemeralStorageLocalSsdConfig
+// contains configuration for the node ephemeral storage using Local
+// SSDs.
+type EphemeralStorageLocalSsdConfig struct {
+	// LocalSsdCount: Number of local SSDs to use to back ephemeral storage.
+	// Uses NVMe interfaces. Each local SSD is 375 GB in size. If zero, it
+	// means to disable using local SSDs as ephemeral storage. The limit for
+	// this value is dependent upon the maximum number of disks available on
+	// a machine per zone. See:
+	// https://cloud.google.com/compute/docs/disks/local-ssd for more
+	// information.
+	LocalSsdCount int64 `json:"localSsdCount,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "LocalSsdCount") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "LocalSsdCount") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *EphemeralStorageLocalSsdConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod EphemeralStorageLocalSsdConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// FastSocket: Configuration of Fast Socket feature.
+type FastSocket struct {
+	// Enabled: Whether Fast Socket features are enabled in the node pool.
+	Enabled bool `json:"enabled,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "Enabled") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "Enabled") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *FastSocket) MarshalJSON() ([]byte, error) {
+	type NoMethod FastSocket
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
@@ -3353,6 +3440,41 @@ func (s *ListUsableSubnetworksResponse) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
+// LocalNvmeSsdBlockConfig: LocalNvmeSsdBlockConfig contains
+// configuration for using raw-block local NVMe SSDs
+type LocalNvmeSsdBlockConfig struct {
+	// LocalSsdCount: The number of raw-block local NVMe SSD disks to be
+	// attached to the node. Each local SSD is 375 GB in size. If zero, it
+	// means no raw-block local NVMe SSD disks to be attached to the node.
+	// The limit for this value is dependent upon the maximum number of
+	// disks available on a machine per zone. See:
+	// https://cloud.google.com/compute/docs/disks/local-ssd for more
+	// information.
+	LocalSsdCount int64 `json:"localSsdCount,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "LocalSsdCount") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "LocalSsdCount") to include
+	// in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. However, any field with
+	// an empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *LocalNvmeSsdBlockConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod LocalNvmeSsdBlockConfig
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
 // Location: Location returns the location name, and if the location is
 // recommended for GKE cluster scheduling.
 type Location struct {
@@ -4001,7 +4123,7 @@ type NetworkConfig struct {
 	// from Google Services
 	//   "PRIVATE_IPV6_GOOGLE_ACCESS_TO_GOOGLE" - Enables private IPv6
 	// access to Google Services from GKE
-	//   "PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL" - Enables priate IPv6
+	//   "PRIVATE_IPV6_GOOGLE_ACCESS_BIDIRECTIONAL" - Enables private IPv6
 	// access to and from Google Services
 	PrivateIpv6GoogleAccess string `json:"privateIpv6GoogleAccess,omitempty"`
 
@@ -4219,6 +4341,15 @@ type NodeConfig struct {
 	// disk.
 	EphemeralStorageConfig *EphemeralStorageConfig `json:"ephemeralStorageConfig,omitempty"`
 
+	// EphemeralStorageLocalSsdConfig: Parameters for the node ephemeral
+	// storage using Local SSDs. If unspecified, ephemeral storage is backed
+	// by the boot disk. This field is functionally equivalent to the
+	// ephemeral_storage_config
+	EphemeralStorageLocalSsdConfig *EphemeralStorageLocalSsdConfig `json:"ephemeralStorageLocalSsdConfig,omitempty"`
+
+	// FastSocket: Enable or disable NCCL fast socket for the node pool.
+	FastSocket *FastSocket `json:"fastSocket,omitempty"`
+
 	// GcfsConfig: GCFS (Google Container File System) configs.
 	GcfsConfig *GcfsConfig `json:"gcfsConfig,omitempty"`
 
@@ -4226,7 +4357,9 @@ type NodeConfig struct {
 	Gvnic *VirtualNIC `json:"gvnic,omitempty"`
 
 	// ImageType: The image type to use for this node. Note that for a given
-	// image type, the latest version of it will be used.
+	// image type, the latest version of it will be used. Please see
+	// https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+	// for available image types.
 	ImageType string `json:"imageType,omitempty"`
 
 	// KubeletConfig: Node kubelet configs.
@@ -4244,6 +4377,10 @@ type NodeConfig struct {
 
 	// LinuxNodeConfig: Parameters that can be configured on Linux nodes.
 	LinuxNodeConfig *LinuxNodeConfig `json:"linuxNodeConfig,omitempty"`
+
+	// LocalNvmeSsdBlockConfig: Parameters for using raw-block Local NVMe
+	// SSDs.
+	LocalNvmeSsdBlockConfig *LocalNvmeSsdBlockConfig `json:"localNvmeSsdBlockConfig,omitempty"`
 
 	// LocalSsdCount: The number of local SSD disks to be attached to the
 	// node. The limit for this value is dependent upon the maximum number
@@ -4346,6 +4483,10 @@ type NodeConfig struct {
 	// more information, including usage and the valid values, see:
 	// https://kubernetes.io/docs/concepts/configuration/taint-and-toleration/
 	Taints []*NodeTaint `json:"taints,omitempty"`
+
+	// WindowsNodeConfig: Parameters that can be configured on Windows
+	// nodes.
+	WindowsNodeConfig *WindowsNodeConfig `json:"windowsNodeConfig,omitempty"`
 
 	// WorkloadMetadataConfig: The workload metadata configuration for this
 	// node.
@@ -4622,6 +4763,11 @@ type NodePool struct {
 	// Config: The node configuration of the pool.
 	Config *NodeConfig `json:"config,omitempty"`
 
+	// Etag: This checksum is computed by the server based on the value of
+	// node pool fields, and may be sent on update requests to ensure the
+	// client has an up-to-date value before proceeding.
+	Etag string `json:"etag,omitempty"`
+
 	// InitialNodeCount: The initial node count for the pool. You must
 	// ensure that your Compute Engine resource quota
 	// (https://cloud.google.com/compute/quotas) is sufficient for this
@@ -4703,7 +4849,9 @@ type NodePool struct {
 	// upgrade.
 	UpgradeSettings *UpgradeSettings `json:"upgradeSettings,omitempty"`
 
-	// Version: The version of the Kubernetes of this node.
+	// Version: The version of Kubernetes running on this NodePool's nodes.
+	// If unspecified, it defaults as described here
+	// (https://cloud.google.com/kubernetes-engine/versioning#specifying_node_version).
 	Version string `json:"version,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the
@@ -4888,7 +5036,7 @@ func (s *NodePoolLoggingConfig) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
 
-// NodeTaint: Kubernetes taint is comprised of three fields: key, value,
+// NodeTaint: Kubernetes taint is composed of three fields: key, value,
 // and effect. Effect can only be one of three types: NoSchedule,
 // PreferNoSchedule or NoExecute. See here
 // (https://kubernetes.io/docs/concepts/configuration/taint-and-toleration)
@@ -7171,13 +7319,24 @@ type UpdateNodePoolRequest struct {
 	// node pool will be Confidential VM once enabled.
 	ConfidentialNodes *ConfidentialNodes `json:"confidentialNodes,omitempty"`
 
+	// Etag: The current etag of the node pool. If an etag is provided and
+	// does not match the current etag of the node pool, update will be
+	// blocked and an ABORTED error will be returned.
+	Etag string `json:"etag,omitempty"`
+
+	// FastSocket: Enable or disable NCCL fast socket for the node pool.
+	FastSocket *FastSocket `json:"fastSocket,omitempty"`
+
 	// GcfsConfig: GCFS config.
 	GcfsConfig *GcfsConfig `json:"gcfsConfig,omitempty"`
 
 	// Gvnic: Enable or disable gvnic on the node pool.
 	Gvnic *VirtualNIC `json:"gvnic,omitempty"`
 
-	// ImageType: Required. The desired image type for the node pool.
+	// ImageType: Required. The desired image type for the node pool. Please
+	// see
+	// https://cloud.google.com/kubernetes-engine/docs/concepts/node-images
+	// for available image types.
 	ImageType string `json:"imageType,omitempty"`
 
 	// KubeletConfig: Node kubelet configs.
@@ -7251,6 +7410,10 @@ type UpdateNodePoolRequest struct {
 	// UpgradeSettings: Upgrade settings control disruption and speed of the
 	// upgrade.
 	UpgradeSettings *UpgradeSettings `json:"upgradeSettings,omitempty"`
+
+	// WindowsNodeConfig: Parameters that can be configured on Windows
+	// nodes.
+	WindowsNodeConfig *WindowsNodeConfig `json:"windowsNodeConfig,omitempty"`
 
 	// WorkloadMetadataConfig: The desired workload metadata config for the
 	// node pool.
@@ -7423,7 +7586,9 @@ type UpgradeSettings struct {
 	// Strategy: Update strategy of the node pool.
 	//
 	// Possible values:
-	//   "NODE_POOL_UPDATE_STRATEGY_UNSPECIFIED" - Default value.
+	//   "NODE_POOL_UPDATE_STRATEGY_UNSPECIFIED" - Default value if unset.
+	// GKE internally defaults the update strategy to SURGE for unspecified
+	// strategies.
 	//   "BLUE_GREEN" - blue-green upgrade.
 	//   "SURGE" - SURGE is the traditional way of upgrading a node pool.
 	// max_surge and max_unavailable determines the level of upgrade
@@ -7610,6 +7775,44 @@ type VirtualNIC struct {
 
 func (s *VirtualNIC) MarshalJSON() ([]byte, error) {
 	type NoMethod VirtualNIC
+	raw := NoMethod(*s)
+	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
+}
+
+// WindowsNodeConfig: Parameters that can be configured on Windows
+// nodes. Windows Node Config that define the parameters that will be
+// used to configure the Windows node pool settings
+type WindowsNodeConfig struct {
+	// OsVersion: OSVersion specifies the Windows node config to be used on
+	// the node
+	//
+	// Possible values:
+	//   "OS_VERSION_UNSPECIFIED" - When OSVersion is not specified
+	//   "OS_VERSION_LTSC2019" - LTSC2019 specifies to use LTSC2019 as the
+	// Windows Servercore Base Image
+	//   "OS_VERSION_LTSC2022" - LTSC2022 specifies to use LTSC2022 as the
+	// Windows Servercore Base Image
+	OsVersion string `json:"osVersion,omitempty"`
+
+	// ForceSendFields is a list of field names (e.g. "OsVersion") to
+	// unconditionally include in API requests. By default, fields with
+	// empty or default values are omitted from API requests. However, any
+	// non-pointer, non-interface field appearing in ForceSendFields will be
+	// sent to the server regardless of whether the field is empty or not.
+	// This may be used to include empty fields in Patch requests.
+	ForceSendFields []string `json:"-"`
+
+	// NullFields is a list of field names (e.g. "OsVersion") to include in
+	// API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. However, any field with an
+	// empty value appearing in NullFields will be sent to the server as
+	// null. It is an error if a field in this list has a non-empty value.
+	// This may be used to include null fields in Patch requests.
+	NullFields []string `json:"-"`
+}
+
+func (s *WindowsNodeConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod WindowsNodeConfig
 	raw := NoMethod(*s)
 	return gensupport.MarshalJSON(raw, s.ForceSendFields, s.NullFields)
 }
