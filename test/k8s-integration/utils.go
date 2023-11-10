@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 
@@ -30,7 +29,7 @@ func runCommand(action string, cmd *exec.Cmd) error {
 }
 
 func generateUniqueTmpDir() string {
-	dir, err := ioutil.TempDir("", "gcp-fs-driver-tmp")
+	dir, err := os.MkdirTemp("", "gcp-fs-driver-tmp")
 	if err != nil {
 		klog.Fatalf("Error creating temp dir: %v", err)
 	}
