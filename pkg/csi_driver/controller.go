@@ -17,6 +17,8 @@ limitations under the License.
 package driver
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -81,6 +83,7 @@ const (
 	paramMultishare                = "multishare"
 	ParamInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
 	ParamMultishareInstanceScLabel = "instance-storageclass-label"
+	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
@@ -587,6 +590,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 
 	// Set default parameters
 	tier := defaultTier
+	var nfsExportOptions []*file.NfsExportOptions
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
@@ -603,6 +607,11 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 					return nil, fmt.Errorf("failed to get region from zone %s: %w", location, err)
 				}
 				location = region
+			}
+		case ParamNfsExportOptions:
+			nfsExportOptions, err = parseNfsExportOptions(v)
+			if err != nil {
+				return nil, fmt.Errorf("Failed to parse nfs-export-options-on-create %s: %v", v, err)
 			}
 		case paramNetwork:
 			network = v
@@ -637,7 +646,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			Name:      newInstanceVolume,
 			SizeBytes: capBytes,
 		},
-		KmsKeyName: kmsKeyName,
+		KmsKeyName:       kmsKeyName,
+		NfsExportOptions: nfsExportOptions,
 	}, nil
 }
 
@@ -1014,4 +1024,22 @@ func (s *controllerServer) DeleteSnapshot(ctx context.Context, req *csi.DeleteSn
 	}
 
 	return &csi.DeleteSnapshotResponse{}, nil
+}
+
+func parseNfsExportOptions(optionsString string) ([]*file.NfsExportOptions, error) {
+	if optionsString == "" {
+		return nil, nil
+	}
+	var parsedOptions []*file.NfsExportOptions
+	err := strictUnmarshal([]byte(optionsString), &parsedOptions)
+	if err != nil {
+		return nil, err
+	}
+	return parsedOptions, nil
+}
+
+func strictUnmarshal(data []byte, v interface{}) error {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	return dec.Decode(v)
 }

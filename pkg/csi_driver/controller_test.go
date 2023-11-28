@@ -106,11 +106,12 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 	}
 
 	cases := []struct {
-		name          string
-		req           *csi.CreateVolumeRequest
-		resp          *csi.CreateVolumeResponse
-		initialBackup *BackupInfo
-		expectErr     bool
+		name            string
+		req             *csi.CreateVolumeRequest
+		resp            *csi.CreateVolumeResponse
+		initialBackup   *BackupInfo
+		expectedOptions []*file.NfsExportOptions
+		expectErr       bool
 	}{
 		{
 			name: "from default tier snapshot",
@@ -253,6 +254,87 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
 			},
 		},
+		{
+			name: "from enterprise tier snapshot and nfsExportOptions set",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": enterpriseTier,
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+						}
+					]`,
+				},
+				VolumeCapabilities: volumeCapabilities,
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: testBytes,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:     testIP,
+						attrVolume: newInstanceVolume,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+				{
+					AccessMode: "READ_ONLY",
+					IpRanges:   []string{"10.0.0.0/28"},
+					SquashMode: "NO_ROOT_SQUASH",
+				},
+			},
+			initialBackup: &BackupInfo{
+				s: &file.ServiceInstance{
+					Project:  testProject,
+					Location: testRegion,
+					Name:     instanceName,
+					Tier:     enterpriseTier,
+					Volume: file.Volume{
+						Name:      shareName,
+						SizeBytes: testBytes,
+					},
+				},
+				backupName:     backupName,
+				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
+			},
+		},
 	}
 
 	for _, test := range cases {
@@ -280,6 +362,18 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed; got success", test.name)
 		}
+		if !test.expectErr && test.req.Parameters[ParamNfsExportOptions] != "" {
+			instance, err := cs.config.fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
+			if err != nil {
+				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, resp.Volume.VolumeId, err)
+				return
+			}
+			for i := range test.expectedOptions {
+				if !reflect.DeepEqual(instance.NfsExportOptions[i], test.expectedOptions[i]) {
+					t.Errorf("test %q failed; nfs export options not equal at index %d: got %+v, expected %+v", test.name, i, instance.NfsExportOptions[i], test.expectedOptions[i])
+				}
+			}
+		}
 		if !reflect.DeepEqual(resp, test.resp) {
 			t.Errorf("test %q failed: got resp %+v, expected %+v", test.name, resp, test.resp)
 		}
@@ -288,10 +382,11 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 
 func TestCreateVolume(t *testing.T) {
 	cases := []struct {
-		name      string
-		req       *csi.CreateVolumeRequest
-		resp      *csi.CreateVolumeResponse
-		expectErr bool
+		name            string
+		req             *csi.CreateVolumeRequest
+		resp            *csi.CreateVolumeResponse
+		expectErr       bool
+		expectedOptions []*file.NfsExportOptions
 	}{
 		{
 			name: "valid defaults",
@@ -319,6 +414,7 @@ func TestCreateVolume(t *testing.T) {
 				},
 			},
 		},
+		// Failure Scenarios
 		{
 			name: "name empty",
 			req: &csi.CreateVolumeRequest{
@@ -373,11 +469,88 @@ func TestCreateVolume(t *testing.T) {
 		// TODO: instance already exists error
 		// TODO: instance already exists invalid
 		// TODO: instance already exists valid
+		// Success Scenarios
+		{
+			name: "adding nfs-export-options",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				Parameters: map[string]string{
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+						}
+					]`,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+				{
+					AccessMode: "READ_ONLY",
+					IpRanges:   []string{"10.0.0.0/28"},
+					SquashMode: "NO_ROOT_SQUASH",
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:     testIP,
+						attrVolume: newInstanceVolume,
+					},
+				},
+			},
+		},
 	}
 
 	for _, test := range cases {
-		cs := initTestController(t)
+		fileService, err := file.NewFakeService()
+		if err != nil {
+			t.Fatalf("failed to initialize GCFS service: %v", err)
+		}
+
+		cloudProvider, err := cloud.NewFakeCloud()
+		if err != nil {
+			t.Fatalf("Failed to get cloud provider: %v", err)
+		}
+		cs := newControllerServer(&controllerServerConfig{
+			driver:      initTestDriver(t),
+			fileService: fileService,
+			cloud:       cloudProvider,
+			volumeLocks: util.NewVolumeLocks(),
+			features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		})
 		resp, err := cs.CreateVolume(context.TODO(), test.req)
+
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}
@@ -386,6 +559,19 @@ func TestCreateVolume(t *testing.T) {
 		}
 		if !reflect.DeepEqual(resp, test.resp) {
 			t.Errorf("test %q failed: got resp %+v, expected %+v", test.name, resp, test.resp)
+		}
+
+		if !test.expectErr && test.req.Parameters[ParamNfsExportOptions] != "" {
+			instance, err := fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
+			if err != nil {
+				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, resp.Volume.VolumeId, err)
+				return
+			}
+			for i := range test.expectedOptions {
+				if !reflect.DeepEqual(instance.NfsExportOptions[i], test.expectedOptions[i]) {
+					t.Errorf("test %q failed; nfs export options not equal at index %d: got %+v, expected %+v", test.name, i, instance.NfsExportOptions[i], test.expectedOptions[i])
+				}
+			}
 		}
 	}
 }
@@ -1731,6 +1917,118 @@ func TestGetCloudInstancesReservedIPRanges(t *testing.T) {
 		}
 		if !reflect.DeepEqual(test.expectIPRange, ipRange) {
 			t.Errorf("test %q failed; expected: %#v; got %#v", test.name, test.expectIPRange, ipRange)
+		}
+	}
+}
+
+func TestParsingNfsExportOptions(t *testing.T) {
+	cases := []struct {
+		name            string
+		optionsString   string
+		expectedOptions []*file.NfsExportOptions
+		expectErr       bool
+	}{
+		{
+			name: "Base case single options",
+			optionsString: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						}
+					]`,
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Base case multiple options",
+			optionsString: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+						}
+					]`,
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+				{
+					AccessMode: "READ_ONLY",
+					IpRanges:   []string{"10.0.0.0/28"},
+					SquashMode: "NO_ROOT_SQUASH",
+				},
+			},
+			expectErr: false,
+		},
+		{
+			name: "Invalid extra keys throw an error",
+			optionsString: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003",
+							"INVALID_KEY": "INVALID_VALUE"
+						}
+					]`,
+			expectErr: true,
+		},
+		{
+			name:            "Empty string returns nil",
+			optionsString:   "",
+			expectedOptions: nil,
+			expectErr:       false,
+		},
+		{
+			name: "Invalid json returns error",
+			optionsString: `
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							`,
+			expectErr: true,
+		},
+	}
+	for _, test := range cases {
+		parsedOptions, err := parseNfsExportOptions(test.optionsString)
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
+		}
+		if !reflect.DeepEqual(test.expectedOptions, parsedOptions) {
+			t.Errorf("test %q failed; expected: %#v; got %#v", test.name, test.expectedOptions, parsedOptions)
 		}
 	}
 }

@@ -570,6 +570,9 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			}
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
+		// Ensure we don't flag the nfsExportOptions param as invalid. Value will be used when creating a new share
+		case ParamNfsExportOptions:
+			continue
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
@@ -657,14 +660,22 @@ func generateNewShare(name string, parent *file.MultishareInstance, req *csi.Cre
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	var nfsExportOptions []*file.NfsExportOptions
+	if req.GetParameters()[ParamNfsExportOptions] != "" {
+		nfsExportOptions, err = parseNfsExportOptions(req.GetParameters()[ParamNfsExportOptions])
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
 
 	share := &file.Share{
-		Name:           name,
-		Parent:         parent,
-		CapacityBytes:  targetSizeBytes,
-		Labels:         extractShareLabels(req.Parameters),
-		MountPointName: name,
-		BackupId:       sourceSnapshotId,
+		Name:             name,
+		Parent:           parent,
+		CapacityBytes:    targetSizeBytes,
+		Labels:           extractShareLabels(req.Parameters),
+		NfsExportOptions: nfsExportOptions,
+		MountPointName:   name,
+		BackupId:         sourceSnapshotId,
 	}
 	return share, nil
 }
