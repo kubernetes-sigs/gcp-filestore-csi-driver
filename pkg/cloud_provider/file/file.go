@@ -50,15 +50,23 @@ type PollOpts struct {
 	Interval time.Duration
 	Timeout  time.Duration
 }
+type NfsExportOptions struct {
+	AccessMode string   `json:"accessMode,omitempty"`
+	AnonGid    int64    `json:"anonGid,omitempty,string"`
+	AnonUid    int64    `json:"anonUid,omitempty,string"`
+	IpRanges   []string `json:"ipRanges,omitempty"`
+	SquashMode string   `json:"squashMode,omitempty"`
+}
 
 type Share struct {
-	Name           string              // only the share name
-	Parent         *MultishareInstance // parent captures the project, location details.
-	State          string
-	MountPointName string
-	Labels         map[string]string
-	CapacityBytes  int64
-	BackupId       string
+	Name             string              // only the share name
+	Parent           *MultishareInstance // parent captures the project, location details.
+	State            string
+	MountPointName   string
+	Labels           map[string]string
+	CapacityBytes    int64
+	BackupId         string
+	NfsExportOptions []*NfsExportOptions
 }
 
 type MultishareInstance struct {
@@ -88,15 +96,16 @@ type ListFilter struct {
 }
 
 type ServiceInstance struct {
-	Project    string
-	Name       string
-	Location   string
-	Tier       string
-	Network    Network
-	Volume     Volume
-	Labels     map[string]string
-	State      string
-	KmsKeyName string
+	Project          string
+	Name             string
+	Location         string
+	Tier             string
+	Network          Network
+	Volume           Volume
+	Labels           map[string]string
+	State            string
+	KmsKeyName       string
+	NfsExportOptions []*NfsExportOptions
 }
 
 type Volume struct {
@@ -255,8 +264,9 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		Tier: obj.Tier,
 		FileShares: []*filev1beta1.FileShareConfig{
 			{
-				Name:       obj.Volume.Name,
-				CapacityGb: util.RoundBytesToGb(obj.Volume.SizeBytes),
+				Name:             obj.Volume.Name,
+				CapacityGb:       util.RoundBytesToGb(obj.Volume.SizeBytes),
+				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
 			},
 		},
 		Networks: []*filev1beta1.NetworkConfig{
@@ -306,9 +316,10 @@ func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 		Tier: obj.Tier,
 		FileShares: []*filev1beta1.FileShareConfig{
 			{
-				Name:         obj.Volume.Name,
-				CapacityGb:   util.RoundBytesToGb(obj.Volume.SizeBytes),
-				SourceBackup: sourceSnapshotId,
+				Name:             obj.Volume.Name,
+				CapacityGb:       util.RoundBytesToGb(obj.Volume.SizeBytes),
+				SourceBackup:     sourceSnapshotId,
+				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
 			},
 		},
 		Networks: []*filev1beta1.NetworkConfig{
@@ -1006,10 +1017,11 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share *Share) (*filev1beta1multishare.Operation, error) {
 	instanceuri := instanceURI(share.Parent.Project, share.Parent.Location, share.Parent.Name)
 	targetshare := &filev1beta1multishare.Share{
-		CapacityGb: util.BytesToGb(share.CapacityBytes),
-		Labels:     share.Labels,
-		MountName:  share.MountPointName,
-		Backup:     share.BackupId,
+		CapacityGb:       util.BytesToGb(share.CapacityBytes),
+		Labels:           share.Labels,
+		MountName:        share.MountPointName,
+		Backup:           share.BackupId,
+		NfsExportOptions: extractNfsShareExportOptions(share.NfsExportOptions),
 	}
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
@@ -1325,4 +1337,19 @@ func GenerateShareURI(s *Share) (string, error) {
 
 func isMultishareVolId(volId string) bool {
 	return strings.Contains(volId, "modeMultishare")
+}
+
+func extractNfsShareExportOptions(options []*NfsExportOptions) []*filev1beta1multishare.NfsExportOptions {
+	var filerOpts []*filev1beta1multishare.NfsExportOptions
+	for _, opt := range options {
+		filerOpts = append(filerOpts,
+			&filev1beta1multishare.NfsExportOptions{
+				AccessMode: opt.AccessMode,
+				AnonGid:    opt.AnonGid,
+				AnonUid:    opt.AnonUid,
+				IpRanges:   opt.IpRanges,
+				SquashMode: opt.SquashMode,
+			})
+	}
+	return filerOpts
 }

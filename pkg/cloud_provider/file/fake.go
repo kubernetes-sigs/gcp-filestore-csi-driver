@@ -91,8 +91,9 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 			Ip:              "1.1.1.1",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
-		Labels: obj.Labels,
-		State:  "READY",
+		Labels:           obj.Labels,
+		State:            "READY",
+		NfsExportOptions: obj.NfsExportOptions,
 	}
 
 	manager.createdInstances[obj.Name] = instance
@@ -219,8 +220,9 @@ func (manager *fakeServiceManager) CreateInstanceFromBackupSource(ctx context.Co
 			Ip:              "1.1.1.1",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
-		Labels: obj.Labels,
-		State:  "READY",
+		Labels:           obj.Labels,
+		State:            "READY",
+		NfsExportOptions: obj.NfsExportOptions,
 	}
 
 	manager.createdInstances[obj.Name] = instance
@@ -380,13 +382,14 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 		State:  "READY",
 	}
 	share := &Share{
-		Name:           obj.Name,
-		Parent:         parent,
-		CapacityBytes:  obj.CapacityBytes,
-		Labels:         obj.Labels,
-		MountPointName: obj.Name,
-		BackupId:       obj.BackupId,
-		State:          "READY",
+		Name:             obj.Name,
+		Parent:           parent,
+		CapacityBytes:    obj.CapacityBytes,
+		Labels:           obj.Labels,
+		MountPointName:   obj.Name,
+		BackupId:         obj.BackupId,
+		State:            "READY",
+		NfsExportOptions: obj.NfsExportOptions,
 	}
 	manager.createdMultishares[share.Name] = share
 
