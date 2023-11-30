@@ -97,6 +97,11 @@ type GCFSDriverFeatureOptions struct {
 	// FeatureMaxSharesPerInstance will enable CSI driver to pack configurable number of max shares per Filestore instance (multishare)
 	FeatureMaxSharesPerInstance *FeatureMaxSharesPerInstance
 	FeatureStateful             *FeatureStateful
+	FeatureMultishareBackups    *FeatureMultishareBackups
+}
+
+type FeatureMultishareBackups struct {
+	Enabled bool
 }
 
 type FeatureStateful struct {

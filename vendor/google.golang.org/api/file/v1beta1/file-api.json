@@ -994,7 +994,7 @@
                   ]
                 },
                 "list": {
-                  "description": "Lists operations that match the specified filter in the request. If the server doesn't support this method, it returns `UNIMPLEMENTED`. NOTE: the `name` binding allows API services to override the binding to use different resource name schemes, such as `users/*/operations`. To override the binding, API services can add a binding such as `\"/v1/{name=users/*}/operations\"` to their service configuration. For backwards compatibility, the default name includes the operations collection id, however overriding users must ensure the name binding is the parent resource, without the operations collection id.",
+                  "description": "Lists operations that match the specified filter in the request. If the server doesn't support this method, it returns `UNIMPLEMENTED`.",
                   "flatPath": "v1beta1/projects/{projectsId}/locations/{locationsId}/operations",
                   "httpMethod": "GET",
                   "id": "file.projects.locations.operations.list",
@@ -1041,7 +1041,7 @@
       }
     }
   },
-  "revision": "20230118",
+  "revision": "20231019",
   "rootUrl": "https://file.googleapis.com/",
   "schemas": {
     "Backup": {
@@ -1108,7 +1108,9 @@
             "BASIC_HDD",
             "BASIC_SSD",
             "HIGH_SCALE_SSD",
-            "ENTERPRISE"
+            "ENTERPRISE",
+            "ZONAL",
+            "REGIONAL"
           ],
           "enumDescriptions": [
             "Not set.",
@@ -1117,7 +1119,9 @@
             "BASIC instances offer a maximum capacity of 63.9 TB. BASIC_HDD is an alias for STANDARD Tier, offering economical performance backed by HDD.",
             "BASIC instances offer a maximum capacity of 63.9 TB. BASIC_SSD is an alias for PREMIUM Tier, and offers improved performance backed by SSD.",
             "HIGH_SCALE instances offer expanded capacity and performance scaling capabilities.",
-            "ENTERPRISE instances offer the features and availability needed for mission-critical workloads."
+            "ENTERPRISE instances offer the features and availability needed for mission-critical workloads.",
+            "ZONAL instances offer expanded capacity and performance scaling capabilities.",
+            "REGIONAL instances offer the features and availability needed for mission-critical workloads."
           ],
           "readOnly": true,
           "type": "string"
@@ -1129,14 +1133,16 @@
             "CREATING",
             "FINALIZING",
             "READY",
-            "DELETING"
+            "DELETING",
+            "INVALID"
           ],
           "enumDescriptions": [
             "State not set.",
             "Backup is being created.",
             "Backup has been taken and the operation is being finalized. At this point, changes to the file share will not be reflected in the backup.",
             "Backup is available for use.",
-            "Backup is being deleted."
+            "Backup is being deleted.",
+            "Backup is not valid and cannot be used for creating new instances or restoring existing instances."
           ],
           "readOnly": true,
           "type": "string"
@@ -1209,6 +1215,17 @@
         "time": {
           "$ref": "TimeOfDay",
           "description": "Time in UTC when the Blackout period starts on start_date and ends on end_date. This can be: * Full time. * All zeros for 00:00:00 UTC"
+        }
+      },
+      "type": "object"
+    },
+    "DirectoryServicesConfig": {
+      "description": "Directory Services configuration for Kerberos-based authentication.",
+      "id": "DirectoryServicesConfig",
+      "properties": {
+        "managedActiveDirectory": {
+          "$ref": "ManagedActiveDirectoryConfig",
+          "description": "Configuration for Managed Service for Microsoft Active Directory."
         }
       },
       "type": "object"
@@ -1374,6 +1391,7 @@
       "id": "GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSchedule",
       "properties": {
         "canReschedule": {
+          "deprecated": true,
           "description": "This field is deprecated, and will be always set to true since reschedule can happen multiple times now. This field should not be removed until all service producers remove this for their customers.",
           "type": "boolean"
         },
@@ -1545,6 +1563,10 @@
           "description": "The description of the instance (2048 characters or less).",
           "type": "string"
         },
+        "directoryServices": {
+          "$ref": "DirectoryServicesConfig",
+          "description": "Directory Services configuration for Kerberos-based authentication. Should only be set if protocol is \"NFS_V4_1\"."
+        },
         "etag": {
           "description": "Server-specified ETag for the instance resource to prevent simultaneous updates from overwriting each other.",
           "type": "string"
@@ -1574,9 +1596,8 @@
           "type": "string"
         },
         "maxShareCount": {
-          "description": "Output only. The max number of shares allowed.",
+          "description": "The max number of shares allowed.",
           "format": "int64",
-          "readOnly": true,
           "type": "string"
         },
         "multiShareEnabled": {
@@ -1675,7 +1696,9 @@
             "BASIC_HDD",
             "BASIC_SSD",
             "HIGH_SCALE_SSD",
-            "ENTERPRISE"
+            "ENTERPRISE",
+            "ZONAL",
+            "REGIONAL"
           ],
           "enumDescriptions": [
             "Not set.",
@@ -1684,7 +1707,9 @@
             "BASIC instances offer a maximum capacity of 63.9 TB. BASIC_HDD is an alias for STANDARD Tier, offering economical performance backed by HDD.",
             "BASIC instances offer a maximum capacity of 63.9 TB. BASIC_SSD is an alias for PREMIUM Tier, and offers improved performance backed by SSD.",
             "HIGH_SCALE instances offer expanded capacity and performance scaling capabilities.",
-            "ENTERPRISE instances offer the features and availability needed for mission-critical workloads."
+            "ENTERPRISE instances offer the features and availability needed for mission-critical workloads.",
+            "ZONAL instances offer expanded capacity and performance scaling capabilities.",
+            "REGIONAL instances offer the features and availability needed for mission-critical workloads."
           ],
           "type": "string"
         }
@@ -1821,7 +1846,7 @@
       "type": "object"
     },
     "Location": {
-      "description": "A resource that represents Google Cloud Platform location.",
+      "description": "A resource that represents a Google Cloud location.",
       "id": "Location",
       "properties": {
         "displayName": {
@@ -1919,6 +1944,21 @@
       },
       "type": "object"
     },
+    "ManagedActiveDirectoryConfig": {
+      "description": "ManagedActiveDirectoryConfig contains all the parameters for connecting to Managed Active Directory.",
+      "id": "ManagedActiveDirectoryConfig",
+      "properties": {
+        "computer": {
+          "description": "The computer name is used as a prefix to the mount remote target. Example: if the computer_name is `my-computer`, the mount command will look like: `$mount -o vers=4,sec=krb5 my-computer.filestore.:`.",
+          "type": "string"
+        },
+        "domain": {
+          "description": "Fully qualified domain name.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "NetworkConfig": {
       "description": "Network configuration for the instance.",
       "id": "NetworkConfig",
@@ -2006,6 +2046,27 @@
           },
           "type": "array"
         },
+        "securityFlavors": {
+          "description": "The security flavors allowed for mount operations. The default is AUTH_SYS.",
+          "items": {
+            "enum": [
+              "SECURITY_FLAVOR_UNSPECIFIED",
+              "AUTH_SYS",
+              "KRB5",
+              "KRB5I",
+              "KRB5P"
+            ],
+            "enumDescriptions": [
+              "SecurityFlavor not set.",
+              "The user's UNIX user-id and group-ids are transferred \"in the clear\" (not encrypted) on the network, unauthenticated by the NFS server (default).",
+              "End-user authentication through Kerberos V5.",
+              "krb5 plus integrity protection (data packets are tamper proof).",
+              "krb5i plus privacy protection (data packets are tamper proof and encrypted)."
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
         "squashMode": {
           "description": "Either NO_ROOT_SQUASH, for allowing root access on the exported directory, or ROOT_SQUASH, for not allowing root access. The default is NO_ROOT_SQUASH.",
           "enum": [
@@ -2052,7 +2113,7 @@
             "description": "Properties of the object. Contains field @type with type URL.",
             "type": "any"
           },
-          "description": "The normal response of the operation in case of success. If the original method returns no data on success, such as `Delete`, the response is `google.protobuf.Empty`. If the original method is standard `Get`/`Create`/`Update`, the response should be the resource. For other methods, the response should have the type `XxxResponse`, where `Xxx` is the original method name. For example, if the original method name is `TakeSnapshot()`, the inferred response type is `TakeSnapshotResponse`.",
+          "description": "The normal, successful response of the operation. If the original method returns no data on success, such as `Delete`, the response is `google.protobuf.Empty`. If the original method is standard `Get`/`Create`/`Update`, the response should be the resource. For other methods, the response should have the type `XxxResponse`, where `Xxx` is the original method name. For example, if the original method name is `TakeSnapshot()`, the inferred response type is `TakeSnapshotResponse`.",
           "type": "object"
         }
       },
@@ -2115,6 +2176,7 @@
           "type": "string"
         },
         "sourceSnapshot": {
+          "deprecated": true,
           "description": "The resource name of the snapshot, in the format `projects/{project_id}/locations/{location_id}/snapshots/{snapshot_id}`.",
           "type": "string"
         }
@@ -2176,6 +2238,10 @@
       "description": "A Filestore share.",
       "id": "Share",
       "properties": {
+        "backup": {
+          "description": "Immutable. Full name of the Cloud Filestore Backup resource that this Share is restored from, in the format of projects/{project_id}/locations/{location_id}/backups/{backup_id}. Empty, if the Share is created from scratch and not restored from a backup.",
+          "type": "string"
+        },
         "capacityGb": {
           "description": "File share capacity in gigabytes (GB). Filestore defines 1 GB as 1024^3 bytes. Must be greater than 0.",
           "format": "int64",
@@ -2365,7 +2431,7 @@
           "type": "string"
         },
         "denyMaintenancePeriods": {
-          "description": "Deny Maintenance Period that is applied to resource to indicate when maintenance is forbidden. User can specify zero or more non-overlapping deny periods. Maximum number of deny_maintenance_periods expected is one.",
+          "description": "Deny Maintenance Period that is applied to resource to indicate when maintenance is forbidden. The protocol supports zero-to-many such periods, but the current SLM Rollout implementation only supports zero-to-one.",
           "items": {
             "$ref": "DenyMaintenancePeriod"
           },
