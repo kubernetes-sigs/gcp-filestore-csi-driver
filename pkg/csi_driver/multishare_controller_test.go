@@ -806,6 +806,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 		initShares        []*file.Share
 		req               *csi.CreateVolumeRequest
 		resp              *csi.CreateVolumeResponse
+		expectedOptions   []*file.NfsExportOptions
 		errorExpected     bool
 		checkOnlyVolidFmt bool // for auto generated instance, the instance name is not known
 	}{
@@ -923,6 +924,84 @@ func TestMultishareCreateVolume(t *testing.T) {
 				},
 			},
 			checkOnlyVolidFmt: true,
+		},
+		{
+			name: "no initial instances, create instance and share, success response",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			checkOnlyVolidFmt: true,
+		},
+		{
+			name: "add nfs-export-options",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+						],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+							}
+					]`,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			checkOnlyVolidFmt: true,
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+				{
+					AccessMode: "READ_ONLY",
+					IpRanges:   []string{"10.0.0.0/28"},
+					SquashMode: "NO_ROOT_SQUASH",
+				},
+			},
 		},
 		{
 			name: "1 initial ready 1Tib instances with 0 shares, 1 busy instance, create 100Gib share and use the ready instance, success response",
@@ -1155,7 +1234,19 @@ func TestMultishareCreateVolume(t *testing.T) {
 				t.Errorf("expected error not found")
 			}
 			if !tc.errorExpected && err != nil {
-				t.Errorf("unexpected error")
+				t.Errorf("unexpected error %s", err)
+			}
+			if !tc.errorExpected && tc.req.Parameters[ParamNfsExportOptions] != "" {
+				instance, err := s.GetShare(context.TODO(), &file.Share{Name: util.ConvertVolToShareName(tc.req.Name)})
+				if err != nil {
+					t.Errorf("test %q failed: couldn't get instance %v: %v", tc.name, tc.req.Name, err)
+					return
+				}
+				for i := range tc.expectedOptions {
+					if !reflect.DeepEqual(instance.NfsExportOptions[i], tc.expectedOptions[i]) {
+						t.Errorf("tc %q failed; nfs export options not equal at index %d: got %+v, expected %+v", tc.name, i, instance.NfsExportOptions[i], tc.expectedOptions[i])
+					}
+				}
 			}
 			if tc.checkOnlyVolidFmt {
 				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
@@ -1227,6 +1318,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 		req               *csi.CreateVolumeRequest
 		resp              *csi.CreateVolumeResponse
 		checkOnlyVolidFmt bool
+		expectedOptions   []*file.NfsExportOptions
 		initialBackup     *BackupTestInfo
 		features          *GCFSDriverFeatureOptions
 		errorExpected     bool
@@ -1258,6 +1350,78 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 			initialBackup:     defaultBackup,
 			checkOnlyVolidFmt: true,
 			errorExpected:     true,
+		},
+		{
+			name: "create volume called with volume content source and nfsExportOptions set",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24",
+								"10.124.124.0/28"
+						],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+							}
+					]`,
+				},
+				VolumeCapabilities: volumeCapabilities,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+			},
+			features: features,
+			expectedOptions: []*file.NfsExportOptions{
+				{
+					AccessMode: "READ_WRITE",
+					IpRanges:   []string{"10.0.0.0/24", "10.124.124.0/28"},
+					SquashMode: "ROOT_SQUASH",
+					AnonGid:    1003,
+					AnonUid:    1003,
+				},
+				{
+					AccessMode: "READ_ONLY",
+					IpRanges:   []string{"10.0.0.0/28"},
+					SquashMode: "NO_ROOT_SQUASH",
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
+					VolumeContext: map[string]string{
+						attrIP: testIP,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup:     defaultBackup,
+			checkOnlyVolidFmt: true,
 		},
 		{
 			name: "create volume called with volume content source, no existing instance or share",
@@ -1611,6 +1775,18 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 			}
 			if !tc.errorExpected && err != nil {
 				t.Errorf("unexpected error")
+			}
+			if !tc.errorExpected && tc.req.Parameters[ParamNfsExportOptions] != "" {
+				instance, err := s.GetShare(context.TODO(), &file.Share{Name: util.ConvertVolToShareName(tc.req.Name)})
+				if err != nil {
+					t.Errorf("test %q failed: couldn't get instance %v: %v", tc.name, tc.req.Name, err)
+					return
+				}
+				for i := range tc.expectedOptions {
+					if !reflect.DeepEqual(instance.NfsExportOptions[i], tc.expectedOptions[i]) {
+						t.Errorf("tc %q failed; nfs export options not equal at index %d: got %+v, expected %+v", tc.name, i, instance.NfsExportOptions[i], tc.expectedOptions[i])
+					}
+				}
 			}
 			if tc.checkOnlyVolidFmt && !tc.errorExpected {
 				if !strings.Contains(resp.Volume.VolumeId, modeMultishare) || !strings.Contains(resp.Volume.VolumeId, testShareName) {
