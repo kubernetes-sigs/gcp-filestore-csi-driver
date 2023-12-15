@@ -175,8 +175,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodCreateVolume, modeMultishare, duration)
-		klog.Infof("CreateVolume response %+v error %v, for request %+v", response, err, req)
-		return response, err
+
+		if err != nil {
+			klog.Errorf("CreateVolume returned an error %v, for request %+v", err, req)
+			return nil, err
+		}
+		klog.Infof("CreateVolume response %v, for request %+v", response, req)
+		return response, nil
 	}
 
 	klog.V(4).Infof("CreateVolume called with request %+v", req)
@@ -385,10 +390,11 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodDeleteVolume, modeMultishare, duration)
-		klog.Infof("Deletevolume response %+v error %v, for request: %+v", response, err, req)
 		if err != nil {
-			return response, file.StatusError(err)
+			klog.Errorf("Deletevolume returned error %v, for request: %+v", err, req)
+			return nil, file.StatusError(err)
 		}
+		klog.Infof("Deletevolume response %+v, for request: %+v", response, req)
 		return response, nil
 	}
 
@@ -683,8 +689,12 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		}
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodExpandVolume, modeMultishare, duration)
-		klog.Infof("ControllerExpandVolume response %+v error %v, for request: %+v", response, err, req)
-		return response, err
+		if err != nil {
+			klog.Errorf("ControllerExpandVolume returned error %v, for request: %+v", err, req)
+			return nil, err
+		}
+		klog.Infof("ControllerExpandVolume response %+v, for request: %+v", response, req)
+		return response, nil
 	}
 
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
@@ -876,8 +886,12 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		response, err := s.config.multiShareController.CreateSnapshot(ctx, req)
 		duration := time.Since(start)
 		s.config.metricsManager.RecordOperationMetrics(err, methodCreateSnapshot, modeMultishare, duration)
-		klog.Infof("CreateSnapshot response %+v error %v, for request %+v", response, err, req)
-		return response, err
+		if err != nil {
+			klog.Errorf("CreateSnapshot returned error %v, for request %+v", err, req)
+			return nil, err
+		}
+		klog.Infof("CreateSnapshot response %+v, for request %+v", response, req)
+		return response, nil
 	}
 
 	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
