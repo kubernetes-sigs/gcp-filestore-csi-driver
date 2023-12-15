@@ -1,3 +1,23 @@
+# v1.6.9 - Changelog since v1.6.8
+
+## Changes by Kind
+
+### Other (Cleanup or Flake)
+
+- Update golang builder to 1.20.12 ([#741](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/741), [@msau42](https://github.com/msau42))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
+
 # v1.6.8 - Changelog since v1.6.5
 
 ## Changes by Kind
