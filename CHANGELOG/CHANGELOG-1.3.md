@@ -1,6 +1,26 @@
 **Attention:**
 1.3.3 is not a recommended version to use because of known issues which can cause failures in volume provisioning with ip reservation. Users are recommended to skip 1.3.3 and directly use 1.3.4
 
+# v1.3.24 - Changelog since v1.3.23
+
+## Changes by Kind
+
+### Uncategorized
+
+- Update golang builder to 1.20.12 ([#743](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/743), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
+
 # v1.3.23 - Changelog since v1.3.21
 
 ## Changes by Kind
