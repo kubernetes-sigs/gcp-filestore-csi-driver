@@ -105,6 +105,7 @@ type ServiceInstance struct {
 	Labels           map[string]string
 	State            string
 	KmsKeyName       string
+	BackupSource     string
 	NfsExportOptions []*NfsExportOptions
 }
 
@@ -163,7 +164,6 @@ type Service interface {
 	GetBackup(ctx context.Context, backupUri string) (*Backup, error)
 	CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
-	CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, volumeSourceSnapshotId string) (*ServiceInstance, error)
 	HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error)
 	// Multishare ops
 	GetMultishareInstance(ctx context.Context, obj *MultishareInstance) (*MultishareInstance, error)
@@ -260,65 +260,13 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 }
 
 func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error) {
-	betaObj := &filev1beta1.Instance{
-		Tier: obj.Tier,
-		FileShares: []*filev1beta1.FileShareConfig{
-			{
-				Name:             obj.Volume.Name,
-				CapacityGb:       util.RoundBytesToGb(obj.Volume.SizeBytes),
-				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
-			},
-		},
-		Networks: []*filev1beta1.NetworkConfig{
-			{
-				Network:         obj.Network.Name,
-				Modes:           []string{"MODE_IPV4"},
-				ReservedIpRange: obj.Network.ReservedIpRange,
-				ConnectMode:     obj.Network.ConnectMode,
-			},
-		},
-		KmsKeyName: obj.KmsKeyName,
-		Labels:     obj.Labels,
-	}
-
-	klog.V(4).Infof("Creating instance %q: location %q, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v",
-		obj.Name,
-		obj.Location,
-		betaObj.Tier,
-		betaObj.FileShares[0].CapacityGb,
-		betaObj.Networks[0].Network,
-		betaObj.Networks[0].ReservedIpRange,
-		betaObj.Networks[0].ConnectMode,
-		betaObj.KmsKeyName,
-		betaObj.Labels)
-	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), betaObj).InstanceId(obj.Name).Context(ctx).Do()
-	if err != nil {
-		klog.Errorf("CreateInstance operation failed for instance %s: %w", obj.Name, err)
-		return nil, err
-	}
-
-	klog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
-	err = manager.waitForOp(ctx, op)
-	if err != nil {
-		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
-		return nil, err
-	}
-	instance, err := manager.GetInstance(ctx, obj)
-	if err != nil {
-		klog.Errorf("failed to get instance after creation: %w", err)
-		return nil, err
-	}
-	return instance, nil
-}
-
-func (manager *gcfsServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
 	instance := &filev1beta1.Instance{
 		Tier: obj.Tier,
 		FileShares: []*filev1beta1.FileShareConfig{
 			{
 				Name:             obj.Volume.Name,
 				CapacityGb:       util.RoundBytesToGb(obj.Volume.SizeBytes),
-				SourceBackup:     sourceSnapshotId,
+				SourceBackup:     obj.BackupSource,
 				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
 			},
 		},
@@ -405,9 +353,10 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
-		KmsKeyName: instance.KmsKeyName,
-		Labels:     instance.Labels,
-		State:      instance.State,
+		KmsKeyName:   instance.KmsKeyName,
+		Labels:       instance.Labels,
+		State:        instance.State,
+		BackupSource: instance.FileShares[0].SourceBackup,
 	}, nil
 }
 
