@@ -609,9 +609,12 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 				location = region
 			}
 		case ParamNfsExportOptions:
+			if s.config.features.FeatureNFSExportOptionsOnCreate == nil || !s.config.features.FeatureNFSExportOptionsOnCreate.Enabled {
+				return nil, fmt.Errorf("nfsExportOptions are disabled")
+			}
 			nfsExportOptions, err = parseNfsExportOptions(v)
 			if err != nil {
-				return nil, fmt.Errorf("Failed to parse nfs-export-options-on-create %s: %v", v, err)
+				return nil, fmt.Errorf("failed to parse nfs-export-options-on-create %s: %v", v, err)
 			}
 		case paramNetwork:
 			network = v

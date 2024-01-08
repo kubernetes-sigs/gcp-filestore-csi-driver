@@ -104,6 +104,12 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 			},
 		},
 	}
+	features := &GCFSDriverFeatureOptions{
+		FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
+			Enabled: true,
+		},
+		FeatureLockRelease: &FeatureLockRelease{},
+	}
 
 	cases := []struct {
 		name            string
@@ -112,6 +118,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 		initialBackup   *BackupInfo
 		expectedOptions []*file.NfsExportOptions
 		expectErr       bool
+		features        *GCFSDriverFeatureOptions
 	}{
 		{
 			name: "from default tier snapshot",
@@ -288,6 +295,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				},
 				VolumeCapabilities: volumeCapabilities,
 			},
+			features: features,
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: testBytes,
@@ -339,6 +347,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 
 	for _, test := range cases {
 		cs := initTestController(t).(*controllerServer)
+		if test.features != nil {
+			cs.config.features = test.features
+		}
 
 		//Create initial backup
 		backupInfo := &file.BackupInfo{
@@ -381,11 +392,18 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 }
 
 func TestCreateVolume(t *testing.T) {
+	features := &GCFSDriverFeatureOptions{
+		FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
+			Enabled: true,
+		},
+		FeatureLockRelease: &FeatureLockRelease{},
+	}
 	cases := []struct {
 		name            string
 		req             *csi.CreateVolumeRequest
 		resp            *csi.CreateVolumeResponse
 		expectErr       bool
+		features        *GCFSDriverFeatureOptions
 		expectedOptions []*file.NfsExportOptions
 	}{
 		{
@@ -413,6 +431,7 @@ func TestCreateVolume(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 		},
 		// Failure Scenarios
 		{
@@ -469,6 +488,57 @@ func TestCreateVolume(t *testing.T) {
 		// TODO: instance already exists error
 		// TODO: instance already exists invalid
 		// TODO: instance already exists valid
+		{
+			name: "nfsExportOptions feature is disabled",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": enterpriseTier,
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+							],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+						}
+					]`,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			features: &GCFSDriverFeatureOptions{
+				FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
+					Enabled: false,
+				},
+				FeatureLockRelease: &FeatureLockRelease{},
+			},
+			expectErr: true,
+		},
 		// Success Scenarios
 		{
 			name: "adding nfs-export-options",
@@ -505,6 +575,7 @@ func TestCreateVolume(t *testing.T) {
 					},
 				},
 			},
+			features: features,
 			expectedOptions: []*file.NfsExportOptions{
 				{
 					AccessMode: "READ_WRITE",
@@ -547,7 +618,7 @@ func TestCreateVolume(t *testing.T) {
 			fileService: fileService,
 			cloud:       cloudProvider,
 			volumeLocks: util.NewVolumeLocks(),
-			features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+			features:    test.features,
 		})
 		resp, err := cs.CreateVolume(context.TODO(), test.req)
 

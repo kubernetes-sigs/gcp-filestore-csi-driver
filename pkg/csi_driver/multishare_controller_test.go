@@ -792,6 +792,14 @@ func TestMultishareCreateVolume(t *testing.T) {
 	testShareName := util.ConvertVolToShareName(testVolName)
 	testInstanceName1 := "fs-" + string(uuid.NewUUID())
 	testInstanceName2 := "fs-" + string(uuid.NewUUID())
+	features := &GCFSDriverFeatureOptions{
+		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+		FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
+			Enabled: true,
+		},
+	}
 	type OpItem struct {
 		id     string
 		target string
@@ -809,6 +817,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 		expectedOptions   []*file.NfsExportOptions
 		errorExpected     bool
 		checkOnlyVolidFmt bool // for auto generated instance, the instance name is not known
+		features          *GCFSDriverFeatureOptions
 	}{
 		{
 			name: "create volume called with volume size < 100G in required bytes",
@@ -949,6 +958,47 @@ func TestMultishareCreateVolume(t *testing.T) {
 			checkOnlyVolidFmt: true,
 		},
 		{
+			name: "nfs-export-options feature is disabled",
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					ParamNfsExportOptions: `[
+						{
+							"accessMode": "READ_WRITE",
+							"ipRanges": [
+								"10.0.0.0/24"
+						],
+							"squashMode": "ROOT_SQUASH",
+							"anonUid": "1003",
+							"anonGid": "1003"
+						},
+						{
+							"accessMode": "READ_ONLY",
+							"ipRanges": [
+								"10.0.0.0/28"
+							],
+							"squashMode": "NO_ROOT_SQUASH"
+							}
+					]`,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			errorExpected: true,
+		},
+		{
 			name: "add nfs-export-options",
 			req: &csi.CreateVolumeRequest{
 				Name: testVolName,
@@ -987,6 +1037,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 					},
 				},
 			},
+			features:          features,
 			checkOnlyVolidFmt: true,
 			expectedOptions: []*file.NfsExportOptions{
 				{
@@ -1227,6 +1278,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 				cloud:           cloudProvider,
 				volumeLocks:     util.NewVolumeLocks(),
 				ecfsDescription: "",
+				features:        tc.features,
 			}
 			mcs := NewMultishareController(config)
 			resp, err := mcs.CreateVolume(context.Background(), tc.req)
@@ -1288,6 +1340,9 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 	}
 	features := &GCFSDriverFeatureOptions{
 		FeatureMultishareBackups: &FeatureMultishareBackups{
+			Enabled: true,
+		},
+		FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
 			Enabled: true,
 		},
 	}
