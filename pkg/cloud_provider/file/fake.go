@@ -91,6 +91,7 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 			Ip:              "1.1.1.1",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
+		Protocol:         obj.Protocol,
 		Labels:           obj.Labels,
 		State:            "READY",
 		BackupSource:     obj.BackupSource,

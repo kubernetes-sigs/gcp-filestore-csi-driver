@@ -85,6 +85,7 @@ const (
 	ParamMultishareInstanceScLabel = "instance-storageclass-label"
 	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
+	ParamProtocol                  = "protocol"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -589,6 +590,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
+	protocol := ""
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -611,6 +613,11 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse nfs-export-options-on-create %s: %v", v, err)
 			}
+		case ParamProtocol:
+			if s.config.features.FeatureNFSv4 == nil || !s.config.features.FeatureNFSv4.Enabled {
+				return nil, fmt.Errorf("nfsv4 volumes are disabled")
+			}
+			protocol = v
 		case paramNetwork:
 			network = v
 		case ParamConnectMode:
@@ -636,6 +643,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		Name:     name,
 		Location: location,
 		Tier:     tier,
+		Protocol: protocol,
 		Network: file.Network{
 			Name:        network,
 			ConnectMode: connectMode,
