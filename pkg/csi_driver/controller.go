@@ -221,7 +221,6 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	}
 	defer s.config.volumeLocks.Release(volumeID)
 
-	sourceSnapshotId := ""
 	if req.GetVolumeContentSource() != nil {
 		if req.GetVolumeContentSource().GetVolume() != nil {
 			return nil, status.Error(codes.InvalidArgument, "Unsupported volume content source")
@@ -238,7 +237,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 				klog.Errorf("Failed to get volume %v source snapshot %v: %v", name, id, err.Error())
 				return nil, file.StatusError(err)
 			}
-			sourceSnapshotId = id
+			newFiler.BackupSource = id
 		}
 	}
 
@@ -305,17 +304,13 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 		// Create the instance
 		var createErr error
-		if sourceSnapshotId != "" {
-			filer, createErr = s.config.fileService.CreateInstanceFromBackupSource(ctx, newFiler, sourceSnapshotId)
-		} else {
-			filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
-		}
+		filer, createErr = s.config.fileService.CreateInstance(ctx, newFiler)
 		if createErr != nil {
 			klog.Errorf("Create volume for volume Id %s failed: %v", volumeID, createErr.Error())
 			return nil, file.StatusError(createErr)
 		}
 	}
-	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance, sourceSnapshotId)}
+	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance)}
 	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
 }
@@ -652,7 +647,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstance, mode, sourceSnapshotId string) *csi.Volume {
+func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
 	resp := &csi.Volume{
 		VolumeId:      getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
@@ -661,11 +656,11 @@ func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstanc
 			attrVolume: instance.Volume.Name,
 		},
 	}
-	if sourceSnapshotId != "" {
+	if instance.BackupSource != "" {
 		contentSource := &csi.VolumeContentSource{
 			Type: &csi.VolumeContentSource_Snapshot{
 				Snapshot: &csi.VolumeContentSource_SnapshotSource{
-					SnapshotId: sourceSnapshotId,
+					SnapshotId: instance.BackupSource,
 				},
 			},
 		}
