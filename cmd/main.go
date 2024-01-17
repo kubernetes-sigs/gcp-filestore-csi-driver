@@ -61,7 +61,8 @@ var (
 	coreInformerResyncPeriod   = flag.Duration("core-informer-resync-repriod", 15*time.Minute, "Core informer resync period.")
 
 	// Feature multishare backups enabled
-	featureMultishareBackups = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
+	featureMultishareBackups        = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
+	featureNFSExportOptionsOnCreate = flag.Bool("feature-nfs-export-options", false, "if set to true, the driver will accpet nfs-export-options-on-create parameter and configure IP Access rules")
 
 	// Feature stateful CSI driver specific parameters
 	featureStateful      = flag.Bool("feature-stateful-multishare", false, "if set to true, the controller will run stateful multishare controller, if set to true, enable-multishare must be set to true as well")
@@ -182,6 +183,9 @@ func main() {
 		},
 		FeatureMultishareBackups: &driver.FeatureMultishareBackups{
 			Enabled: *featureMultishareBackups,
+		},
+		FeatureNFSExportOptionsOnCreate: &driver.FeatureNFSExportOptionsOnCreate{
+			Enabled: *featureNFSExportOptionsOnCreate,
 		},
 	}
 
