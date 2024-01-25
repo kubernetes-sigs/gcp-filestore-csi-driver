@@ -396,6 +396,9 @@ func TestCreateVolume(t *testing.T) {
 		FeatureNFSExportOptionsOnCreate: &FeatureNFSExportOptionsOnCreate{
 			Enabled: true,
 		},
+		FeatureNFSv4: &FeatureNFSv4{
+			Enabled: true,
+		},
 		FeatureLockRelease: &FeatureLockRelease{},
 	}
 	cases := []struct {
@@ -601,6 +604,37 @@ func TestCreateVolume(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "Protocol NFS_V4_1",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				Parameters: map[string]string{
+					ParamProtocol: "NFS_V4_1",
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:     testIP,
+						attrVolume: newInstanceVolume,
+					},
+				},
+			},
+			expectErr: false,
+		},
 	}
 
 	for _, test := range cases {
@@ -622,25 +656,35 @@ func TestCreateVolume(t *testing.T) {
 		})
 		resp, err := cs.CreateVolume(context.TODO(), test.req)
 
-		if !test.expectErr && err != nil {
-			t.Errorf("test %q failed: %v", test.name, err)
-		}
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed; got success", test.name)
+		}
+		if !test.expectErr && err != nil {
+			t.Errorf("test %q failed: %v", test.name, err)
 		}
 		if !reflect.DeepEqual(resp, test.resp) {
 			t.Errorf("test %q failed: got resp %+v, expected %+v", test.name, resp, test.resp)
 		}
 
-		if !test.expectErr && test.req.Parameters[ParamNfsExportOptions] != "" {
+		if !test.expectErr {
+
 			instance, err := fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
 			if err != nil {
+
 				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, resp.Volume.VolumeId, err)
-				return
 			}
-			for i := range test.expectedOptions {
-				if !reflect.DeepEqual(instance.NfsExportOptions[i], test.expectedOptions[i]) {
-					t.Errorf("test %q failed; nfs export options not equal at index %d: got %+v, expected %+v", test.name, i, instance.NfsExportOptions[i], test.expectedOptions[i])
+			if test.req.Parameters[ParamProtocol] != "" {
+				klog.Infof("ParamProtocol test")
+				if instance.Protocol != test.req.Parameters[ParamProtocol] {
+					t.Errorf("test %q failed: got protocol %+v, expected %+v", test.name, instance.Protocol, test.req.Parameters[ParamProtocol])
+				}
+			}
+
+			if test.req.Parameters[ParamNfsExportOptions] != "" {
+				for i := range test.expectedOptions {
+					if !reflect.DeepEqual(instance.NfsExportOptions[i], test.expectedOptions[i]) {
+						t.Errorf("test %q failed; nfs export options not equal at index %d: got %+v, expected %+v", test.name, i, instance.NfsExportOptions[i], test.expectedOptions[i])
+					}
 				}
 			}
 		}

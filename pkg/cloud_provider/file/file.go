@@ -106,6 +106,7 @@ type ServiceInstance struct {
 	State            string
 	KmsKeyName       string
 	BackupSource     string
+	Protocol         string
 	NfsExportOptions []*NfsExportOptions
 }
 
@@ -270,6 +271,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
 			},
 		},
+		Protocol: obj.Protocol,
 		Networks: []*filev1beta1.NetworkConfig{
 			{
 				Network:         obj.Network.Name,
