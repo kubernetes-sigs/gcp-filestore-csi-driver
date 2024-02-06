@@ -91,8 +91,10 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 			Ip:              "1.1.1.1",
 			ReservedIpRange: obj.Network.ReservedIpRange,
 		},
-		Labels: obj.Labels,
-		State:  "READY",
+		Labels:           obj.Labels,
+		State:            "READY",
+		BackupSource:     obj.BackupSource,
+		NfsExportOptions: obj.NfsExportOptions,
 	}
 
 	manager.createdInstances[obj.Name] = instance
@@ -202,29 +204,6 @@ func (manager *fakeServiceManager) GetBackup(ctx context.Context, backupUri stri
 	}
 
 	return backupInfo, nil
-}
-
-func (manager *fakeServiceManager) CreateInstanceFromBackupSource(ctx context.Context, obj *ServiceInstance, sourceSnapshotId string) (*ServiceInstance, error) {
-	instance := &ServiceInstance{
-		Project:  defaultProject,
-		Location: defaultZone,
-		Name:     obj.Name,
-		Tier:     obj.Tier,
-		Volume: Volume{
-			Name:      obj.Volume.Name,
-			SizeBytes: obj.Volume.SizeBytes,
-		},
-		Network: Network{
-			Name:            obj.Network.Name,
-			Ip:              "1.1.1.1",
-			ReservedIpRange: obj.Network.ReservedIpRange,
-		},
-		Labels: obj.Labels,
-		State:  "READY",
-	}
-
-	manager.createdInstances[obj.Name] = instance
-	return instance, nil
 }
 
 func (m *fakeServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
@@ -380,13 +359,14 @@ func (manager *fakeServiceManager) StartCreateShareOp(ctx context.Context, obj *
 		State:  "READY",
 	}
 	share := &Share{
-		Name:           obj.Name,
-		Parent:         parent,
-		CapacityBytes:  obj.CapacityBytes,
-		Labels:         obj.Labels,
-		MountPointName: obj.Name,
-		BackupId:       obj.BackupId,
-		State:          "READY",
+		Name:             obj.Name,
+		Parent:           parent,
+		CapacityBytes:    obj.CapacityBytes,
+		Labels:           obj.Labels,
+		MountPointName:   obj.Name,
+		BackupId:         obj.BackupId,
+		State:            "READY",
+		NfsExportOptions: obj.NfsExportOptions,
 	}
 	manager.createdMultishares[share.Name] = share
 

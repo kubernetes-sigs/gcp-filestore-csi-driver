@@ -57,16 +57,17 @@ const (
 
 // MultishareController handles CSI calls for volumes which use Filestore multishare instances.
 type MultishareController struct {
-	driver                     *GCFSDriver
-	fileService                file.Service
-	cloud                      *cloud.Cloud
-	opsManager                 *MultishareOpsManager
-	volumeLocks                *util.VolumeLocks
-	ecfsDescription            string
-	isRegional                 bool
-	clustername                string
-	featureMaxSharePerInstance bool
-	featureMultishareBackups   bool
+	driver                          *GCFSDriver
+	fileService                     file.Service
+	cloud                           *cloud.Cloud
+	opsManager                      *MultishareOpsManager
+	volumeLocks                     *util.VolumeLocks
+	ecfsDescription                 string
+	isRegional                      bool
+	clustername                     string
+	featureMaxSharePerInstance      bool
+	featureMultishareBackups        bool
+	featureNFSExportOptionsOnCreate bool
 
 	// Filestore instance description overrides
 	descOverrideMaxSharesPerInstance string
@@ -102,6 +103,9 @@ func NewMultishareController(config *controllerServerConfig) *MultishareControll
 
 	if config.features != nil && config.features.FeatureMultishareBackups != nil {
 		c.featureMultishareBackups = config.features.FeatureMultishareBackups.Enabled
+	}
+	if config.features != nil && config.features.FeatureNFSExportOptionsOnCreate != nil {
+		c.featureNFSExportOptionsOnCreate = config.features.FeatureNFSExportOptionsOnCreate.Enabled
 	}
 
 	return c
@@ -570,6 +574,12 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			}
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
+		// Ensure we don't flag the nfsExportOptions param as invalid. Value will be used when creating a new share
+		case ParamNfsExportOptions:
+			if !m.featureNFSExportOptionsOnCreate {
+				return nil, status.Error(codes.InvalidArgument, "nfsExportOptions are disabled")
+			}
+			continue
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
@@ -657,14 +667,22 @@ func generateNewShare(name string, parent *file.MultishareInstance, req *csi.Cre
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	var nfsExportOptions []*file.NfsExportOptions
+	if req.GetParameters()[ParamNfsExportOptions] != "" {
+		nfsExportOptions, err = parseNfsExportOptions(req.GetParameters()[ParamNfsExportOptions])
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
 
 	share := &file.Share{
-		Name:           name,
-		Parent:         parent,
-		CapacityBytes:  targetSizeBytes,
-		Labels:         extractShareLabels(req.Parameters),
-		MountPointName: name,
-		BackupId:       sourceSnapshotId,
+		Name:             name,
+		Parent:           parent,
+		CapacityBytes:    targetSizeBytes,
+		Labels:           extractShareLabels(req.Parameters),
+		NfsExportOptions: nfsExportOptions,
+		MountPointName:   name,
+		BackupId:         sourceSnapshotId,
 	}
 	return share, nil
 }
