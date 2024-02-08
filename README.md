@@ -80,7 +80,7 @@ volume. Customizable parameters for volume creation include:
 
 | Parameter         | Values                  | Default                                | Description |
 | ---------------   | ----------------------- |-----------                             | ----------- |
-| tier              | "standard"<br>"premium"<br>"enterprise" | "standard"             | storage performance tier |
+| tier              | "standard"/"basic_hdd"<br>"premium"/"basic_ssd"<br>"enterprise"<br>"high_scale_ssd"/"zonal" | "standard"             | storage performance tier |
 | network           | string                  | "default"                              | VPC name.<br>When using "PRIVATE_SERVICE_ACCESS" connect-mode, network needs to be the full VPC name. |
 | reserved-ipv4-cidr| string		              | ""                                     | CIDR range to allocate Filestore IP Ranges from.<br>The CIDR must be large enough to accommodate multiple Filestore IP Ranges of /29 each, /26 if enterprise tier is used. |
 | reserved-ip-range | string		              | ""                                     | IP range to allocate Filestore IP Ranges from.<br>This flag is used instead of "reserved-ipv4-cidr" when "connect-mode" is set to "PRIVATE_SERVICE_ACCESS" and the value must be an [allocated IP address range](https://cloud.google.com/compute/docs/ip-addresses/reserve-static-internal-ip-address).<br>The IP range must be large enough to accommodate multiple Filestore IP Ranges of /29 each, /26 if enterprise tier is used. |
