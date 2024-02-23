@@ -25,7 +25,7 @@ RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_
 # Install nfs packages
 # Note that the newer debian bullseye image does not work with nfs-common; I
 # believe that libcap needs extra configuration.
-FROM gke.gcr.io/debian-base:bullseye-v1.4.3-gke.5 as deps
+FROM gke.gcr.io/debian-base:bookworm-v1.0.1-gke.1 as deps
 ENV DEBIAN_FRONTEND noninteractive
 
 # The netbase package is needed to get rpcbind to work correctly,
@@ -51,6 +51,8 @@ ENV DEBIAN_FRONTEND noninteractive
 # Now in `nfs_services_start.sh` we call rpcbind start, this tries to source the `/lib/lsb/init-functions` file. This needs to be installed from the lsb-base package. In the debian-base image the lsb package is deleted (https://github.com/kubernetes/release/blob/v0.15.0/images/build/debian-base/bullseye/Dockerfile.build#L90). Hence using `apt-get install --reinstall` fixes the problem.
 RUN apt-get update && apt-get dist-upgrade -y && apt-mark unhold libcap2 && apt-get install --reinstall -y --no-install-recommends \
     lsb-base \
+    # New depenency of lsb-base in bookworm
+    sysvinit-utils \
     mount \
     rpcbind \
     netbase \
@@ -62,14 +64,14 @@ RUN apt-get update && apt-get dist-upgrade -y && apt-mark unhold libcap2 && apt-
 RUN mkdir /run/sendsigs.omit.d
 
 # Hold required packages to avoid breaking the installation of packages
-RUN apt-mark hold apt gnupg adduser passwd libsemanage1 libcap2 mount nfs-common init
+RUN apt-mark hold apt gnupg adduser passwd libsemanage2 libcap2 mount nfs-common init
 
 # Clean up unnecessary packages
-# This list is copied from
-# https://github.com/kubernetes/kubernetes/blob/master/build/debian-base/Dockerfile.build
-# and modified to keep nfs dependencies
-RUN echo "Yes, do as I say!" | apt-get purge \
-    # bash \
+# We don't need to remove the packages that are already removed from the base image: 
+# https://github.com/kubernetes/release/blob/78ecea5a708046ee2d4e71be5dc73393b8d7d7cc/images/build/debian-base/bookworm/Dockerfile.build#L44-L54. 
+# The commented out packages are nfs dependencies, and should not be removed.
+RUN echo "Yes, do as I say!" | apt-get purge -y --allow-remove-essential \
+   # bash \
     e2fslibs \
     e2fsprogs \
     # init \
@@ -79,13 +81,14 @@ RUN echo "Yes, do as I say!" | apt-get purge \
     # libsmartcols1 \
     # libudev1 \
     # libblkid1 \
-    libncursesw5 \
+    # Not able to be removed even though I don't think this is needed, but removing it causes:
+    # "Error, pkgProblemResolver::Resolve generated breaks, this may be caused by held packages."
+    # libncursesw6 \
     libss2 \
     ncurses-base \
-    ncurses-bin \
+    ncurses-bin
     # systemd \
     # systemd-sysv \
-    tzdata
 
 # Cleanup cached and unnecessary files.
 RUN apt-get autoremove -y && \
