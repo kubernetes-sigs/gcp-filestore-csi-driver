@@ -30,8 +30,8 @@ set -x
 
 repo="gcp-filestore-csi-driver"
 releases=(
-  "1.6.10"
-  "1.5.15"
+"1.6.13",
+"1.5.17",
 )
 
 function gen_patch_relnotes() {
