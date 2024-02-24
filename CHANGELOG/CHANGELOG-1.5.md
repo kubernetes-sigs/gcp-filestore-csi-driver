@@ -1,3 +1,23 @@
+# v1.5.17 - Changelog since v1.5.16
+
+## Changes by Kind
+
+### Uncategorized
+
+- Change debian base image from bullseye to bookworm to fix: CVE-2023-39804, CVE-2023-47038, CVE-2022-48303. ([#800](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/800), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
+
 # v1.5.16 - Changelog since v1.5.15
 
 ## Changes by Kind
