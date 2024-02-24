@@ -1,3 +1,25 @@
+# v1.6.13 - Changelog since v1.6.12
+
+## Changes by Kind
+
+### Uncategorized
+
+- Add NfsExportOptions parsing behind a disabled flag ([#779](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/779), [@hsadoyan](https://github.com/hsadoyan))
+- Change debian base image from bullseye to bookworm to fix: CVE-2023-39804, CVE-2023-47038, CVE-2022-48303. ([#801](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/801), [@k8s-infra-cherrypick-robot](https://github.com/k8s-infra-cherrypick-robot))
+- Fix issue where errors were reported as Info for multishare operations ([#769](https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/pull/769), [@hsadoyan](https://github.com/hsadoyan))
+
+## Dependencies
+
+### Added
+_Nothing has changed._
+
+### Changed
+_Nothing has changed._
+
+### Removed
+_Nothing has changed._
+
+
 # v1.6.11 - Changelog since v1.6.10
 
 ## Changes by Kind
