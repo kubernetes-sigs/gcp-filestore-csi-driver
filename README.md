@@ -14,63 +14,18 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: GA
 
-Latest image: `registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.5.3`
+Latest image: `registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.6.13`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
-
-### CSI Compatibility
-This plugin is compatible with CSI version 1.3.0.
-
-### Kubernetes Compatibility
-The following table captures the compatibility matrix of the core filestore driver binary
-`registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver`
-
-| Filestore CSI Driver\Kubernetes Version | 1.16 | 1.17+ |
-| --------------------------------------- | ---- | ----- |
-| v0.2.0 (alpha)                          |  no  |  no   |
-| v0.3.1 (beta)                           |  yes |  yes  |
-| v0.4.0 (beta)                           |  yes |  yes  |
-| v0.5.0 (beta)                           |  yes |  yes  |
-| v0.6.0 (beta)                           |  yes |  yes  |
-| v0.6.1 (beta)                           |  yes |  yes  |
-| v1.0.0 (GA)                             |  yes |  yes  |
-| v1.1.1 (GA)                             |  yes |  yes  |
-| v1.1.2 (GA)                             |  yes |  yes  |
-| v1.1.3 (GA)                             |  yes |  yes  |
-| v1.1.4 (GA)                             |  yes |  yes  |
-| v1.2.0 (GA)                             |  yes |  yes  |
-| v1.2.1 (GA)                             |  yes |  yes  |
-| v1.2.2 (GA)                             |  yes |  yes  |
-| v1.2.3 (GA)                             |  yes |  yes  |
-| v1.2.4 (GA)                             |  yes |  yes  |
-| v1.2.5 (GA)                             |  yes |  yes  |
-| v1.2.7 (GA)                             |  yes |  yes  |
-| v1.3.0 (GA)                             |  yes |  yes  |
-| v1.3.1 (GA)                             |  yes |  yes  |
-| v1.3.2 (GA)                             |  yes |  yes  |
-| v1.3.4 (GA)                             |  yes |  yes  |
-| v1.3.5 (GA)                             |  yes |  yes  |
-| v1.3.9 (GA)                             |  yes |  yes  |
-| v1.3.10 (GA)                            |  yes |  yes  |
-| v1.3.11 (GA)                            |  yes |  yes  |
-| v1.3.12 (GA)                            |  yes |  yes  |
-| v1.3.13 (GA)                            |  yes |  yes  |
-| v1.3.14 (GA)                            |  yes |  yes  |
-| v1.4.1 (GA)                             |  yes |  yes  |
-| v1.4.2 (GA)                             |  yes |  yes  |
-| v1.4.3 (GA)                             |  yes |  yes  |
-| v1.4.4 (GA)                             |  yes |  yes  |
-| v1.4.5 (GA)                             |  yes |  yes  |
-| v1.5.0 (GA)                             |  yes |  yes  |
-| v1.5.2 (GA)                             |  yes |  yes  |
-| v1.5.3 (GA)                             |  yes |  yes  |
-| master                                  |  yes |  yes  |
 
 The manifest bundle which captures all the driver components (driver pod which includes the containers csi-external-provisioner, csi-external-resizer, csi-external-snapshotter, gcp-filestore-driver, csi-driver-registrar, csi driver object, rbacs, pod security policies etc) can be picked up from the master branch [overlays](deploy/kubernetes/overlays) directory. We structure the overlays directory per minor version of kubernetes because not all driver components can be used with all kubernetes versions. For example volume snapshots are supported 1.17+ kubernetes versions thus [stable-1-16](deploy/kubernetes/overlays/stable-1-16) driver manifests does not contain the snapshotter sidecar. Read more about overlays [here](docs/release/overlays.md).
 
 Example:
 `stable-1-19` overlays bundle can be used to deploy all the components of the driver on kubernetes 1.19.
 `stable-master` overlays bundle can be used to deploy all the components of the driver on kubernetes master.
+
+### CSI Compatibility
+This plugin is compatible with CSI version 1.3.0.
 
 ## Plugin Features
 
