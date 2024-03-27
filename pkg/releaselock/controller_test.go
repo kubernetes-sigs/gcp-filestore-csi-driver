@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestVerifyNodeExists(t *testing.T) {
@@ -136,7 +136,8 @@ func TestListNodes(t *testing.T) {
 			},
 		},
 	}
-	controller := NewFakeLockReleaseControllerWithClient(fake.NewSimpleClientset(node1, node2))
+	objs := []runtime.Object{node1, node2}
+	controller := NewFakeLockReleaseControllerWithClient(t, objs)
 	expectedMap := map[string]*corev1.Node{
 		"node1": {
 			ObjectMeta: metav1.ObjectMeta{

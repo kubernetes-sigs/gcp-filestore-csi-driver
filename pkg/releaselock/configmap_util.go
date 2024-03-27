@@ -102,7 +102,7 @@ func GKENodeNameFromConfigMap(cm *corev1.ConfigMap) (string, error) {
 // GetConfigMap gets the configmap from the api server.
 // Returns nil if the expected configmap is not found.
 func (c *LockReleaseController) GetConfigMap(ctx context.Context, cmName, cmNamespace string) (*corev1.ConfigMap, error) {
-	cm, err := c.client.CoreV1().ConfigMaps(cmNamespace).Get(ctx, cmName, metav1.GetOptions{})
+	cm, err := c.configmapLister.ConfigMaps(cmNamespace).Get(cmName)
 	if err != nil {
 		if apiError.IsNotFound(err) {
 			return nil, nil
@@ -186,7 +186,7 @@ func (c *LockReleaseController) RemoveKeyFromConfigMap(ctx context.Context, cm *
 func (c *LockReleaseController) RemoveKeyFromConfigMapWithRetry(ctx context.Context, cm *corev1.ConfigMap, key string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		start := time.Now()
-		latestCM, err := c.client.CoreV1().ConfigMaps(cm.Namespace).Get(ctx, cm.Name, metav1.GetOptions{})
+		latestCM, err := c.configmapLister.ConfigMaps(cm.Namespace).Get(cm.Name)
 		duration := time.Since(start)
 		c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.ReconcilerOpSource, duration)
 		if err != nil {

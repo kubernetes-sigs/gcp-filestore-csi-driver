@@ -20,10 +20,12 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -41,7 +43,6 @@ const (
 
 type LockReleaseController struct {
 	client kubernetes.Interface
-
 	// Identity of this controller, generated at creation time and not persisted
 	// across restarts. Useful only for debugging, for seeing the source of events.
 	id string
@@ -50,15 +51,20 @@ type LockReleaseController struct {
 
 	config         *LockReleaseControllerConfig
 	metricsManager *metrics.MetricsManager
+
+	nodeLister      corelisters.NodeLister
+	configmapLister corelisters.ConfigMapLister
 }
 
 type LockReleaseControllerConfig struct {
 	// Parameters of leaderelection.LeaderElectionConfig.
 	LeaseDuration, RenewDeadline, RetryPeriod time.Duration
 	// Reconcile loop frequency.
-	SyncPeriod time.Duration
+	ReconcilePeriod time.Duration
 	// HTTP endpoint and path to emit NFS lock release metrics.
 	MetricEndpoint, MetricPath string
+	// Controller resync period.
+	ResyncPeriod time.Duration
 }
 
 func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseControllerConfig) (*LockReleaseController, error) {
@@ -73,14 +79,21 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 		klog.Errorf("Failed to get hostname for lockrelease controller: %v", err)
 		return nil, err
 	}
+
+	factory := informers.NewSharedInformerFactory(client, config.ResyncPeriod)
+	nodeLister := factory.Core().V1().Nodes().Lister()
+	configmapLister := factory.Core().V1().ConfigMaps().Lister()
+
 	// Add a uniquifier so that two processes on the same host don't accidentally both become active.
 	id := hostname + "_" + string(uuid.NewUUID())
 
 	lc := &LockReleaseController{
-		id:       id,
-		hostname: hostname,
-		client:   client,
-		config:   config,
+		id:              id,
+		hostname:        hostname,
+		client:          client,
+		config:          config,
+		nodeLister:      nodeLister,
+		configmapLister: configmapLister,
 	}
 
 	if config.MetricEndpoint != "" {
@@ -99,14 +112,14 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
 		wait.Forever(func() {
 			start := time.Now()
-			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
+			cmList, err := c.configmapLister.ConfigMaps(util.ManagedFilestoreCSINamespace).List(labels.Everything())
 			duration := time.Since(start)
 			c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
 			if err != nil {
 				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
 				return
 			}
-			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
+			klog.Infof("Listed %d configmaps in namespace %s", len(cmList), util.ManagedFilestoreCSINamespace)
 
 			start = time.Now()
 			nodes, err := c.listNodes(ctx)
@@ -118,16 +131,16 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 			}
 			klog.Infof("Listed %d nodes", len(nodes))
 
-			for _, cm := range cmList.Items {
+			for _, cm := range cmList {
 				// Filter out root ca.
 				if cm.Name == rootCA {
 					continue
 				}
-				if err := c.syncLockInfo(ctx, &cm, nodes); err != nil {
+				if err := c.syncLockInfo(ctx, cm, nodes); err != nil {
 					klog.Errorf("Failed to sync lock info for configmap %s/%s: %v", cm.Namespace, cm.Name, err)
 				}
 			}
-		}, c.config.SyncPeriod)
+		}, c.config.ReconcilePeriod)
 	}
 
 	rl, err := resourcelock.New(
@@ -225,14 +238,16 @@ func (c *LockReleaseController) verifyNodeExists(node *corev1.Node, expectedGCEI
 }
 
 func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*corev1.Node, error) {
-	nodeList, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	nodeList, err := c.nodeLister.List(labels.Everything())
 	if err != nil {
 		return nil, err
 	}
+
 	nodeMap := map[string]*corev1.Node{}
-	for _, node := range nodeList.Items {
-		nodeMap[node.Name] = node.DeepCopy()
+	for _, node := range nodeList {
+		nodeMap[node.Name] = node
 	}
+
 	return nodeMap, nil
 }
 
