@@ -72,6 +72,7 @@ func TestSanity(t *testing.T) {
 		Cloud:           cloudProvider,
 		MetadataService: meta,
 		FeatureOptions:  &driver.GCFSDriverFeatureOptions{FeatureLockRelease: &driver.FeatureLockRelease{}},
+		TagManager:      cloud.NewFakeTagManagerForSanityTests(),
 	}
 	gcfsDriver, err := driver.NewGCFSDriver(driverConfig)
 	if err != nil {
