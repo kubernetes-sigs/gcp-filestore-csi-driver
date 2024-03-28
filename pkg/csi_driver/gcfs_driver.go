@@ -70,6 +70,7 @@ type GCFSDriverConfig struct {
 	ClusterName       string
 	FeatureOptions    *GCFSDriverFeatureOptions
 	ExtraVolumeLabels map[string]string
+	TagManager        cloud.TagService
 }
 
 type GCFSDriver struct {
@@ -204,6 +205,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			clusterName:       config.ClusterName,
 			features:          config.FeatureOptions,
 			extraVolumeLabels: config.ExtraVolumeLabels,
+			tagManager:        config.TagManager,
 		})
 	}
 
