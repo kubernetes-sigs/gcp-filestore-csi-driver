@@ -12,7 +12,10 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
-  verbs: ["get", "list"]
+  verbs: ["get"]
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["list", "watch"]
 
 ---
 
@@ -39,7 +42,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["configmaps"]
-  verbs: ["get", "list", "update", "create"]
+  verbs: ["get", "update", "create"]
 
 ---
 

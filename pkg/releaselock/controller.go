@@ -20,16 +20,20 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
-
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
 )
 
 const (
@@ -41,7 +45,6 @@ const (
 
 type LockReleaseController struct {
 	client kubernetes.Interface
-
 	// Identity of this controller, generated at creation time and not persisted
 	// across restarts. Useful only for debugging, for seeing the source of events.
 	id string
@@ -50,15 +53,21 @@ type LockReleaseController struct {
 
 	config         *LockReleaseControllerConfig
 	metricsManager *metrics.MetricsManager
+
+	configmapLister       corelisters.ConfigMapLister
+	configmapListerSynced cache.InformerSynced
+	factory               informers.SharedInformerFactory
 }
 
 type LockReleaseControllerConfig struct {
 	// Parameters of leaderelection.LeaderElectionConfig.
 	LeaseDuration, RenewDeadline, RetryPeriod time.Duration
 	// Reconcile loop frequency.
-	SyncPeriod time.Duration
+	ReconcilePeriod time.Duration
 	// HTTP endpoint and path to emit NFS lock release metrics.
 	MetricEndpoint, MetricPath string
+	// Controller resync period.
+	ResyncPeriod time.Duration
 }
 
 func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseControllerConfig) (*LockReleaseController, error) {
@@ -73,14 +82,23 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 		klog.Errorf("Failed to get hostname for lockrelease controller: %v", err)
 		return nil, err
 	}
+
+	factory := informers.NewSharedInformerFactory(client, config.ResyncPeriod)
+	configmapInformer := factory.Core().V1().ConfigMaps()
+	configmapLister := configmapInformer.Lister()
+	configmapListerSynced := configmapInformer.Informer().HasSynced
+
 	// Add a uniquifier so that two processes on the same host don't accidentally both become active.
 	id := hostname + "_" + string(uuid.NewUUID())
 
 	lc := &LockReleaseController{
-		id:       id,
-		hostname: hostname,
-		client:   client,
-		config:   config,
+		id:                    id,
+		hostname:              hostname,
+		client:                client,
+		config:                config,
+		configmapLister:       configmapLister,
+		configmapListerSynced: configmapListerSynced,
+		factory:               factory,
 	}
 
 	if config.MetricEndpoint != "" {
@@ -97,37 +115,34 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 func (c *LockReleaseController) Run(ctx context.Context) {
 	run := func(ctx context.Context) {
 		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
+		stopCh := ctx.Done()
+		c.factory.Start(stopCh)
+		klog.V(6).Info("Informer factory started")
+		if !cache.WaitForCacheSync(stopCh, c.configmapListerSynced) {
+			klog.Fatal("Cannot sync configmap caches")
+		}
+		klog.V(6).Info("Informer cache synced successfully")
 		wait.Forever(func() {
 			start := time.Now()
-			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
+			cmList, err := c.configmapLister.ConfigMaps(util.ManagedFilestoreCSINamespace).List(labels.Everything())
 			duration := time.Since(start)
 			c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
 			if err != nil {
 				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
 				return
 			}
-			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
+			klog.Infof("Listed %d configmaps in namespace %s", len(cmList), util.ManagedFilestoreCSINamespace)
 
-			start = time.Now()
-			nodes, err := c.listNodes(ctx)
-			duration = time.Since(start)
-			c.RecordKubeAPIMetrics(err, metrics.NodeResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
-			if err != nil {
-				klog.Errorf("Failed to list nodes: %v", err)
-				return
-			}
-			klog.Infof("Listed %d nodes", len(nodes))
-
-			for _, cm := range cmList.Items {
+			for _, cm := range cmList {
 				// Filter out root ca.
 				if cm.Name == rootCA {
 					continue
 				}
-				if err := c.syncLockInfo(ctx, &cm, nodes); err != nil {
+				if err := c.syncLockInfo(ctx, cm); err != nil {
 					klog.Errorf("Failed to sync lock info for configmap %s/%s: %v", cm.Namespace, cm.Name, err)
 				}
 			}
-		}, c.config.SyncPeriod)
+		}, c.config.ReconcilePeriod)
 	}
 
 	rl, err := resourcelock.New(
@@ -157,14 +172,24 @@ func (c *LockReleaseController) Run(ctx context.Context) {
 	})
 }
 
-func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap, nodes map[string]*corev1.Node) error {
+func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap) error {
+	if len(cm.Data) == 0 {
+		klog.V(6).Infof("Skipping syncing lock info for configmap %s/%s since it's empty", cm.Namespace, cm.Name)
+		return nil
+	}
+
 	nodeName, err := GKENodeNameFromConfigMap(cm)
 	if err != nil {
 		klog.Errorf("Failed to get GKE node name from configmap %s/%s: %v", cm.Namespace, cm.Name, err)
 		return err
 	}
 
-	node := nodes[nodeName]
+	node, err := c.GetNode(ctx, nodeName)
+	if err != nil {
+		klog.Errorf("Failed to get node %s: %v", nodeName, err)
+		return err
+	}
+
 	data := cm.DeepCopy().Data
 	for key, filestoreIP := range data {
 		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := ParseConfigMapKey(key)
@@ -224,16 +249,15 @@ func (c *LockReleaseController) verifyNodeExists(node *corev1.Node, expectedGCEI
 	return false, nil
 }
 
-func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*corev1.Node, error) {
-	nodeList, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+func (c *LockReleaseController) GetNode(ctx context.Context, name string) (*corev1.Node, error) {
+	node, err := c.client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
+		if apiError.IsNotFound(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
-	nodeMap := map[string]*corev1.Node{}
-	for _, node := range nodeList.Items {
-		nodeMap[node.Name] = node.DeepCopy()
-	}
-	return nodeMap, nil
+	return node, nil
 }
 
 func (c *LockReleaseController) RecordKubeAPIMetrics(opErr error, resourceType, opType, opSource string, opDuration time.Duration) {

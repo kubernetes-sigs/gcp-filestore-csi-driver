@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
+	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
 func TestParseConfigMapKey(t *testing.T) {
@@ -178,8 +178,8 @@ func TestGetConfigMap(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewFakeLockReleaseControllerWithClient(client)
+		objs := []runtime.Object{test.existingCM}
+		controller := NewFakeLockReleaseControllerWithClient(t, objs)
 		cm, err := controller.GetConfigMap(context.Background(), test.cmName, test.cmNamespace)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
@@ -273,8 +273,8 @@ func TestUpdateConfigMapWithKeyValue(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewFakeLockReleaseControllerWithClient(client)
+		objs := []runtime.Object{test.existingCM}
+		controller := NewFakeLockReleaseControllerWithClient(t, objs)
 		ctx := context.Background()
 		err := controller.UpdateConfigMapWithKeyValue(ctx, test.existingCM, test.key, test.value)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
@@ -371,8 +371,8 @@ func TestRemoveKeyFromConfigMap(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewFakeLockReleaseControllerWithClient(client)
+		objs := []runtime.Object{test.existingCM}
+		controller := NewFakeLockReleaseControllerWithClient(t, objs)
 		ctx := context.Background()
 		err := controller.RemoveKeyFromConfigMap(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
@@ -469,8 +469,8 @@ func TestRemoveKeyFromConfigMapWithRetry(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewFakeLockReleaseControllerWithClient(client)
+		objs := []runtime.Object{test.existingCM}
+		controller := NewFakeLockReleaseControllerWithClient(t, objs)
 		ctx := context.Background()
 		err := controller.RemoveKeyFromConfigMapWithRetry(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {

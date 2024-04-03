@@ -51,8 +51,9 @@ var (
 	extraVolumeLabelsStr            = flag.String("extra-labels", "", "Extra labels to attach to each volume created. It is a comma separated list of key value pairs like '<key1>=<value1>,<key2>=<value2>'. See https://cloud.google.com/compute/docs/labeling-resources for details")
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
-	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
-	lockReleaseSyncPeriod = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
+	featureLockRelease         = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
+	lockReleaseReconcilePeriod = flag.Duration("lock-release-reconcile-period", 60*time.Second, "Duration, in seconds, the reconcile period of the lock release controller. Defaults to 60 seconds.")
+	lockReleaseResyncPeriod    = flag.Duration("lock-release-resync-period", 10*time.Minute, "Duration, in minutes, the resync period of the informers cache. Defaults to 10 minutes.")
 
 	// Feature configurable shares per Filestore instance specific parameters.
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
@@ -154,12 +155,13 @@ func main() {
 		FeatureLockRelease: &driver.FeatureLockRelease{
 			Enabled: *featureLockRelease,
 			Config: &lockrelease.LockReleaseControllerConfig{
-				LeaseDuration:  *leaderElectionLeaseDuration,
-				RenewDeadline:  *leaderElectionRenewDeadline,
-				RetryPeriod:    *leaderElectionRetryPeriod,
-				SyncPeriod:     *lockReleaseSyncPeriod,
-				MetricEndpoint: *httpEndpoint,
-				MetricPath:     *metricsPath,
+				LeaseDuration:   *leaderElectionLeaseDuration,
+				RenewDeadline:   *leaderElectionRenewDeadline,
+				RetryPeriod:     *leaderElectionRetryPeriod,
+				ReconcilePeriod: *lockReleaseReconcilePeriod,
+				ResyncPeriod:    *lockReleaseResyncPeriod,
+				MetricEndpoint:  *httpEndpoint,
+				MetricPath:      *metricsPath,
 			},
 		},
 		FeatureMaxSharesPerInstance: &driver.FeatureMaxSharesPerInstance{

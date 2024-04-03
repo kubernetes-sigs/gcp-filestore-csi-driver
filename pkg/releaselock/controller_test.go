@@ -1,13 +1,10 @@
 package lockrelease
 
 import (
-	"context"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestVerifyNodeExists(t *testing.T) {
@@ -116,50 +113,5 @@ func TestVerifyNodeExists(t *testing.T) {
 		if nodeExists != test.expectExists {
 			t.Errorf("test %q failed: got nodeExists %t, expected %t", test.name, nodeExists, test.expectExists)
 		}
-	}
-}
-
-func TestListNodes(t *testing.T) {
-	node1 := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node1",
-			Annotations: map[string]string{
-				gceInstanceIDKey: "node1-id",
-			},
-		},
-	}
-	node2 := &corev1.Node{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "node2",
-			Annotations: map[string]string{
-				gceInstanceIDKey: "node2-id",
-			},
-		},
-	}
-	controller := NewFakeLockReleaseControllerWithClient(fake.NewSimpleClientset(node1, node2))
-	expectedMap := map[string]*corev1.Node{
-		"node1": {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "node1",
-				Annotations: map[string]string{
-					gceInstanceIDKey: "node1-id",
-				},
-			},
-		},
-		"node2": {
-			ObjectMeta: metav1.ObjectMeta{
-				Name: "node2",
-				Annotations: map[string]string{
-					gceInstanceIDKey: "node2-id",
-				},
-			},
-		},
-	}
-	nodes, err := controller.listNodes(context.Background())
-	if err != nil {
-		t.Fatalf("test listNodes failed: unexpected error: %v", err)
-	}
-	if diff := cmp.Diff(expectedMap, nodes); diff != "" {
-		t.Errorf("test listNodes failed: unexpected diff (-want +got):%s", diff)
 	}
 }

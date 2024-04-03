@@ -300,7 +300,7 @@ func (driver *GCFSDriver) ValidateControllerServiceRequest(c csi.ControllerServi
 func (driver *GCFSDriver) Run(endpoint string) {
 	klog.Infof("Running driver: %v", driver.config.Name)
 
-	run := func(ctx context.Context) {
+	run := func(_ context.Context) {
 		// run...
 		stopCh := make(chan struct{})
 		go driver.cs.(*controllerServer).Run(stopCh)

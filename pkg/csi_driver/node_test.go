@@ -18,7 +18,6 @@ package driver
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -30,8 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/apimachinery/pkg/runtime"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
@@ -95,18 +93,20 @@ func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 	}
 }
 
-func initTestNodeServerWithKubeClient(t *testing.T, client kubernetes.Interface) *nodeServer {
+func initTestNodeServerWithKubeClient(t *testing.T, objs []runtime.Object) *nodeServer {
 	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
 	metaserice, err := metadata.NewFakeService()
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
 	}
+
+	controller := lockrelease.NewFakeLockReleaseControllerWithClient(t, objs)
 	return &nodeServer{
 		driver:                initTestDriver(t),
 		mounter:               mounter,
 		metaService:           metaserice,
 		volumeLocks:           util.NewVolumeLocks(),
-		lockReleaseController: lockrelease.NewFakeLockReleaseControllerWithClient(client),
+		lockReleaseController: controller,
 		features:              &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{Enabled: true}},
 	}
 }
@@ -115,7 +115,7 @@ func TestNodePublishVolume(t *testing.T) {
 	defaultPerm := os.FileMode(0750) + os.ModeDir
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -373,7 +373,7 @@ func testWindowsNodePublishVolume(t *testing.T) {
 	defaultOsString := goOs
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -471,7 +471,7 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	defaultPerm := os.FileMode(0750) + os.ModeDir
 
 	// Setup mount target path
-	base, err := ioutil.TempDir("", "node-publish-")
+	base, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 	ns := testEnv.ns
 
 	// Setup mount target path
-	tempDir, err := ioutil.TempDir("", "ngvs")
+	tempDir, err := os.MkdirTemp("", "ngvs")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -755,7 +755,7 @@ func TestConcurrentMounts(t *testing.T) {
 	// A channel of size 1 is sufficient, because the caller of runRequest() in below steps immediately blocks and retrieves the channel of empty struct from 'operationUnblocker' channel. The test steps are such that, atmost one function pushes items on the 'operationUnblocker' channel, to indicate that the function is blocked and waiting for a signal to proceed futher in the execution.
 	operationUnblocker := make(chan chan struct{}, 1)
 	ns := initBlockingTestNodeServer(t, operationUnblocker)
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -886,7 +886,7 @@ func TestConcurrentMounts(t *testing.T) {
 }
 
 func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -1017,14 +1017,14 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		server := initTestNodeServerWithKubeClient(t, client)
+		objs := []runtime.Object{test.existingCM}
+		server := initTestNodeServerWithKubeClient(t, objs)
 		ctx := context.Background()
 		err := server.nodeStageVolumeUpdateLockInfo(ctx, test.req)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		cm, err := client.CoreV1().ConfigMaps(test.expectedCM.Namespace).Get(ctx, test.expectedCM.Name, metav1.GetOptions{})
+		cm, err := server.lockReleaseController.GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace)
 		if err != nil {
 			t.Fatalf("test %q failed: unexpected error %v", test.name, err)
 		}
@@ -1035,7 +1035,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 }
 
 func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
-	basePath, err := ioutil.TempDir("", "node-publish-")
+	basePath, err := os.MkdirTemp("", "node-publish-")
 	if err != nil {
 		t.Fatalf("failed to setup testdir: %v", err)
 	}
@@ -1129,14 +1129,14 @@ func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
-		client := fake.NewSimpleClientset(test.existingCM)
-		server := initTestNodeServerWithKubeClient(t, client)
+		objs := []runtime.Object{test.existingCM}
+		server := initTestNodeServerWithKubeClient(t, objs)
 		ctx := context.Background()
 		err := server.nodeUnstageVolumeUpdateLockInfo(ctx, test.req)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
-		cm, err := client.CoreV1().ConfigMaps(test.existingCM.Namespace).Get(ctx, test.existingCM.Name, metav1.GetOptions{})
+		cm, err := server.lockReleaseController.GetConfigMap(ctx, test.expectedCM.Name, test.expectedCM.Namespace)
 		if test.expectedCM == nil {
 			if !apiError.IsNotFound(err) {
 				t.Fatalf("test %q failed: unexpected error %v", test.name, err)
