@@ -485,7 +485,7 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 		}
 	}
 
-	labels, err := extractInstanceLabels(params, recon.config.Name, recon.config.ClusterName, clusterLocation)
+	labels, err := extractInstanceLabels(params, recon.config.ExtraVolumeLabels, recon.config.Name, recon.config.ClusterName, clusterLocation)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
