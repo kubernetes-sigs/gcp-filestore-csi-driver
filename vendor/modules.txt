@@ -1,4 +1,4 @@
-# cloud.google.com/go/compute v1.24.0
+# cloud.google.com/go/compute v1.25.1
 ## explicit; go 1.19
 cloud.google.com/go/compute/internal
 # cloud.google.com/go/compute/metadata v0.2.3
