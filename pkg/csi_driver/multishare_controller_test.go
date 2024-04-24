@@ -64,6 +64,7 @@ func initTestMultishareController(t *testing.T) *MultishareController {
 		ecfsDescription: "",
 		isRegional:      true,
 		clusterName:     testClusterName,
+		tagManager:      cloud.NewFakeTagManager(),
 	}
 	return NewMultishareController(config)
 }
@@ -88,6 +89,7 @@ func initTestMultishareControllerWithFeatureOpts(t *testing.T, features *GCFSDri
 		isRegional:      true,
 		clusterName:     testClusterName,
 		features:        features,
+		tagManager:      cloud.NewFakeTagManager(),
 	}
 	return NewMultishareController(config)
 }
@@ -2823,6 +2825,7 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 		state  string
 	}
 	backupName := "mybackup"
+	backupName2 := "mybackup2"
 	testInstanceName1 := "fs-" + string(uuid.NewUUID())
 	defaultSourceVolumeID := modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName
 	defaultBackupUri := fmt.Sprintf("projects/%s/locations/%s/backups/%s", testProject, testRegion, backupName)
@@ -2970,6 +2973,20 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "adding tags to multishare snapshot fails(failure scenario mocked)",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName2,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey:     "backup",
+					cloud.ParameterKeyResourceTags: "kubernetes/test1/test1",
+				},
+			},
+			features:      features,
+			initialBackup: nil,
+			expectErr:     true,
+		},
 		//Success test cases
 		{
 			name: "No existing backup",
@@ -3045,6 +3062,13 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
 			fileService := m.fileService
+
+			m.tagManager.(*cloud.FakeTagServiceManager).
+				On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName, testRegion, tc.req.GetName(), tc.req.GetParameters()).
+				Return(nil)
+			m.tagManager.(*cloud.FakeTagServiceManager).
+				On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName2, testRegion, tc.req.GetName(), tc.req.GetParameters()).
+				Return(fmt.Errorf("mock failure: error while adding tags to multishare snapshot"))
 
 			if tc.initialBackup != nil {
 				existingBackup, _ := fileService.CreateBackup(context.TODO(), tc.initialBackup.backup)
