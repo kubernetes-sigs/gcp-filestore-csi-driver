@@ -49,6 +49,7 @@ var (
 	isRegional                      = flag.Bool("is-regional", false, "cluster is regional cluster")
 	gkeClusterName                  = flag.String("gke-cluster-name", "", "Cluster Name of the current GKE cluster driver is running on, required for multishare")
 	extraVolumeLabelsStr            = flag.String("extra-labels", "", "Extra labels to attach to each volume created. It is a comma separated list of key value pairs like '<key1>=<value1>,<key2>=<value2>'. See https://cloud.google.com/compute/docs/labeling-resources for details")
+	resourceTagsStr                 = flag.String("resource-tags", "", "Resource tags to attach to each volume created. It is a comma separated list of tags of the form '<parentID_1>/<tagKey_1>/<tagValue_1>...<parentID_N>/<tagKey_N>/<tagValue_N>' where, parentID is the ID of Organization or Project resource where tag key and value resources exist, tagKey is the shortName of the tag key resource, tagValue is the shortName of the tag value resource. See https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing for more details.")
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
 	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
@@ -95,6 +96,7 @@ func main() {
 	var meta metadata.Service
 	var mm *metrics.MetricsManager
 	var extraVolumeLabels map[string]string
+	var tagMgr cloud.TagService
 	if *runController {
 		if *httpEndpoint != "" && metrics.IsGKEComponentVersionAvailable() {
 			mm = metrics.NewMetricsManager()
@@ -115,12 +117,22 @@ func main() {
 		}
 
 		provider, err = cloud.NewCloud(ctx, version, *cloudConfigFilePath, *primaryFilestoreServiceEndpoint, *testFilestoreServiceEndpoint)
+
+		tagMgr = cloud.NewTagManager(provider)
+		tags, err := tagMgr.ValidateResourceTags(ctx, "command line", *resourceTagsStr)
+		if err != nil {
+			klog.Fatalf("failed to parse resource tags provided in command line: %v", err)
+		}
+		tagMgr.SetResourceTags(tags)
 	} else {
 		if *nodeID == "" {
 			klog.Fatalf("nodeid cannot be empty for node service")
 		}
 		if len(*extraVolumeLabelsStr) > 0 {
 			klog.Fatalf("Extra volume labels provided but not running controller")
+		}
+		if len(*resourceTagsStr) > 0 {
+			klog.Fatalf("Resource tags provided but not running controller")
 		}
 
 		meta, err = metadataservice.NewMetadataService()
@@ -206,6 +218,7 @@ func main() {
 		ClusterName:       *gkeClusterName,
 		FeatureOptions:    featureOptions,
 		ExtraVolumeLabels: extraVolumeLabels,
+		TagManager:        tagMgr,
 	}
 
 	gcfsDriver, err := driver.NewGCFSDriver(config)

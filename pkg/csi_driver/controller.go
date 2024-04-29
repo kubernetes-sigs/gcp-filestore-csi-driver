@@ -130,6 +130,7 @@ type controllerServerConfig struct {
 	clusterName          string
 	features             *GCFSDriverFeatureOptions
 	extraVolumeLabels    map[string]string
+	tagManager           cloud.TagService
 }
 
 func newControllerServer(config *controllerServerConfig) csi.ControllerServer {
@@ -306,7 +307,12 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 			return nil, file.StatusError(createErr)
 		}
 	}
+
+	if err := s.config.tagManager.AttachResourceTags(ctx, cloud.FilestoreInstance, filer.Name, filer.Location, req.GetName(), req.GetParameters()); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
 	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance)}
+
 	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
 }
@@ -620,6 +626,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
 		case ParamReservedIPV4CIDR, ParamReservedIPRange:
+			continue
+		case cloud.ParameterKeyResourceTags:
 			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
@@ -938,15 +946,16 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		return nil, file.StatusError(err)
 	}
 
+	var snapshotResponse *csi.CreateSnapshotResponse
 	if backupExists {
 		// process existing backup
 		snapshot, err := file.ProcessExistingBackup(ctx, existingBackup, volumeID, modeInstance)
 		if err != nil {
 			return nil, err
 		}
-		return &csi.CreateSnapshotResponse{
+		snapshotResponse = &csi.CreateSnapshotResponse{
 			Snapshot: snapshot,
-		}, nil
+		}
 	} else {
 		// create new backup
 
@@ -965,7 +974,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 		if err != nil {
 			return nil, file.StatusError(err)
 		}
-		resp := &csi.CreateSnapshotResponse{
+		snapshotResponse = &csi.CreateSnapshotResponse{
 			Snapshot: &csi.Snapshot{
 				SizeBytes:      util.GbToBytes(backupObj.CapacityGb),
 				SnapshotId:     backupObj.Name,
@@ -975,9 +984,13 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 			},
 		}
 		klog.V(4).Infof("CreateSnapshot succeeded for volume %v, Backup Id: %v", volumeID, backupObj.Name)
-		return resp, nil
 	}
 
+	if err := s.config.tagManager.AttachResourceTags(ctx, cloud.FilestoreBackUp, backupInfo.Name, backupInfo.Location, req.GetName(), req.GetParameters()); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+
+	return snapshotResponse, nil
 }
 
 func extractBackupLabels(parameters, cliLabels map[string]string, driverName string, snapshotName string) (map[string]string, error) {
