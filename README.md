@@ -125,7 +125,7 @@ Make and build the image if desploying new master branch.
 ```
 GCP_FS_CSI_STAGING_VERSION=<your-custom-tag> GCP_FS_CSI_STAGING_IMAGE=gcr.io/<your-project>/gcp-filestore-csi-driver make build-image-and-push
 ```
-Once the image is pushed it can be verified by visiting `https://pantheon.corp.google.com/gcr/images/<your-project>/global/gcp-filestore-csi-driver`
+Once the image is pushed it can be verified by visiting `https://console.cloud.google.com/gcr/images/<your-project>/global/gcp-filestore-csi-driver`
 ```
 $ PROJECT=<your-gcp-project> DEPLOY_VERSION=<your-overlay-choice> GCFS_SA_DIR=<your-directory-to-store-credentials-by-default-home-dir> ./deploy/kubernetes/cluster_setup.sh
 ```
