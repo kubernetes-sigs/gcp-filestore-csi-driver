@@ -25,7 +25,7 @@ RUN GOARCH=$(echo $TARGETPLATFORM | cut -f2 -d '/') make driver BINDIR=/bin GCP_
 # Install nfs packages
 # Note that the newer debian bullseye image does not work with nfs-common; I
 # believe that libcap needs extra configuration.
-FROM gke.gcr.io/debian-base:bookworm-v1.0.2-gke.0 as deps
+FROM gke.gcr.io/debian-base:bookworm-v1.0.2-gke.2@sha256:1e4d9fa20ba4b3372f2c2f8676823f25c63e1ba7c09ed17933a19b054b97b795 as deps
 ENV DEBIAN_FRONTEND noninteractive
 
 # The netbase package is needed to get rpcbind to work correctly,
