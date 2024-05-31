@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -536,11 +537,72 @@ func TestIsContextError(t *testing.T) {
 }
 
 func TestCodeForError(t *testing.T) {
+	getGoogleAPIWrappedError := func(err error) *googleapi.Error {
+		apierr, _ := apierror.ParseError(err, false)
+		wrappedError := &googleapi.Error{}
+		wrappedError.Wrap(apierr)
+
+		return wrappedError
+	}
+	getAPIError := func(err error) *apierror.APIError {
+		apierror, _ := apierror.ParseError(err, true)
+		return apierror
+	}
 	cases := []struct {
 		name            string
 		err             error
 		expectedErrCode *codes.Code
 	}{
+		{
+			name: "googleapi.Error that wraps apierror.APIError of http kind",
+			err: getGoogleAPIWrappedError(&googleapi.Error{
+				Code:    404,
+				Message: "data requested not found error",
+			}),
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name: "googleapi.Error that wraps apierror.APIError of status kind",
+			err: getGoogleAPIWrappedError(status.New(
+				codes.Internal, "Internal status error",
+			).Err()),
+			expectedErrCode: util.ErrCodePtr(codes.Internal),
+		},
+		{
+			name: "apierror.APIError of status kind",
+			err: getAPIError(status.New(
+				codes.Canceled, "Internal status error",
+			).Err()),
+			expectedErrCode: util.ErrCodePtr(codes.Canceled),
+		},
+		{
+			name: "apierror.APIError of http kind",
+			err: getAPIError(&googleapi.Error{
+				Code:    404,
+				Message: "data requested not found error",
+			}),
+			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "apierror.APIError wrapped 429 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusTooManyRequests}),
+			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
+		},
+		{
+			name:            "apierror.APIError  wrapped 400 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusBadRequest}),
+			expectedErrCode: util.ErrCodePtr(codes.InvalidArgument),
+		},
+		{
+			name:            "apierror.APIError  wrapped 403 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusForbidden}),
+			expectedErrCode: util.ErrCodePtr(codes.PermissionDenied),
+		},
+		{
+			name:            "RESOURCE_EXHAUSTED error",
+			err:             fmt.Errorf("got error: RESOURCE_EXHAUSTED: Operation rate exceeded"),
+			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
+		},
 		{
 			name:            "deadline exceeded error",
 			err:             context.DeadlineExceeded,
@@ -589,13 +651,15 @@ func TestCodeForError(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		errCode := codeForError(test.err)
-		if (test.expectedErrCode == nil) != (errCode == nil) {
-			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
-		}
-		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
-			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			errCode := codeForError(test.err)
+			if (test.expectedErrCode == nil) != (errCode == nil) {
+				t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+			}
+			if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
+				t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+			}
+		})
 	}
 }
 
@@ -637,31 +701,6 @@ func TestIsUserError(t *testing.T) {
 			expectedErrCode: nil,
 		},
 		{
-			name:            "404 http error",
-			err:             &googleapi.Error{Code: http.StatusNotFound},
-			expectedErrCode: util.ErrCodePtr(codes.NotFound),
-		},
-		{
-			name:            "wrapped 404 http error",
-			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusNotFound}),
-			expectedErrCode: util.ErrCodePtr(codes.NotFound),
-		},
-		{
-			name:            "wrapped 429 http error",
-			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusTooManyRequests}),
-			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
-		},
-		{
-			name:            "wrapped 400 http error",
-			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusBadRequest}),
-			expectedErrCode: util.ErrCodePtr(codes.InvalidArgument),
-		},
-		{
-			name:            "wrapped 403 http error",
-			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusForbidden}),
-			expectedErrCode: util.ErrCodePtr(codes.PermissionDenied),
-		},
-		{
 			name:            "RESOURCE_EXHAUSTED error",
 			err:             fmt.Errorf("got error: RESOURCE_EXHAUSTED: Operation rate exceeded"),
 			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
@@ -684,12 +723,14 @@ func TestIsUserError(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		errCode := isUserError(test.err)
-		if (test.expectedErrCode == nil) != (errCode == nil) {
-			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
-		}
-		if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
-			t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
-		}
+		t.Run(test.name, func(t *testing.T) {
+			errCode := isUserOperationError(test.err)
+			if (test.expectedErrCode == nil) != (errCode == nil) {
+				t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+			}
+			if test.expectedErrCode != nil && *errCode != *test.expectedErrCode {
+				t.Errorf("test %v failed: got %v, expected %v", test.name, errCode, test.expectedErrCode)
+			}
+		})
 	}
 }
