@@ -542,6 +542,7 @@ func provisionableCapacityForTier(tier string) *capacityRangeForTier {
 		basicHDDTier:   defaultRange, //these two are aliases
 	}
 
+	tier = strings.ToLower(tier)
 	validRange, ok := provisionableCapacityForTier[tier]
 	if !ok {
 		validRange = provisionableCapacityForTier[defaultTier]
@@ -715,11 +716,6 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	reqBytes, err := getRequestCapacity(req.GetCapacityRange(), filer.Tier)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-
 	filer.Project = s.config.cloud.Project
 	filer, err = s.config.fileService.GetInstance(ctx, filer)
 	if err != nil {
@@ -727,6 +723,12 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	}
 	if filer.State != "READY" {
 		return nil, fmt.Errorf("lolume %q is not yet ready, current state %q", volumeID, filer.State)
+	}
+
+	// getFileInstanceFromID doesn't have tier info set, we have to check the range after GetInstance call
+	reqBytes, err := getRequestCapacity(req.GetCapacityRange(), filer.Tier)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	if util.BytesToGb(reqBytes) <= util.BytesToGb(filer.Volume.SizeBytes) {
