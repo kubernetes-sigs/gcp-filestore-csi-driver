@@ -990,6 +990,31 @@ func TestGetRequestCapacity(t *testing.T) {
 			tier:  basicHDDTier,
 			bytes: 1 * util.Tb,
 		},
+		{
+			name: "required in range ZONAL all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Tb,
+			},
+			tier:  "ZONAL",
+			bytes: 100 * util.Tb,
+		},
+		{
+			name: "required above max BASIC_SSD all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 70 * util.Tb,
+			},
+			tier:          "BASIC_SSD",
+			errorExpected: true,
+		},
+		{
+			name: "required and limit both in range BASIC_SSD all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+				LimitBytes:    60 * util.Tb,
+			},
+			tier:  "BASIC_SSD",
+			bytes: 3 * util.Tb,
+		},
 	}
 
 	for _, tc := range cases {
