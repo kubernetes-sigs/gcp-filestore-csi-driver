@@ -203,11 +203,6 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	// we do not yet support zonal small
-	if tier == zonalTier && capBytes < highScaleTierMinSize {
-		return nil, status.Error(codes.InvalidArgument, "gke does not support zonal small band yet.")
-	}
-
 	klog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
