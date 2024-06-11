@@ -296,19 +296,19 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		instance.FileShares[0].SourceBackup)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
-		klog.Errorf("CreateInstance operation failed for instance %v: %w", obj.Name, err)
+		klog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
 		return nil, err
 	}
 
 	klog.V(4).Infof("For instance %v, waiting for create instance op %v to complete", obj.Name, op.Name)
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
-		klog.Errorf("WaitFor CreateInstance op %s failed: %w", op.Name, err)
+		klog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
 		return nil, err
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
-		klog.Errorf("failed to get instance after creation: %w", err)
+		klog.Errorf("failed to get instance after creation: %v", err)
 		return nil, err
 	}
 	return serviceInstance, nil
@@ -517,7 +517,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo 
 	opbackup, err := manager.backupService.Create(locationURI(backupInfo.Project, backupInfo.Location), backupobj).BackupId(backupInfo.Name).Context(ctx).Do()
 
 	if err != nil {
-		klog.Errorf("Create Backup operation failed: %w", err)
+		klog.Errorf("Create Backup operation failed: %v", err)
 		return nil, err
 	}
 

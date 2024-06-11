@@ -118,7 +118,7 @@ func ReleaseLock(hostIP, clientIP string) error {
 		ServiceMethod: inbandLockReleaseProcedureName,
 		Seq:           uint64(time.Now().UnixNano()),
 	}
-	klog.Infof("Sending RPC request %+v from GKE node IP to Filestore IP %s", request, clientIP, hostIP)
+	klog.Infof("Sending RPC request %+v from GKE node IP %s to Filestore IP %s", request, clientIP, hostIP)
 	if err := client.WriteRequest(&request, ipBinary); err != nil {
 		return fmt.Errorf("failed to write RPC request %+v for GKE node IP %s Filestore IP %s, err: %w", request, clientIP, hostIP, err)
 	}
