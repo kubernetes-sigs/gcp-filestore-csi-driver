@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
@@ -214,6 +215,14 @@ var (
 	instanceUriRegex = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)$`)
 	shareUriRegex    = regexp.MustCompile(`^projects/([^/]+)/locations/([^/]+)/instances/([^/]+)/shares/([^/]+)$`)
 )
+
+// userErrorCodeMap tells how API error types are translated to error codes.
+var userErrorCodeMap = map[int]codes.Code{
+	http.StatusForbidden:       codes.PermissionDenied,
+	http.StatusBadRequest:      codes.InvalidArgument,
+	http.StatusTooManyRequests: codes.ResourceExhausted,
+	http.StatusNotFound:        codes.NotFound,
+}
 
 func NewGCFSService(version string, client *http.Client, primaryFilestoreServiceEndpoint, testFilestoreServiceEndpoint string) (Service, error) {
 	ctx := context.Background()
@@ -631,7 +640,7 @@ func IsNotFoundErr(err error) bool {
 // (2) http 403 Forbidden, returns grpc PermissionDenied,
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
-func isUserError(err error) *codes.Code {
+func isUserOperationError(err error) *codes.Code {
 	// Upwrap the error
 	var apiErr *googleapi.Error
 	if !errors.As(err, &apiErr) {
@@ -639,15 +648,6 @@ func isUserError(err error) *codes.Code {
 		return containsUserErrStr(err)
 	}
 
-	userErrors := map[int]codes.Code{
-		http.StatusForbidden:       codes.PermissionDenied,
-		http.StatusBadRequest:      codes.InvalidArgument,
-		http.StatusTooManyRequests: codes.ResourceExhausted,
-		http.StatusNotFound:        codes.NotFound,
-	}
-	if code, ok := userErrors[apiErr.Code]; ok {
-		return &code
-	}
 	return nil
 }
 
@@ -692,14 +692,50 @@ func isContextError(err error) *codes.Code {
 
 // existingErrorCode returns a pointer to the grpc error code for the passed in error.
 // Returns nil if the error is nil, or if the error cannot be converted to a grpc status.
+// Since github.com/googleapis/gax-go/v2/apierror now wraps googleapi errors (returned from
+// GCE API calls), and sets their status error code to Unknown, we now have to make sure we
+// only return existing error codes from errors that do not wrap googleAPI errors. Otherwise,
+// we will return Unknown for all GCE API calls that return googleapi errors.
 func existingErrorCode(err error) *codes.Code {
 	if err == nil {
 		return nil
 	}
 
-	if status, ok := status.FromError(err); ok {
-		return util.ErrCodePtr(status.Code())
+	// We want to make sure we catch other error types that are statusable.
+	// (eg. grpc-go/internal/status/status.go Error struct that wraps a status)
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) {
+		if status, ok := status.FromError(err); ok {
+			return util.ErrCodePtr(status.Code())
+		}
 	}
+	return nil
+}
+
+// isGoogleAPIError returns the gRPC status code for the given googleapi error by mapping
+// the googleapi error's HTTP code to the corresponding gRPC error code. If the error is
+// wrapped in an APIError (github.com/googleapis/gax-go/v2/apierror), it maps the wrapped
+// googleAPI error's HTTP code to the corresponding gRPC error code. Returns an error if
+// the given error is not a googleapi error.
+func isGoogleAPIError(err error) *codes.Code {
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) {
+		return nil
+	}
+	var sourceCode int
+	var apiErr *apierror.APIError
+	if errors.As(err, &apiErr) {
+		// When googleapi.Err is used as a wrapper, we return the error code of the wrapped contents.
+		sourceCode = apiErr.HTTPCode()
+	} else {
+		// Rely on error code in googleapi.Err when it is our primary error.
+		sourceCode = googleErr.Code
+	}
+	// Map API error code to user error code.
+	if code, ok := userErrorCodeMap[sourceCode]; ok {
+		return util.ErrCodePtr(code)
+	}
+	// Map API error code to user error code.
 	return nil
 }
 
@@ -721,10 +757,13 @@ func codeForError(err error) *codes.Code {
 	if errCode := existingErrorCode(err); errCode != nil {
 		return errCode
 	}
-	if errCode := isUserError(err); errCode != nil {
+	if errCode := isUserOperationError(err); errCode != nil {
 		return errCode
 	}
 	if errCode := isContextError(err); errCode != nil {
+		return errCode
+	}
+	if errCode := isGoogleAPIError(err); errCode != nil {
 		return errCode
 	}
 
