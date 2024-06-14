@@ -131,7 +131,10 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 						},
 					},
 				},
-				Parameters:         map[string]string{"tier": defaultTier},
+				Parameters: map[string]string{
+					"tier":             defaultTier,
+					ParameterKeyLabels: "key1=value1",
+				},
 				VolumeCapabilities: volumeCapabilities,
 			},
 			resp: &csi.CreateVolumeResponse{
@@ -343,6 +346,34 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
 			},
 		},
+		{
+			name: "Parameters contain misconfigured labels(invalid KV separator(:) used)",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				Parameters: map[string]string{
+					"tier":             enterpriseTier,
+					ParameterKeyLabels: "key1:value1",
+				},
+			},
+			resp:            nil,
+			expectedOptions: nil,
+			initialBackup: &BackupInfo{
+				s: &file.ServiceInstance{
+					Project:  testProject,
+					Location: testRegion,
+					Name:     instanceName,
+					Tier:     enterpriseTier,
+					Volume: file.Volume{
+						Name:      shareName,
+						SizeBytes: testBytes,
+					},
+				},
+				backupName:     backupName,
+				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
+			},
+			expectErr: true,
+		},
 	}
 
 	for _, test := range cases {
@@ -359,8 +390,10 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 			SourceShare:        test.initialBackup.s.Volume.Name,
 			Name:               test.initialBackup.backupName,
 			SourceVolumeId:     test.initialBackup.SourceVolumeId,
-			BackupURI:          test.resp.Volume.ContentSource.GetSnapshot().SnapshotId,
 			Labels:             make(map[string]string),
+		}
+		if test.resp != nil {
+			backupInfo.BackupURI = test.resp.Volume.ContentSource.GetSnapshot().SnapshotId
 		}
 
 		cs.config.fileService.CreateBackup(context.TODO(), backupInfo)
@@ -1616,6 +1649,30 @@ func TestCreateSnapshot(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "Parameters contain misconfigured labels(invalid KV separator(:) used)",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+					ParameterKeyLabels:         "key1:value1",
+				},
+			},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     "modeInstance/us-central1/myinstance/myshare",
+				},
+				state: "CREATING",
+			},
+			expectErr: true,
+		},
 		// Success test cases
 		{
 			name: "No backup found",
@@ -1703,6 +1760,30 @@ func TestCreateSnapshot(t *testing.T) {
 				Name:           backupName,
 				Parameters: map[string]string{
 					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            project,
+					Location:           region,
+					SourceInstanceName: instanceName,
+					SourceShare:        shareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     "modeInstance/us-central1-c/myinstance/myshare",
+				},
+			},
+		},
+		{
+			// If the incorrect labels were added, labels processing will not happen for already
+			// existing backup resources.
+			name: "Existing backup found, in state READY. Labels will not be processed.",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1-c/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+					ParameterKeyLabels:         "key1:value1",
 				},
 			},
 			initialBackup: &BackupTestInfo{
@@ -2125,6 +2206,322 @@ func TestParsingNfsExportOptions(t *testing.T) {
 		}
 		if !reflect.DeepEqual(test.expectedOptions, parsedOptions) {
 			t.Errorf("test %q failed; expected: %#v; got %#v", test.name, test.expectedOptions, parsedOptions)
+		}
+	}
+}
+
+func TestExtractLabels(t *testing.T) {
+	var (
+		driverName      = "test_driver"
+		pvcName         = "test_pvc"
+		pvcNamespace    = "test_pvc_namespace"
+		pvName          = "test_pv"
+		parameterLabels = "key1=value1,key2=value2"
+	)
+
+	cases := []struct {
+		name         string
+		parameters   map[string]string
+		cliLabels    map[string]string
+		expectLabels map[string]string
+		expectError  string
+	}{
+		{
+			name: "Success case",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				"key3":                         "value3",
+				"key4":                         "value4",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+			},
+		},
+		{
+			name: "Parsing labels in storageClass fails(invalid KV separator(:) used)",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       "key1:value1,key2:value2",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: nil,
+			expectError:  `parameters contain invalid labels parameter: labels "key1:value1,key2:value2" are invalid, correct format: 'key1=value1,key2=value2'`,
+		},
+		{
+			name: "storageClass labels contain reserved metadata label(kubernetes_io_created-for_pv_name)",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       "key1=value1,key2=value2,kubernetes_io_created-for_pv_name=test",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: nil,
+			expectError:  `storage Class labels cannot contain metadata label key kubernetes_io_created-for_pv_name`,
+		},
+		{
+			name: "storageClass labels parameter not present, only the CLI labels are defined",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: map[string]string{
+				"key3":                         "value3",
+				"key4":                         "value4",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+			},
+		},
+		{
+			name: "CLI labels not defined, labels are defined only in the storageClass object",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: nil,
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+			},
+		},
+		{
+			name: "CLI labels and storageClass labels parameter not defined",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+			},
+			cliLabels: nil,
+			expectLabels: map[string]string{
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+			},
+		},
+		{
+			name: "CLI labels and storageClass labels has duplicates",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: map[string]string{
+				"key1": "value1",
+				"key2": "value202",
+			},
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+			},
+		},
+	}
+	for _, test := range cases {
+		labels, err := extractLabels(test.parameters, test.cliLabels, driverName)
+		if (err != nil || test.expectError != "") && err.Error() != test.expectError {
+			t.Errorf("extractLabels(): %s: got: %v, expectErr: %v", test.name, err, test.expectError)
+		}
+		if !reflect.DeepEqual(test.expectLabels, labels) {
+			t.Errorf("extractLabels(): %s: got: %v, want: %v", test.name, labels, test.expectLabels)
+		}
+	}
+}
+
+func TestExtractBackupLabels(t *testing.T) {
+	var (
+		driverName      = "test_driver"
+		snapshotName    = "test_snapshot"
+		pvcName         = "test_pvc"
+		pvcNamespace    = "test_pvc_namespace"
+		pvName          = "test_pv"
+		parameterLabels = "key1=value1,key2=value2"
+	)
+
+	cases := []struct {
+		name         string
+		parameters   map[string]string
+		cliLabels    map[string]string
+		expectLabels map[string]string
+		expectError  string
+	}{
+		{
+			name: "Success case",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				"key3":                         "value3",
+				"key4":                         "value4",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+				tagKeySnapshotName:             snapshotName,
+			},
+		},
+		{
+			name: "Parsing labels in storageClass fails(invalid KV separator(:) used)",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       "key1:value1,key2:value2",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: nil,
+			expectError:  `parameters contain invalid labels parameter: labels "key1:value1,key2:value2" are invalid, correct format: 'key1=value1,key2=value2'`,
+		},
+		{
+			name: "storageClass labels contain reserved metadata label(kubernetes_io_created-for_pv_name)",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       "key1=value1,key2=value2,kubernetes_io_created-for_pv_name=test",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: nil,
+			expectError:  `storage Class labels cannot contain metadata label key kubernetes_io_created-for_pv_name`,
+		},
+		{
+			name: "storageClass labels parameter not present, only the CLI labels are defined",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectLabels: map[string]string{
+				"key3":                         "value3",
+				"key4":                         "value4",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+				tagKeySnapshotName:             snapshotName,
+			},
+		},
+		{
+			name: "CLI labels not defined, labels are defined only in the storageClass object",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: nil,
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+				tagKeySnapshotName:             snapshotName,
+			},
+		},
+		{
+			name: "CLI labels and storageClass labels parameter not defined",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+			},
+			cliLabels: nil,
+			expectLabels: map[string]string{
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+				tagKeySnapshotName:             snapshotName,
+			},
+		},
+		{
+			name: "CLI labels and storageClass labels has duplicates",
+			parameters: map[string]string{
+				ParameterKeyPVCName:      pvcName,
+				ParameterKeyPVCNamespace: pvcNamespace,
+				ParameterKeyPVName:       pvName,
+				ParameterKeyLabels:       parameterLabels,
+			},
+			cliLabels: map[string]string{
+				"key1": "value1",
+				"key2": "value202",
+			},
+			expectLabels: map[string]string{
+				"key1":                         "value1",
+				"key2":                         "value2",
+				tagKeyCreatedForVolumeName:     pvName,
+				tagKeyCreatedForClaimName:      pvcName,
+				tagKeyCreatedForClaimNamespace: pvcNamespace,
+				tagKeyCreatedBy:                driverName,
+				tagKeySnapshotName:             snapshotName,
+			},
+		},
+	}
+	for _, test := range cases {
+		labels, err := extractBackupLabels(test.parameters, test.cliLabels, driverName, snapshotName)
+		if (err != nil || test.expectError != "") && err.Error() != test.expectError {
+			t.Errorf("extractBackupLabels(): %s: got: %v, expectErr: %v", test.name, err, test.expectError)
+		}
+		if !reflect.DeepEqual(test.expectLabels, labels) {
+			t.Errorf("extractBackupLabels(): %s: got: %v, want: %v", test.name, labels, test.expectLabels)
 		}
 	}
 }
