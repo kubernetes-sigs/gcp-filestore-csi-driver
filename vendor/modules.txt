@@ -45,7 +45,7 @@ github.com/blang/semver/v4
 # github.com/cespare/xxhash/v2 v2.2.0
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/container-storage-interface/spec v1.8.0
+# github.com/container-storage-interface/spec v1.9.0
 ## explicit; go 1.18
 github.com/container-storage-interface/spec/lib/go/csi
 # github.com/davecgh/go-spew v1.1.1
@@ -68,7 +68,6 @@ github.com/fsnotify/fsnotify
 ## explicit; go 1.18
 github.com/go-logr/logr
 github.com/go-logr/logr/funcr
-github.com/go-logr/logr/slogr
 # github.com/go-logr/stdr v1.2.2
 ## explicit; go 1.16
 github.com/go-logr/stdr
@@ -176,8 +175,8 @@ github.com/josharian/intern
 # github.com/json-iterator/go v1.1.12
 ## explicit; go 1.12
 github.com/json-iterator/go
-# github.com/kubernetes-csi/csi-lib-utils v0.13.0
-## explicit; go 1.18
+# github.com/kubernetes-csi/csi-lib-utils v0.18.1
+## explicit; go 1.22.0
 github.com/kubernetes-csi/csi-lib-utils/leaderelection
 github.com/kubernetes-csi/csi-lib-utils/protosanitizer
 # github.com/kubernetes-csi/csi-test/v3 v3.1.1
@@ -267,7 +266,7 @@ github.com/prometheus/client_model/go
 github.com/prometheus/common/expfmt
 github.com/prometheus/common/internal/bitbucket.org/ww/goautoneg
 github.com/prometheus/common/model
-# github.com/prometheus/procfs v0.10.1
+# github.com/prometheus/procfs v0.12.0
 ## explicit; go 1.19
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
@@ -569,7 +568,7 @@ gopkg.in/yaml.v2
 # gopkg.in/yaml.v3 v3.0.1
 ## explicit
 gopkg.in/yaml.v3
-# k8s.io/api v0.26.0 => k8s.io/api v0.26.0
+# k8s.io/api v0.30.1 => k8s.io/api v0.26.0
 ## explicit; go 1.19
 k8s.io/api/admission/v1
 k8s.io/api/admissionregistration/v1
@@ -623,9 +622,7 @@ k8s.io/api/scheduling/v1beta1
 k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
-# k8s.io/apiextensions-apiserver v0.24.1 => k8s.io/apiextensions-apiserver v0.26.0
-## explicit; go 1.19
-# k8s.io/apimachinery v0.26.0 => k8s.io/apimachinery v0.26.0
+# k8s.io/apimachinery v0.30.1 => k8s.io/apimachinery v0.26.0
 ## explicit; go 1.19
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/api/meta
@@ -969,13 +966,13 @@ k8s.io/client-go/util/homedir
 k8s.io/client-go/util/keyutil
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/workqueue
-# k8s.io/component-base v0.26.0 => k8s.io/component-base v0.26.0
+# k8s.io/component-base v0.30.1 => k8s.io/component-base v0.26.0
 ## explicit; go 1.19
 k8s.io/component-base/metrics
 k8s.io/component-base/metrics/prometheusextension
 k8s.io/component-base/version
-# k8s.io/klog/v2 v2.110.1
-## explicit; go 1.13
+# k8s.io/klog/v2 v2.120.1
+## explicit; go 1.18
 k8s.io/klog/v2
 k8s.io/klog/v2/internal/buffer
 k8s.io/klog/v2/internal/clock
@@ -983,8 +980,8 @@ k8s.io/klog/v2/internal/dbg
 k8s.io/klog/v2/internal/serialize
 k8s.io/klog/v2/internal/severity
 k8s.io/klog/v2/internal/sloghandler
-# k8s.io/kube-openapi v0.0.0-20231010175941-2dd684a91f00
-## explicit; go 1.19
+# k8s.io/kube-openapi v0.0.0-20240228011516-70dd3763d340
+## explicit; go 1.20
 k8s.io/kube-openapi/pkg/cached
 k8s.io/kube-openapi/pkg/common
 k8s.io/kube-openapi/pkg/handler3
@@ -994,8 +991,8 @@ k8s.io/kube-openapi/pkg/schemaconv
 k8s.io/kube-openapi/pkg/spec3
 k8s.io/kube-openapi/pkg/util/proto
 k8s.io/kube-openapi/pkg/validation/spec
-# k8s.io/kubernetes v1.29.4
-## explicit; go 1.21
+# k8s.io/kubernetes v1.30.2
+## explicit; go 1.22.0
 k8s.io/kubernetes/test/e2e/storage/podlogs
 # k8s.io/mount-utils v0.24.1 => k8s.io/mount-utils v0.26.0
 ## explicit; go 1.19
@@ -1023,8 +1020,8 @@ k8s.io/utils/trace
 sigs.k8s.io/boskos/client
 sigs.k8s.io/boskos/common
 sigs.k8s.io/boskos/storage
-# sigs.k8s.io/controller-runtime v0.12.1
-## explicit; go 1.17
+# sigs.k8s.io/controller-runtime v0.18.4
+## explicit; go 1.22.0
 sigs.k8s.io/controller-runtime/pkg/certwatcher
 sigs.k8s.io/controller-runtime/pkg/certwatcher/metrics
 sigs.k8s.io/controller-runtime/pkg/internal/log
@@ -1040,9 +1037,10 @@ sigs.k8s.io/structured-merge-diff/v4/fieldpath
 sigs.k8s.io/structured-merge-diff/v4/schema
 sigs.k8s.io/structured-merge-diff/v4/typed
 sigs.k8s.io/structured-merge-diff/v4/value
-# sigs.k8s.io/yaml v1.3.0
+# sigs.k8s.io/yaml v1.4.0
 ## explicit; go 1.12
 sigs.k8s.io/yaml
+sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/api => k8s.io/api v0.26.0
 # k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.26.0
 # k8s.io/apimachinery => k8s.io/apimachinery v0.26.0
