@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  resource-tags: parent1/tagKey1/tagValue1,parent2/tagKey2/tagValue2,...,parentN/tagKeyN/tagValueN
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true

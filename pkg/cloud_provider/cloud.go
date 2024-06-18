@@ -34,6 +34,7 @@ import (
 )
 
 type Cloud struct {
+	Config  *ConfigFile
 	File    file.Service
 	Project string
 	Zone    string
@@ -76,6 +77,7 @@ func NewCloud(ctx context.Context, version, configPath, primaryFilestoreServiceE
 		return nil, fmt.Errorf("failed to initialize project information: %w", err)
 	}
 	return &Cloud{
+		Config:  configFile,
 		File:    file,
 		Project: project,
 		Zone:    zone,

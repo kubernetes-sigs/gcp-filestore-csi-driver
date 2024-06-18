@@ -68,6 +68,7 @@ type MultishareController struct {
 	featureMaxSharePerInstance      bool
 	featureMultishareBackups        bool
 	featureNFSExportOptionsOnCreate bool
+	tagManager                      cloud.TagService
 
 	// Filestore instance description overrides
 	descOverrideMaxSharesPerInstance string
@@ -88,6 +89,7 @@ func NewMultishareController(config *controllerServerConfig) *MultishareControll
 		ecfsDescription: config.ecfsDescription,
 		isRegional:      config.isRegional,
 		clustername:     config.clusterName,
+		tagManager:      config.tagManager,
 	}
 	c.opsManager = NewMultishareOpsManager(config.cloud, c)
 	if config.features != nil && config.features.FeatureMaxSharesPerInstance != nil {
@@ -268,6 +270,7 @@ func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.Crea
 		return nil, file.StatusError(err)
 	}
 
+	var snapshotResponse *csi.CreateSnapshotResponse
 	if backupExists {
 		// process existing backup
 
@@ -275,9 +278,9 @@ func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.Crea
 		if err != nil {
 			return nil, err
 		}
-		return &csi.CreateSnapshotResponse{
+		snapshotResponse = &csi.CreateSnapshotResponse{
 			Snapshot: snapshot,
-		}, nil
+		}
 	} else {
 		//no existing backup
 		backupInfo := &file.BackupInfo{
@@ -300,11 +303,16 @@ func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.Crea
 			return nil, err
 		}
 
-		resp := &csi.CreateSnapshotResponse{
+		snapshotResponse = &csi.CreateSnapshotResponse{
 			Snapshot: snapshot,
 		}
-		return resp, nil
 	}
+
+	if err := m.tagManager.AttachResourceTags(ctx, cloud.FilestoreBackUp, name, backupRegion, req.GetName(), req.GetParameters()); err != nil {
+		return nil, status.Error(codes.Unavailable, err.Error())
+	}
+
+	return snapshotResponse, nil
 }
 
 func (m *MultishareController) createNewBackup(ctx context.Context, backupInfo *file.BackupInfo) (*csi.Snapshot, error) {
@@ -588,6 +596,8 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		case ParamMultishareInstanceScLabel:
 			continue
 		case paramMaxVolumeSize:
+			continue
+		case cloud.ParameterKeyResourceTags:
 			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
