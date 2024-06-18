@@ -1,4 +1,4 @@
-// Copyright 2023 Google LLC.
+// Copyright 2024 Google LLC.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
@@ -7,6 +7,17 @@
 // Package file provides access to the Cloud Filestore API.
 //
 // For product documentation, see: https://cloud.google.com/filestore/
+//
+// # Library status
+//
+// These client libraries are officially supported by Google. However, this
+// library is considered complete and is in maintenance mode. This means
+// that we will address critical bugs and security issues but will not add
+// any new features.
+//
+// When possible, we recommend using our newer
+// [Cloud Client Libraries for Go](https://pkg.go.dev/cloud.google.com/go)
+// that are still actively being worked and iterated on.
 //
 // # Creating a client
 //
@@ -17,24 +28,26 @@
 //	ctx := context.Background()
 //	fileService, err := file.NewService(ctx)
 //
-// In this example, Google Application Default Credentials are used for authentication.
-//
-// For information on how to create and obtain Application Default Credentials, see https://developers.google.com/identity/protocols/application-default-credentials.
+// In this example, Google Application Default Credentials are used for
+// authentication. For information on how to create and obtain Application
+// Default Credentials, see https://developers.google.com/identity/protocols/application-default-credentials.
 //
 // # Other authentication options
 //
-// To use an API key for authentication (note: some APIs do not support API keys), use option.WithAPIKey:
+// To use an API key for authentication (note: some APIs do not support API
+// keys), use [google.golang.org/api/option.WithAPIKey]:
 //
 //	fileService, err := file.NewService(ctx, option.WithAPIKey("AIza..."))
 //
-// To use an OAuth token (e.g., a user token obtained via a three-legged OAuth flow), use option.WithTokenSource:
+// To use an OAuth token (e.g., a user token obtained via a three-legged OAuth
+// flow, use [google.golang.org/api/option.WithTokenSource]:
 //
 //	config := &oauth2.Config{...}
 //	// ...
 //	token, err := config.Exchange(ctx, ...)
 //	fileService, err := file.NewService(ctx, option.WithTokenSource(config.TokenSource(ctx, token)))
 //
-// See https://godoc.org/google.golang.org/api/option/ for details on options.
+// See [google.golang.org/api/option.ClientOption] for details on options.
 package file // import "google.golang.org/api/file/v1beta1"
 
 import (
@@ -77,7 +90,9 @@ const apiId = "file:v1beta1"
 const apiName = "file"
 const apiVersion = "v1beta1"
 const basePath = "https://file.googleapis.com/"
+const basePathTemplate = "https://file.UNIVERSE_DOMAIN/"
 const mtlsBasePath = "https://file.mtls.googleapis.com/"
+const defaultUniverseDomain = "googleapis.com"
 
 // OAuth2 scopes used by this API.
 const (
@@ -94,7 +109,9 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	// NOTE: prepend, so we don't override user-specified scopes.
 	opts = append([]option.ClientOption{scopesOption}, opts...)
 	opts = append(opts, internaloption.WithDefaultEndpoint(basePath))
+	opts = append(opts, internaloption.WithDefaultEndpointTemplate(basePathTemplate))
 	opts = append(opts, internaloption.WithDefaultMTLSEndpoint(mtlsBasePath))
+	opts = append(opts, internaloption.WithDefaultUniverseDomain(defaultUniverseDomain))
 	client, endpoint, err := htransport.NewClient(ctx, opts...)
 	if err != nil {
 		return nil, err
@@ -246,6 +263,9 @@ type Backup struct {
 	// `projects/{project_id}/locations/{location_id}/backups/{backup_id}`.
 	Name string `json:"name,omitempty"`
 
+	// SatisfiesPzi: Output only. Reserved for future use.
+	SatisfiesPzi bool `json:"satisfiesPzi,omitempty"`
+
 	// SatisfiesPzs: Output only. Reserved for future use.
 	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
 
@@ -280,6 +300,8 @@ type Backup struct {
 	// availability needed for mission-critical workloads.
 	//   "ZONAL" - ZONAL instances offer expanded capacity and performance
 	// scaling capabilities.
+	//   "REGIONAL" - REGIONAL instances offer the features and availability
+	// needed for mission-critical workloads.
 	SourceInstanceTier string `json:"sourceInstanceTier,omitempty"`
 
 	// State: Output only. The backup state.
@@ -505,9 +527,10 @@ type FileShareConfig struct {
 	// 1 GB as 1024^3 bytes.
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
 
-	// Name: The name of the file share (must be 32 characters or less for
-	// Enterprise and High Scale SSD tiers and 16 characters or less for all
-	// other tiers).
+	// Name: Required. The name of the file share. Must use 1-16 characters
+	// for the basic service tier and 1-63 characters for all other service
+	// tiers. Must use lowercase letters, numbers, or underscores
+	// `[a-z0-9_]`. Must start with a letter. Immutable.
 	Name string `json:"name,omitempty"`
 
 	// NfsExportOptions: Nfs Export Options. There is a limit of 10 export
@@ -593,7 +616,7 @@ type GoogleCloudSaasacceleratorManagementProvidersV1Instance struct {
 	// been attached to the instance. The key must be of the type name of
 	// the oneof policy name defined in MaintenancePolicy, and the
 	// referenced policy must define the same policy type. For details,
-	// please refer to go/cloud-saas-mw-ug. Should not be set if
+	// please refer to go/mr-user-guide. Should not be set if
 	// maintenance_settings.maintenance_policies is set.
 	MaintenancePolicyNames map[string]string `json:"maintenancePolicyNames,omitempty"`
 
@@ -762,7 +785,7 @@ type GoogleCloudSaasacceleratorManagementProvidersV1MaintenanceSettings struct {
 	// attached to the instance. The key must be of the type name of the
 	// oneof policy name defined in MaintenancePolicy, and the embedded
 	// policy must define the same policy type. For details, please refer to
-	// go/cloud-saas-mw-ug. Should not be set if maintenance_policy_names is
+	// go/mr-user-guide. Should not be set if maintenance_policy_names is
 	// set. If only the name is needed, then only populate
 	// MaintenancePolicy.name.
 	MaintenancePolicies map[string]MaintenancePolicy `json:"maintenancePolicies,omitempty"`
@@ -1091,6 +1114,9 @@ type Instance struct {
 	//   "NFS_V4_1" - NFS 4.1.
 	Protocol string `json:"protocol,omitempty"`
 
+	// SatisfiesPzi: Output only. Reserved for future use.
+	SatisfiesPzi bool `json:"satisfiesPzi,omitempty"`
+
 	// SatisfiesPzs: Output only. Reserved for future use.
 	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
 
@@ -1151,6 +1177,8 @@ type Instance struct {
 	// availability needed for mission-critical workloads.
 	//   "ZONAL" - ZONAL instances offer expanded capacity and performance
 	// scaling capabilities.
+	//   "REGIONAL" - REGIONAL instances offer the features and availability
+	// needed for mission-critical workloads.
 	Tier string `json:"tier,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the
@@ -1918,8 +1946,8 @@ type RevertInstanceRequest struct {
 	// TargetSnapshotId: Required. The snapshot resource ID, in the format
 	// 'my-snapshot', where the specified ID is the {snapshot_id} of the
 	// fully qualified name like
-	// projects/{project_id}/locations/{location_id}/instances/{instance_id}/
-	// snapshots/{snapshot_id}
+	// `projects/{project_id}/locations/{location_id}/instances/{instance_id}
+	// /snapshots/{snapshot_id}`
 	TargetSnapshotId string `json:"targetSnapshotId,omitempty"`
 
 	// ForceSendFields is a list of field names (e.g. "TargetSnapshotId") to
@@ -4480,8 +4508,8 @@ type ProjectsLocationsInstancesRevertCall struct {
 // snapshot.
 //
 //   - name:
-//     projects/{project_id}/locations/{location_id}/instances/{instance_id
-//     }. The resource name of the instance, in the format.
+//     `projects/{project_id}/locations/{location_id}/instances/{instance_i
+//     d}`. The resource name of the instance, in the format.
 func (r *ProjectsLocationsInstancesService) Revert(name string, revertinstancerequest *RevertInstanceRequest) *ProjectsLocationsInstancesRevertCall {
 	c := &ProjectsLocationsInstancesRevertCall{s: r.s, urlParams_: make(gensupport.URLParams)}
 	c.name = name
@@ -4589,7 +4617,7 @@ func (c *ProjectsLocationsInstancesRevertCall) Do(opts ...googleapi.CallOption) 
 	//   ],
 	//   "parameters": {
 	//     "name": {
-	//       "description": "Required. projects/{project_id}/locations/{location_id}/instances/{instance_id}. The resource name of the instance, in the format",
+	//       "description": "Required. `projects/{project_id}/locations/{location_id}/instances/{instance_id}`. The resource name of the instance, in the format",
 	//       "location": "path",
 	//       "pattern": "^projects/[^/]+/locations/[^/]+/instances/[^/]+$",
 	//       "required": true,
