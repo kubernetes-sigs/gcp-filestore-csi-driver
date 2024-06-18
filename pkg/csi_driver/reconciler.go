@@ -468,7 +468,7 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		case ParamReservedIPV4CIDR, ParamReservedIPRange:
-
+		case cloud.ParameterKeyResourceTags:
 		case ParamMultishareInstanceScLabel, ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
