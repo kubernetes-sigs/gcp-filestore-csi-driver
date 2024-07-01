@@ -306,6 +306,10 @@ type Backup struct {
 	// backups share storage, this number is expected to change with backup
 	// creation/deletion.
 	StorageBytes int64 `json:"storageBytes,omitempty,string"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
@@ -924,6 +928,8 @@ type Instance struct {
 	//   "NFS_V3" - NFS 3.0.
 	//   "NFS_V4_1" - NFS 4.1.
 	Protocol string `json:"protocol,omitempty"`
+	// Replication: Optional. Replicaition configuration.
+	Replication *Replication `json:"replication,omitempty"`
 	// SatisfiesPzi: Output only. Reserved for future use.
 	SatisfiesPzi bool `json:"satisfiesPzi,omitempty"`
 	// SatisfiesPzs: Output only. Reserved for future use.
@@ -960,6 +966,10 @@ type Instance struct {
 	//   "KMS_KEY_ISSUE" - The KMS key used by the instance is either revoked or
 	// denied access to.
 	SuspensionReasons []string `json:"suspensionReasons,omitempty"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 	// Tier: The service tier of the instance.
 	//
 	// Possible values:
@@ -1543,6 +1553,81 @@ func (s *OperationMetadata) MarshalJSON() ([]byte, error) {
 type PromoteReplicaRequest struct {
 }
 
+// ReplicaConfig: Replica configuration for the instance.
+type ReplicaConfig struct {
+	// LastActiveSyncTime: Output only. The timestamp of the latest replication
+	// snapshot taken on the active instance and is already replicated safely.
+	LastActiveSyncTime string `json:"lastActiveSyncTime,omitempty"`
+	// PeerInstance: The peer instance.
+	PeerInstance string `json:"peerInstance,omitempty"`
+	// State: Output only. The replica state.
+	//
+	// Possible values:
+	//   "STATE_UNSPECIFIED" - State not set.
+	//   "CREATING" - The replica is being created.
+	//   "READY" - The replica is ready.
+	//   "REMOVING" - The replica is being removed.
+	//   "FAILED" - The replica is experiencing an issue and might be unusable. You
+	// can get further details from the `stateReasons` field of the `ReplicaConfig`
+	// object.
+	State string `json:"state,omitempty"`
+	// StateReasons: Output only. Additional information about the replication
+	// state, if available.
+	//
+	// Possible values:
+	//   "STATE_REASON_UNSPECIFIED" - Reason not specified.
+	//   "PEER_INSTANCE_UNREACHABLE" - The peer instance is unreachable.
+	StateReasons []string `json:"stateReasons,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "LastActiveSyncTime") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "LastActiveSyncTime") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *ReplicaConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ReplicaConfig
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
+// Replication: Replication specifications.
+type Replication struct {
+	// Replicas: Replicas configuration on the instance. For now, only a single
+	// replica config is supported.
+	Replicas []*ReplicaConfig `json:"replicas,omitempty"`
+	// Role: Output only. The replication role.
+	//
+	// Possible values:
+	//   "ROLE_UNSPECIFIED" - Role not set.
+	//   "ACTIVE" - The instance is a Active replication member, functions as the
+	// replication source instance.
+	//   "STANDBY" - The instance is a Standby replication member, functions as the
+	// replication destination instance.
+	Role string `json:"role,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Replicas") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Replicas") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *Replication) MarshalJSON() ([]byte, error) {
+	type NoMethod Replication
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
 // RestoreInstanceRequest: RestoreInstanceRequest restores an existing
 // instance's file share from a backup.
 type RestoreInstanceRequest struct {
@@ -1716,6 +1801,10 @@ type Snapshot struct {
 	//   "READY" - Snapshot is available for use.
 	//   "DELETING" - Snapshot is being deleted.
 	State string `json:"state,omitempty"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
