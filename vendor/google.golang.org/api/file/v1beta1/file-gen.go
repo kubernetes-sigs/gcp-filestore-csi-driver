@@ -306,6 +306,10 @@ type Backup struct {
 	// backups share storage, this number is expected to change with backup
 	// creation/deletion.
 	StorageBytes int64 `json:"storageBytes,omitempty,string"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
@@ -474,6 +478,10 @@ type FileShareConfig struct {
 	// NfsExportOptions: Nfs Export Options. There is a limit of 10 export options
 	// per file share.
 	NfsExportOptions []*NfsExportOptions `json:"nfsExportOptions,omitempty"`
+	// PerformanceConfig: Optional. Used to configure performance.
+	PerformanceConfig *PerformanceConfig `json:"performanceConfig,omitempty"`
+	// PerformanceLimits: Output only. Used for getting performance limits.
+	PerformanceLimits *PerformanceLimits `json:"performanceLimits,omitempty"`
 	// SourceBackup: The resource name of the backup, in the format
 	// `projects/{project_id}/locations/{location_id}/backups/{backup_id}`, that
 	// this file share has been restored from.
@@ -493,6 +501,28 @@ type FileShareConfig struct {
 
 func (s *FileShareConfig) MarshalJSON() ([]byte, error) {
 	type NoMethod FileShareConfig
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
+// FixedIOPS: Fixed IOPS parameters.
+type FixedIOPS struct {
+	// MaxReadIops: Required. Maximum raw read IOPS.
+	MaxReadIops int64 `json:"maxReadIops,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "MaxReadIops") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "MaxReadIops") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *FixedIOPS) MarshalJSON() ([]byte, error) {
+	type NoMethod FixedIOPS
 	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
 }
 
@@ -874,6 +904,28 @@ func (s *GoogleCloudSaasacceleratorManagementProvidersV1SloMetadata) MarshalJSON
 	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
 }
 
+// IOPSPerGB: IOPS per capacity parameters.
+type IOPSPerGB struct {
+	// MaxReadIopsPerGb: Required. Maximum read IOPS per GB.
+	MaxReadIopsPerGb int64 `json:"maxReadIopsPerGb,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "MaxReadIopsPerGb") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "MaxReadIopsPerGb") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *IOPSPerGB) MarshalJSON() ([]byte, error) {
+	type NoMethod IOPSPerGB
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
 // Instance: A Filestore instance.
 type Instance struct {
 	// CapacityGb: The storage capacity of the instance in gigabytes (GB = 1024^3
@@ -924,6 +976,8 @@ type Instance struct {
 	//   "NFS_V3" - NFS 3.0.
 	//   "NFS_V4_1" - NFS 4.1.
 	Protocol string `json:"protocol,omitempty"`
+	// Replication: Optional. Replicaition configuration.
+	Replication *Replication `json:"replication,omitempty"`
 	// SatisfiesPzi: Output only. Reserved for future use.
 	SatisfiesPzi bool `json:"satisfiesPzi,omitempty"`
 	// SatisfiesPzs: Output only. Reserved for future use.
@@ -960,6 +1014,10 @@ type Instance struct {
 	//   "KMS_KEY_ISSUE" - The KMS key used by the instance is either revoked or
 	// denied access to.
 	SuspensionReasons []string `json:"suspensionReasons,omitempty"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 	// Tier: The service tier of the instance.
 	//
 	// Possible values:
@@ -1538,9 +1596,160 @@ func (s *OperationMetadata) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
 }
 
+// PerformanceConfig: Performance configuration. Used for setting the
+// performance configuration. Defaults to `iops_by_capacity` if unset in
+// instance creation.
+type PerformanceConfig struct {
+	// FixedIops: Choose a fixed provisioned IOPS value for the instance, which
+	// will remain constant regardless of instance capacity. Value must be a
+	// multiple of 1000. If the chosen value is outside the supported range for the
+	// instance's capacity during instance creation, instance creation will fail
+	// with an `InvalidArgument` error. Similarly, if an instance capacity update
+	// would result in a value outside the supported range, the update will fail
+	// with an `InvalidArgument` error.
+	FixedIops *FixedIOPS `json:"fixedIops,omitempty"`
+	// IopsByCapacity: Automatically provision maximum available IOPS based on the
+	// capacity of the instance. Larger instances will be granted more IOPS. If
+	// instance capacity is increased or decreased, IOPS will be automatically
+	// adjusted upwards or downwards accordingly. The maximum available IOPS for a
+	// given capacity is defined in Filestore documentation.
+	IopsByCapacity bool `json:"iopsByCapacity,omitempty"`
+	// IopsPerGb: Provision IOPS dynamically based on the capacity of the instance.
+	// Provisioned read IOPS will be calculated by by multiplying the capacity of
+	// the instance in GiB by the `iops_per_gb` value, and rounding to the nearest
+	// 1000. For example, for a 1 TiB instance with an `iops_per_gb` value of 15,
+	// the provisioned read IOPS would be `1024 * 15 = 15,360`, rounded to
+	// `15,000`. If the calculated value is outside the supported range for the
+	// instance's capacity during instance creation, instance creation will fail
+	// with an `InvalidArgument` error. Similarly, if an instance capacity update
+	// would result in a value outside the supported range, the update will fail
+	// with an `InvalidArgument` error.
+	IopsPerGb *IOPSPerGB `json:"iopsPerGb,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "FixedIops") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "FixedIops") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *PerformanceConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod PerformanceConfig
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
+// PerformanceLimits: The enforced performance limits, calculated from the
+// instance's performance configuration.
+type PerformanceLimits struct {
+	// MaxReadIops: Output only. The max read IOPS.
+	MaxReadIops int64 `json:"maxReadIops,omitempty,string"`
+	// MaxReadThroughput: Output only. The max read throughput.
+	MaxReadThroughput int64 `json:"maxReadThroughput,omitempty,string"`
+	// MaxWriteIops: Output only. The max write IOPS.
+	MaxWriteIops int64 `json:"maxWriteIops,omitempty,string"`
+	// MaxWriteThroughput: Output only. The max write throughput.
+	MaxWriteThroughput int64 `json:"maxWriteThroughput,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "MaxReadIops") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "MaxReadIops") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *PerformanceLimits) MarshalJSON() ([]byte, error) {
+	type NoMethod PerformanceLimits
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
 // PromoteReplicaRequest: PromoteReplicaRequest promotes a Filestore standby
 // instance (replica).
 type PromoteReplicaRequest struct {
+}
+
+// ReplicaConfig: Replica configuration for the instance.
+type ReplicaConfig struct {
+	// LastActiveSyncTime: Output only. The timestamp of the latest replication
+	// snapshot taken on the active instance and is already replicated safely.
+	LastActiveSyncTime string `json:"lastActiveSyncTime,omitempty"`
+	// PeerInstance: The peer instance.
+	PeerInstance string `json:"peerInstance,omitempty"`
+	// State: Output only. The replica state.
+	//
+	// Possible values:
+	//   "STATE_UNSPECIFIED" - State not set.
+	//   "CREATING" - The replica is being created.
+	//   "READY" - The replica is ready.
+	//   "REMOVING" - The replica is being removed.
+	//   "FAILED" - The replica is experiencing an issue and might be unusable. You
+	// can get further details from the `stateReasons` field of the `ReplicaConfig`
+	// object.
+	State string `json:"state,omitempty"`
+	// StateReasons: Output only. Additional information about the replication
+	// state, if available.
+	//
+	// Possible values:
+	//   "STATE_REASON_UNSPECIFIED" - Reason not specified.
+	//   "PEER_INSTANCE_UNREACHABLE" - The peer instance is unreachable.
+	StateReasons []string `json:"stateReasons,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "LastActiveSyncTime") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "LastActiveSyncTime") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *ReplicaConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod ReplicaConfig
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
+}
+
+// Replication: Replication specifications.
+type Replication struct {
+	// Replicas: Replicas configuration on the instance. For now, only a single
+	// replica config is supported.
+	Replicas []*ReplicaConfig `json:"replicas,omitempty"`
+	// Role: Output only. The replication role.
+	//
+	// Possible values:
+	//   "ROLE_UNSPECIFIED" - Role not set.
+	//   "ACTIVE" - The instance is a Active replication member, functions as the
+	// replication source instance.
+	//   "STANDBY" - The instance is a Standby replication member, functions as the
+	// replication destination instance.
+	Role string `json:"role,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Replicas") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Replicas") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s *Replication) MarshalJSON() ([]byte, error) {
+	type NoMethod Replication
+	return gensupport.MarshalJSON(NoMethod(*s), s.ForceSendFields, s.NullFields)
 }
 
 // RestoreInstanceRequest: RestoreInstanceRequest restores an existing
@@ -1716,6 +1925,10 @@ type Snapshot struct {
 	//   "READY" - Snapshot is available for use.
 	//   "DELETING" - Snapshot is being deleted.
 	State string `json:"state,omitempty"`
+	// Tags: Optional. Input only. Immutable. Tag keys/values directly bound to
+	// this resource. For example: "123/environment": "production",
+	// "123/costCenter": "marketing"
+	Tags map[string]string `json:"tags,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
 	googleapi.ServerResponse `json:"-"`
