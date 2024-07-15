@@ -326,7 +326,7 @@ func TestValidateResourceTags(t *testing.T) {
 	})
 	defer server.Close()
 
-	tagMgr := NewTagManager(cloud, server.Client()).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, server.Client(), withoutAuthentication{}).(*tagServiceManager)
 	tagMgr.setTestHTTPEndpoint(server.URL)
 
 	for _, test := range cases {
@@ -349,7 +349,7 @@ func TestNewTagValuesClient(t *testing.T) {
 		t.Errorf("newTagValuesClient(): failed to create fake cloud provider object: %v", err)
 	}
 
-	tagMgr := NewTagManager(cloud).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, withoutAuthentication{}).(*tagServiceManager)
 	client, err := tagMgr.newTagValuesClient(ctx, "test/endpoint")
 	if err != nil {
 		t.Errorf("newTagValuesClient(): failed to create tag values client: %v", err)
@@ -363,7 +363,7 @@ func TestNewTagBindingsClient(t *testing.T) {
 		t.Errorf("newTagBindingsClient(): failed to create fake cloud provider object: %v", err)
 	}
 
-	tagMgr := NewTagManager(cloud).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, withoutAuthentication{}).(*tagServiceManager)
 	client, err := tagMgr.newTagBindingsClient(ctx, "test/endpoint")
 	if err != nil {
 		t.Errorf("newTagBindingsClient(): failed to create tag bindings client: %v", err)
@@ -475,7 +475,7 @@ func TestAttachResourceTags(t *testing.T) {
 	})
 	defer server.Close()
 
-	tagMgr := NewTagManager(cloud, server.Client()).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, server.Client(), withoutAuthentication{}).(*tagServiceManager)
 	tagMgr.setTestHTTPEndpoint(server.URL)
 
 	for _, test := range cases {
@@ -521,7 +521,7 @@ func TestValidateTagExist(t *testing.T) {
 	})
 	defer server.Close()
 
-	tagMgr := NewTagManager(cloud, server.Client()).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, server.Client(), withoutAuthentication{}).(*tagServiceManager)
 	client, err := tagMgr.newTagValuesClient(ctx, server.URL)
 	if err != nil {
 		t.Errorf("validateTagExist(): failed to create tag bindings client: %v", err)
@@ -610,7 +610,7 @@ func TestGetTagsToBind(t *testing.T) {
 	})
 	defer server.Close()
 
-	tagMgr := NewTagManager(cloud, argTags, server.Client()).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, argTags, server.Client(), withoutAuthentication{}).(*tagServiceManager)
 	client, err := tagMgr.newTagBindingsClient(ctx, server.URL)
 	if err != nil {
 		t.Errorf("getTagsToBind(): failed to create tag bindings client: %v", err)
@@ -698,7 +698,7 @@ func TestCreateTagBindings(t *testing.T) {
 	})
 	defer server.Close()
 
-	tagMgr := NewTagManager(cloud, server.Client()).(*tagServiceManager)
+	tagMgr := NewTagManager(cloud, server.Client(), withoutAuthentication{}).(*tagServiceManager)
 	client, err := tagMgr.newTagBindingsClient(ctx, server.URL)
 	if err != nil {
 		t.Errorf("createTagBindings(): failed to create tag bindings client: %v", err)
