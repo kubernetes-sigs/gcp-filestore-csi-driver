@@ -672,6 +672,19 @@ func containsUserErrStr(err error) *codes.Code {
 	return nil
 }
 
+// isFilestoreLimitError returns a pointer to the grpc error code
+// ResourceExhausted if the passed in error contains the
+// "System limit for internal resources has been reached" string.
+func isFilestoreLimitError(err error) *codes.Code {
+	if err == nil {
+		return nil
+	}
+	if strings.Contains(err.Error(), "System limit for internal resources has been reached") {
+		return util.ErrCodePtr(codes.ResourceExhausted)
+	}
+	return nil
+}
+
 // isContextError returns a pointer to the grpc error code DeadlineExceeded
 // if the passed in error contains the "context deadline exceeded" string and returns
 // the grpc error code Canceled if the error contains the "context canceled" string.
@@ -761,6 +774,9 @@ func codeForError(err error) *codes.Code {
 		return errCode
 	}
 	if errCode := isContextError(err); errCode != nil {
+		return errCode
+	}
+	if errCode := isFilestoreLimitError(err); errCode != nil {
 		return errCode
 	}
 	if errCode := isGoogleAPIError(err); errCode != nil {

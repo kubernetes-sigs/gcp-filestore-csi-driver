@@ -648,6 +648,11 @@ func TestCodeForError(t *testing.T) {
 			err:             nil,
 			expectedErrCode: nil,
 		},
+		{
+			name:            "Filestore system limit error",
+			err:             fmt.Errorf("got error: System limit for internal resources has been reached"),
+			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
+		},
 	}
 
 	for _, test := range cases {
