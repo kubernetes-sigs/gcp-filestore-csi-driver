@@ -68,6 +68,7 @@ type MultishareController struct {
 	featureMaxSharePerInstance      bool
 	featureMultishareBackups        bool
 	featureNFSExportOptionsOnCreate bool
+	extraVolumeLabels               map[string]string
 
 	// Filestore instance description overrides
 	descOverrideMaxSharesPerInstance string
@@ -81,13 +82,14 @@ type MultishareController struct {
 
 func NewMultishareController(config *controllerServerConfig) *MultishareController {
 	c := &MultishareController{
-		driver:          config.driver,
-		fileService:     config.fileService,
-		cloud:           config.cloud,
-		volumeLocks:     config.volumeLocks,
-		ecfsDescription: config.ecfsDescription,
-		isRegional:      config.isRegional,
-		clustername:     config.clusterName,
+		driver:            config.driver,
+		fileService:       config.fileService,
+		cloud:             config.cloud,
+		volumeLocks:       config.volumeLocks,
+		ecfsDescription:   config.ecfsDescription,
+		isRegional:        config.isRegional,
+		clustername:       config.clusterName,
+		extraVolumeLabels: config.extraVolumeLabels,
 	}
 	c.opsManager = NewMultishareOpsManager(config.cloud, c)
 	if config.features != nil && config.features.FeatureMaxSharesPerInstance != nil {
@@ -290,11 +292,12 @@ func (m *MultishareController) CreateSnapshot(ctx context.Context, req *csi.Crea
 			BackupURI:          backupURI,
 		}
 
-		labels, err := extractBackupLabels(req.GetParameters(), m.driver.config.Name, req.Name)
+		labels, err := extractBackupLabels(req.GetParameters(), m.extraVolumeLabels, m.driver.config.Name, req.Name)
 		if err != nil {
 			return nil, err
 		}
 		backupInfo.Labels = labels
+
 		snapshot, err := m.createNewBackup(ctx, backupInfo)
 		if err != nil {
 			return nil, err
@@ -607,7 +610,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			return nil, status.Errorf(codes.InvalidArgument, "failed to get region for regional cluster: %v", err.Error())
 		}
 	}
-	labels, err := extractInstanceLabels(req.GetParameters(), m.driver.config.Name, m.clustername, location)
+	labels, err := extractInstanceLabels(req.GetParameters(), m.extraVolumeLabels, m.driver.config.Name, m.clustername, location)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
@@ -708,7 +711,7 @@ func (m *MultishareController) pickRegion(top *csi.TopologyRequirement) (string,
 	return region, nil
 }
 
-func extractInstanceLabels(parameters map[string]string, driverName, clusterName, location string) (map[string]string, error) {
+func extractInstanceLabels(parameters, cliLabels map[string]string, driverName, clusterName, location string) (map[string]string, error) {
 	instanceLabels := make(map[string]string)
 	userProvidedLabels := make(map[string]string)
 	for k, v := range parameters {
@@ -731,7 +734,7 @@ func extractInstanceLabels(parameters map[string]string, driverName, clusterName
 	instanceLabels[tagKeyCreatedBy] = strings.ReplaceAll(driverName, ".", "_")
 	instanceLabels[TagKeyClusterName] = clusterName
 	instanceLabels[TagKeyClusterLocation] = location
-	finalInstanceLabels, err := mergeLabels(userProvidedLabels, instanceLabels)
+	finalInstanceLabels, err := mergeLabels(userProvidedLabels, instanceLabels, cliLabels)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
