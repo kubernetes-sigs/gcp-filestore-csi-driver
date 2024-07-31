@@ -106,7 +106,7 @@ $ PROJECT=<your-gcp-project> GCFS_SA_DIR=<your-directory-to-store-credentials-by
 
 * Choose a stable overlay that matches your cluster version, eg `stable-1-19`. If you are running a
   more recent cluster version than given here, use `stable-master`. The `prow-*` overlays are for
-  testing, and the `dev` overlay is for driver development. `./deploy/kubernetes/cluster-setup.sh`
+  testing, and the `dev` overlay is for driver development. `./deploy/kubernetes/cluster_setup.sh`
   will install the driver pods, as well as necessary RBAC and resources.
 
 * If deploying new changes in the master branch update the overlay file with a new custom tag to identify this image.
@@ -120,7 +120,7 @@ imageTag:
   newName: gcr.io/<your-project>/gcp-filestore-csi-driver # Add newName
   newTag: "<your-custom-tag>" # Change to your custom tag
 ```
-Make and build the image if desploying new master branch.
+Make and build the image if deploying new master branch.
 
 ```
 GCP_FS_CSI_STAGING_VERSION=<your-custom-tag> GCP_FS_CSI_STAGING_IMAGE=gcr.io/<your-project>/gcp-filestore-csi-driver make build-image-and-push
