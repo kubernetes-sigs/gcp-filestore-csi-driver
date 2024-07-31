@@ -89,8 +89,8 @@ Note that non-default networks require extra [firewall setup](https://cloud.goog
 * Clone the repository in cloudshell using following commands
 
 ```
-mkdir -p $GOPATH/src/sigs.k8s.io
-cd $GOPATH/src/sigs.k8s.io
+mkdir -p $GOPATH/src/github.com/kubernetes-sigs
+cd $GOPATH/src/github.com/kubernetes-sigs
 git clone https://github.com/kubernetes-sigs/gcp-filestore-csi-driver.git
 ```
 
