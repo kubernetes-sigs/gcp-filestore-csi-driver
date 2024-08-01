@@ -62,6 +62,7 @@ func initTestController(t *testing.T) csi.ControllerServer {
 		cloud:       cloudProvider,
 		volumeLocks: util.NewVolumeLocks(),
 		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		tagManager:  cloud.NewFakeTagManager(),
 	})
 }
 
@@ -81,6 +82,7 @@ func initBlockingTestController(t *testing.T, operationUnblocker chan chan struc
 		cloud:       cloudProvider,
 		volumeLocks: util.NewVolumeLocks(),
 		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		tagManager:  cloud.NewFakeTagManager(),
 	})
 }
 
@@ -351,6 +353,10 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 			cs.config.features = test.features
 		}
 
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreInstance, testCSIVolume, testLocation, test.req.GetName(), test.req.GetParameters()).
+			Return(nil)
+
 		//Create initial backup
 		backupInfo := &file.BackupInfo{
 			Project:            test.initialBackup.s.Project,
@@ -484,6 +490,27 @@ func TestCreateVolume(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "adding tags to filestore instance fails(failure scenario mocked)",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume2,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"network":                      "test",
+					cloud.ParameterKeyResourceTags: "kubernetes/test1/test1",
+				},
+			},
+			expectErr: true,
+		},
 		// TODO: create failed
 		// TODO: instance already exists error
 		// TODO: instance already exists invalid
@@ -604,22 +631,15 @@ func TestCreateVolume(t *testing.T) {
 	}
 
 	for _, test := range cases {
-		fileService, err := file.NewFakeService()
-		if err != nil {
-			t.Fatalf("failed to initialize GCFS service: %v", err)
-		}
+		cs := initTestController(t).(*controllerServer)
+		cs.config.features = test.features
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreInstance, testCSIVolume, testLocation, test.req.GetName(), test.req.GetParameters()).
+			Return(nil)
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreInstance, testCSIVolume2, testLocation, test.req.GetName(), test.req.GetParameters()).
+			Return(fmt.Errorf("mock failure: error while adding tags to filestore instance"))
 
-		cloudProvider, err := cloud.NewFakeCloud()
-		if err != nil {
-			t.Fatalf("Failed to get cloud provider: %v", err)
-		}
-		cs := newControllerServer(&controllerServerConfig{
-			driver:      initTestDriver(t),
-			fileService: fileService,
-			cloud:       cloudProvider,
-			volumeLocks: util.NewVolumeLocks(),
-			features:    test.features,
-		})
 		resp, err := cs.CreateVolume(context.TODO(), test.req)
 
 		if !test.expectErr && err != nil {
@@ -633,9 +653,9 @@ func TestCreateVolume(t *testing.T) {
 		}
 
 		if !test.expectErr && test.req.Parameters[ParamNfsExportOptions] != "" {
-			instance, err := fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
+			instance, err := cs.config.fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
 			if err != nil {
-				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, resp.Volume.VolumeId, err)
+				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, test.req.Name, err)
 				return
 			}
 			for i := range test.expectedOptions {
@@ -1431,7 +1451,13 @@ type RequestConfig struct {
 func TestVolumeOperationLocks(t *testing.T) {
 	// A channel of size 1 is sufficient, because the caller of runRequest() in below steps immediately blocks and retrieves the channel of empty struct from 'operationUnblocker' channel. The test steps are such that, atmost one function pushes items on the 'operationUnblocker' channel, to indicate that the function is blocked and waiting for a signal to proceed futher in the execution.
 	operationUnblocker := make(chan chan struct{}, 1)
-	cs := initBlockingTestController(t, operationUnblocker)
+	cs := initBlockingTestController(t, operationUnblocker).(*controllerServer)
+	cs.config.tagManager.(*cloud.FakeTagServiceManager).
+		On("AttachResourceTags", context.Background(), cloud.FilestoreInstance, testCSIVolume, testLocation, testCSIVolume, map[string]string(nil)).
+		Return(nil)
+	cs.config.tagManager.(*cloud.FakeTagServiceManager).
+		On("AttachResourceTags", context.Background(), cloud.FilestoreInstance, testCSIVolume2, testLocation, testCSIVolume2, map[string]string(nil)).
+		Return(nil)
 	runRequest := func(req *RequestConfig) <-chan error {
 		resp := make(chan error)
 		go func() {
@@ -1557,6 +1583,7 @@ func TestCreateSnapshot(t *testing.T) {
 		state  string
 	}
 	backupName := "mybackup"
+	backupName2 := "mybackup2"
 	project := "test-project"
 	zone := "us-central1-c"
 	region := "us-central1"
@@ -1717,6 +1744,19 @@ func TestCreateSnapshot(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "adding tags to filestore backup fails(failure scenario mocked)",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
+				Name:           backupName2,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey:     "backup",
+					cloud.ParameterKeyResourceTags: "kubernetes/test1/test1",
+				},
+			},
+			initialBackup: nil,
+			expectErr:     true,
+		},
 	}
 	for _, test := range cases {
 		fileService, err := file.NewFakeService()
@@ -1733,7 +1773,18 @@ func TestCreateSnapshot(t *testing.T) {
 			fileService: fileService,
 			cloud:       cloudProvider,
 			volumeLocks: util.NewVolumeLocks(),
-		})
+			tagManager:  cloud.NewFakeTagManager(),
+		}).(*controllerServer)
+
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName, region, test.req.GetName(), test.req.GetParameters()).
+			Return(nil)
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName, "us-west1", test.req.GetName(), test.req.GetParameters()).
+			Return(nil)
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName2, region, test.req.GetName(), test.req.GetParameters()).
+			Return(fmt.Errorf("mock failure: error while adding tags to filestore backup"))
 
 		if test.initialBackup != nil {
 			existingBackup, err := fileService.CreateBackup(context.TODO(), test.initialBackup.backup)
@@ -1834,7 +1885,13 @@ func TestDeleteSnapshot(t *testing.T) {
 			fileService: fileService,
 			cloud:       cloudProvider,
 			volumeLocks: util.NewVolumeLocks(),
-		})
+			tagManager:  cloud.NewFakeTagManager(),
+		}).(*controllerServer)
+
+		cs.config.tagManager.(*cloud.FakeTagServiceManager).
+			On("AttachResourceTags", context.TODO(), cloud.FilestoreBackUp, backupName, region, test.createReq.GetName(), test.createReq.GetParameters()).
+			Return(nil)
+
 		_, err = cs.CreateSnapshot(context.TODO(), test.createReq)
 		if err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
