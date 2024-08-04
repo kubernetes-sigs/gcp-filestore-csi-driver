@@ -94,13 +94,13 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 	shareInfo, err := m.shareLister.ShareInfos(util.ManagedFilestoreCSINamespace).Get(pvName)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return nil, status.Errorf(codes.Internal, "error getting shareInfo %q from informer: %s", pvName, err.Error())
+			return nil, status.Errorf(codes.Unavailable, "error getting shareInfo %q from informer: %s", pvName, err.Error())
 		}
 		klog.Infof("querying ShareInfo %q from api server", pvName)
 		shareInfo, err = m.clientset.MultishareV1().ShareInfos(util.ManagedFilestoreCSINamespace).Get(context.TODO(), pvName, metav1.GetOptions{})
 		if err != nil {
 			if !errors.IsNotFound(err) {
-				return nil, status.Errorf(codes.Internal, "error getting shareInfo %q from api server: %s", pvName, err.Error())
+				return nil, status.Errorf(codes.Unavailable, "error getting shareInfo %q from api server: %s", pvName, err.Error())
 			}
 			klog.V(6).Infof("shareInfo object for share %q not found in API server", pvName)
 			shareInfo = nil
@@ -131,7 +131,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 		klog.V(6).Infof("trying to create shareInfo object: %v", shareInfo)
 		shareInfo, err = m.createShareInfo(ctx, shareInfo)
 		if err != nil {
-			return nil, status.Errorf(codes.Internal, "error creating share object: %s", err.Error())
+			return nil, status.Errorf(codes.Unavailable, "error creating share object: %s", err.Error())
 		}
 	}
 
@@ -141,7 +141,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 
 	if shareInfo.Status.ShareStatus != v1.READY {
 		if shareInfo.Status.Error != "" {
-			return nil, status.Errorf(codes.Internal, "internal error: %s", shareInfo.Status.Error)
+			return nil, status.Errorf(codes.Unavailable, "error fetching share status: %s", shareInfo.Status.Error)
 		}
 		return nil, status.Errorf(codes.Aborted, "share %s is not ready yet", pvName)
 	}

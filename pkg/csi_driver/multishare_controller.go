@@ -201,7 +201,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	// lock released. poll for op.
 	err = m.waitOnWorkflow(ctx, workflow)
 	if err != nil {
-		return nil, file.StatusError(fmt.Errorf("Create Volume failed, operation %q poll error: %w", workflow.opName, err))
+		return nil, status.Errorf(codes.Unavailable, "Create Volume failed, operation %q poll error: %s", workflow.opName, err.Error())
 	}
 
 	klog.Infof("Poll for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
@@ -229,7 +229,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	// lock released. poll for share create op.
 	err = m.waitOnWorkflow(ctx, shareCreateWorkflow)
 	if err != nil {
-		return nil, file.StatusError(fmt.Errorf("%v operation %q poll error: %w", shareCreateWorkflow.opType, shareCreateWorkflow.opName, err))
+		return nil, status.Errorf(codes.Unavailable, "%v operation %q poll error: %s", shareCreateWorkflow.opType, shareCreateWorkflow.opName, err.Error())
 	}
 	resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes)
 	return resp, file.StatusError(err)
@@ -343,7 +343,7 @@ func (m *MultishareController) createNewBackup(ctx context.Context, backupInfo *
 func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx context.Context, instancePrefix string, s *file.Share, maxShareSizeSizeBytes int64) (*csi.CreateVolumeResponse, error) {
 	share, err := m.cloud.File.GetShare(ctx, s)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 
 	if share.State != "READY" {

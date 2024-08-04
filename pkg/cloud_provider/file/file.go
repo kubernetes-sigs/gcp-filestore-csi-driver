@@ -313,7 +313,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
 		klog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
-		return nil, err
+		return nil, status.Errorf(codes.Unavailable, "unknown error when polling the operation: %v", err.Error())
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
@@ -328,14 +328,14 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	instance, err := manager.instancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("Failed to get instance %v", instanceUri)
-		return nil, err
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 
 	if instance != nil {
 		klog.V(4).Infof("GetInstance call fetched instance %+v", instance)
 		return cloudInstanceToServiceInstance(instance)
 	}
-	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
+	return nil, status.Errorf(codes.Unavailable, "failed to get instance %v", instanceUri)
 }
 
 func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceInstance, error) {
@@ -1030,7 +1030,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateShare operation failed: %w", err)
+		return nil, status.Errorf(codes.Unavailable, "CreateShare operation failed: %s", err.Error())
 	}
 	klog.Infof("Started Create Share op %s for share %q instance uri %q, with capacity(GB) %v, Labels %v", op.Name, share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	return op, nil
@@ -1082,7 +1082,7 @@ func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev
 func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
 	sobj, err := manager.multishareInstancesSharesService.Get(shareURI(obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name)).Context(ctx).Do()
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 
 	_, _, _, shareName, err := util.ParseShareURI(sobj.Name)
@@ -1091,7 +1091,7 @@ func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 	}
 	instance, err := manager.GetMultishareInstance(ctx, obj.Parent)
 	if err != nil {
-		return nil, err
+		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 
 	return &Share{
