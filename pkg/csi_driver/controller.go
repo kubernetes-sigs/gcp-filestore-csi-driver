@@ -30,6 +30,7 @@ import (
 	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/common"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
@@ -241,7 +242,9 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	filer, err := s.config.fileService.GetInstance(ctx, newFiler)
 	// No error is returned if the instance is not found during CreateVolume.
 	if err != nil && !file.IsNotFoundErr(err) {
-		return nil, file.StatusError(err)
+		// Failed to GetInstance, however the Filestore instance may already be created.
+		// The error should be non-final.
+		return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("CreateVolume, failed to get instance: %w", err))
 	}
 
 	if filer != nil {
@@ -259,11 +262,11 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if filer.State != "READY" {
 			msg := fmt.Sprintf("Volume %v not ready, current state: %v", name, filer.State)
 			klog.V(4).Infof(msg)
-			return nil, status.Error(codes.Internal, msg)
+			return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf(msg))
 		}
 	} else {
 		param := req.GetParameters()
-		// If we are creating a new instance, we need pick an unused CIDR range from reserved-ipv4-cidr
+		// If we are creating a new instance, we need to pick an unused CIDR range from reserved-ipv4-cidr
 		// If the param was not provided, we default reservedIPRange to "" and cloud provider takes care of the allocation
 		if newFiler.Network.ConnectMode == privateServiceAccess {
 			if reservedIPRange, ok := param[ParamReservedIPRange]; ok {
