@@ -24,7 +24,6 @@ package podlogs
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -33,7 +32,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	v1 "k8s.io/api/core/v1"
 	meta "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -264,109 +262,4 @@ func CopyPodLogs(ctx context.Context, cs clientset.Interface, ns, podName string
 // when the pod gets deleted while streaming.
 func logsForPod(ctx context.Context, cs clientset.Interface, ns, pod string, opts *v1.PodLogOptions) (io.ReadCloser, error) {
 	return cs.CoreV1().Pods(ns).GetLogs(pod, opts).Stream(ctx)
-}
-
-// WatchPods prints pod status events for a certain namespace or all namespaces
-// when namespace name is empty. The closer can be nil if the caller doesn't want
-// the file to be closed when watching stops.
-func WatchPods(ctx context.Context, cs clientset.Interface, ns string, to io.Writer, toCloser io.Closer) (finalErr error) {
-	defer func() {
-		if finalErr != nil && toCloser != nil {
-			toCloser.Close()
-		}
-	}()
-
-	pods, err := cs.CoreV1().Pods(ns).Watch(context.Background(), meta.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("cannot create Pod watcher: %w", err)
-	}
-	defer func() {
-		if finalErr != nil {
-			pods.Stop()
-		}
-	}()
-
-	events, err := cs.CoreV1().Events(ns).Watch(context.Background(), meta.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("cannot create Event watcher: %w", err)
-	}
-
-	go func() {
-		defer func() {
-			pods.Stop()
-			events.Stop()
-			if toCloser != nil {
-				toCloser.Close()
-			}
-		}()
-		timeFormat := "15:04:05.000"
-		for {
-			select {
-			case e := <-pods.ResultChan():
-				if e.Object == nil {
-					continue
-				}
-
-				pod, ok := e.Object.(*v1.Pod)
-				if !ok {
-					continue
-				}
-				buffer := new(bytes.Buffer)
-				fmt.Fprintf(buffer,
-					"%s pod: %s: %s/%s %s: %s %s\n",
-					time.Now().Format(timeFormat),
-					e.Type,
-					pod.Namespace,
-					pod.Name,
-					pod.Status.Phase,
-					pod.Status.Reason,
-					pod.Status.Conditions,
-				)
-				for _, cst := range pod.Status.ContainerStatuses {
-					fmt.Fprintf(buffer, "   %s: ", cst.Name)
-					if cst.State.Waiting != nil {
-						fmt.Fprintf(buffer, "WAITING: %s - %s",
-							cst.State.Waiting.Reason,
-							cst.State.Waiting.Message,
-						)
-					} else if cst.State.Running != nil {
-						fmt.Fprintf(buffer, "RUNNING")
-					} else if cst.State.Terminated != nil {
-						fmt.Fprintf(buffer, "TERMINATED: %s - %s",
-							cst.State.Terminated.Reason,
-							cst.State.Terminated.Message,
-						)
-					}
-					fmt.Fprintf(buffer, "\n")
-				}
-				to.Write(buffer.Bytes())
-			case e := <-events.ResultChan():
-				if e.Object == nil {
-					continue
-				}
-
-				event, ok := e.Object.(*v1.Event)
-				if !ok {
-					continue
-				}
-				to.Write([]byte(fmt.Sprintf("%s event: %s/%s %s: %s %s: %s (%v - %v)\n",
-					time.Now().Format(timeFormat),
-					event.InvolvedObject.APIVersion,
-					event.InvolvedObject.Kind,
-					event.InvolvedObject.Name,
-					event.Source.Component,
-					event.Type,
-					event.Message,
-					event.FirstTimestamp,
-					event.LastTimestamp,
-				)))
-			case <-ctx.Done():
-				to.Write([]byte(fmt.Sprintf("%s ==== stopping pod watch ====\n",
-					time.Now().Format(timeFormat))))
-				return
-			}
-		}
-	}()
-
-	return nil
 }

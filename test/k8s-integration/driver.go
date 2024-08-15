@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"k8s.io/klog/v2"
-	"k8s.io/kubernetes/test/e2e/storage/podlogs"
+	"sigs.k8s.io/gcp-filestore-csi-driver/test/k8s-integration/podlogs"
 )
 
 func getOverlayDir(pkgDir, deployOverlayName string) string {
