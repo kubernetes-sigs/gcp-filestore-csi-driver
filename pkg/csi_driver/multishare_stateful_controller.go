@@ -17,6 +17,8 @@ limitations under the License.
 package driver
 
 import (
+	"fmt"
+
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
@@ -29,6 +31,7 @@ import (
 	listers "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/listers/multishare/v1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/common"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -94,13 +97,13 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 	shareInfo, err := m.shareLister.ShareInfos(util.ManagedFilestoreCSINamespace).Get(pvName)
 	if err != nil {
 		if !errors.IsNotFound(err) {
-			return nil, status.Errorf(codes.Unavailable, "error getting shareInfo %q from informer: %s", pvName, err.Error())
+			return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("error getting shareInfo %q from informer: %s", pvName, err.Error()))
 		}
 		klog.Infof("querying ShareInfo %q from api server", pvName)
 		shareInfo, err = m.clientset.MultishareV1().ShareInfos(util.ManagedFilestoreCSINamespace).Get(context.TODO(), pvName, metav1.GetOptions{})
 		if err != nil {
 			if !errors.IsNotFound(err) {
-				return nil, status.Errorf(codes.Unavailable, "error getting shareInfo %q from api server: %s", pvName, err.Error())
+				return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("error getting shareInfo %q from api server: %s", pvName, err.Error()))
 			}
 			klog.V(6).Infof("shareInfo object for share %q not found in API server", pvName)
 			shareInfo = nil
@@ -131,7 +134,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 		klog.V(6).Infof("trying to create shareInfo object: %v", shareInfo)
 		shareInfo, err = m.createShareInfo(ctx, shareInfo)
 		if err != nil {
-			return nil, status.Errorf(codes.Unavailable, "error creating share object: %s", err.Error())
+			return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("error creating share object: %s", err.Error()))
 		}
 	}
 
@@ -141,7 +144,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 
 	if shareInfo.Status.ShareStatus != v1.READY {
 		if shareInfo.Status.Error != "" {
-			return nil, status.Errorf(codes.Unavailable, "error fetching share status: %s", shareInfo.Status.Error)
+			return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("error fetching share status: %s", shareInfo.Status.Error))
 		}
 		return nil, status.Errorf(codes.Aborted, "share %s is not ready yet", pvName)
 	}

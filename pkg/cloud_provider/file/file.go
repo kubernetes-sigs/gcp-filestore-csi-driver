@@ -715,6 +715,13 @@ func existingErrorCode(err error) *codes.Code {
 		return nil
 	}
 
+	var te *common.TemporaryError
+	// explicitly check if the error type is a `common.TemporaryError`.
+	if errors.As(err, &te) {
+		if status, ok := status.FromError(err); ok {
+			return util.ErrCodePtr(status.Code())
+		}
+	}
 	// We want to make sure we catch other error types that are statusable.
 	// (eg. grpc-go/internal/status/status.go Error struct that wraps a status)
 	var googleErr *googleapi.Error
