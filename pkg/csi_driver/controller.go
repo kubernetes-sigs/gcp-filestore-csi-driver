@@ -288,13 +288,9 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		}
 
 		// Add labels.
-		labels, err := extractLabels(param, s.config.driver.config.Name)
+		labels, err := extractLabels(param, s.config.extraVolumeLabels, s.config.driver.config.Name)
 		if err != nil {
 			return nil, file.StatusError(err)
-		}
-		// Append extra lables from the command line option
-		for k, v := range s.config.extraVolumeLabels {
-			labels[k] = v
 		}
 		newFiler.Labels = labels
 
@@ -841,7 +837,7 @@ func getZoneFromSegment(seg map[string]string) (string, error) {
 	return zone, nil
 }
 
-func extractLabels(parameters map[string]string, driverName string) (map[string]string, error) {
+func extractLabels(parameters, cliLabels map[string]string, driverName string) (map[string]string, error) {
 	labels := make(map[string]string)
 	scLables := make(map[string]string)
 	for k, v := range parameters {
@@ -862,12 +858,12 @@ func extractLabels(parameters map[string]string, driverName string) (map[string]
 	}
 
 	labels[tagKeyCreatedBy] = strings.ReplaceAll(driverName, ".", "_")
-	return mergeLabels(scLables, labels)
+	return mergeLabels(scLables, labels, cliLabels)
 }
 
-func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (map[string]string, error) {
+func mergeLabels(scLabels, metadataLabels, cliLabels map[string]string) (map[string]string, error) {
 	result := make(map[string]string)
-	for k, v := range metedataLabels {
+	for k, v := range metadataLabels {
 		result[k] = v
 	}
 
@@ -877,6 +873,14 @@ func mergeLabels(scLabels map[string]string, metedataLabels map[string]string) (
 		}
 
 		result[k] = v
+	}
+
+	// add labels from command line with precedence given to
+	// metadata and storage class labels in same order.
+	for k, v := range cliLabels {
+		if _, ok := result[k]; !ok {
+			result[k] = v
+		}
 	}
 
 	return result, nil
@@ -952,7 +956,7 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	} else {
 		// create new backup
 
-		labels, err := extractBackupLabels(req.GetParameters(), s.config.driver.config.Name, req.Name)
+		labels, err := extractBackupLabels(req.GetParameters(), s.config.extraVolumeLabels, s.config.driver.config.Name, req.Name)
 		if err != nil {
 			return nil, err
 		}
@@ -986,8 +990,8 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	return snapshotResponse, nil
 }
 
-func extractBackupLabels(parameters map[string]string, driverName string, snapshotName string) (map[string]string, error) {
-	labels, err := extractLabels(parameters, driverName)
+func extractBackupLabels(parameters, cliLabels map[string]string, driverName string, snapshotName string) (map[string]string, error) {
+	labels, err := extractLabels(parameters, cliLabels, driverName)
 	if err != nil {
 		return nil, err
 	}
