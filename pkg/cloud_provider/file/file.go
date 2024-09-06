@@ -35,6 +35,7 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/common"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -313,7 +314,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 	err = manager.waitForOp(ctx, op)
 	if err != nil {
 		klog.Errorf("WaitFor CreateInstance op %s failed: %v", op.Name, err)
-		return nil, err
+		return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("unknown error when polling the operation: %w", err))
 	}
 	serviceInstance, err := manager.GetInstance(ctx, obj)
 	if err != nil {
@@ -328,14 +329,14 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	instance, err := manager.instancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("Failed to get instance %v", instanceUri)
-		return nil, err
+		return nil, common.NewTemporaryError(codes.Unavailable, err)
 	}
 
 	if instance != nil {
 		klog.V(4).Infof("GetInstance call fetched instance %+v", instance)
 		return cloudInstanceToServiceInstance(instance)
 	}
-	return nil, fmt.Errorf("failed to get instance %v", instanceUri)
+	return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("failed to get instance %v", instanceUri))
 }
 
 func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceInstance, error) {
@@ -714,6 +715,13 @@ func existingErrorCode(err error) *codes.Code {
 		return nil
 	}
 
+	var te *common.TemporaryError
+	// explicitly check if the error type is a `common.TemporaryError`.
+	if errors.As(err, &te) {
+		if status, ok := status.FromError(err); ok {
+			return util.ErrCodePtr(status.Code())
+		}
+	}
 	// We want to make sure we catch other error types that are statusable.
 	// (eg. grpc-go/internal/status/status.go Error struct that wraps a status)
 	var googleErr *googleapi.Error
@@ -1030,7 +1038,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
 	if err != nil {
-		return nil, fmt.Errorf("CreateShare operation failed: %w", err)
+		return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("CreateShare operation failed: %w", err))
 	}
 	klog.Infof("Started Create Share op %s for share %q instance uri %q, with capacity(GB) %v, Labels %v", op.Name, share.Name, instanceuri, targetshare.CapacityGb, targetshare.Labels)
 	return op, nil
@@ -1082,7 +1090,7 @@ func (manager *gcfsServiceManager) GetOp(ctx context.Context, op string) (*filev
 func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*Share, error) {
 	sobj, err := manager.multishareInstancesSharesService.Get(shareURI(obj.Parent.Project, obj.Parent.Location, obj.Parent.Name, obj.Name)).Context(ctx).Do()
 	if err != nil {
-		return nil, err
+		return nil, common.NewTemporaryError(codes.Unavailable, err)
 	}
 
 	_, _, _, shareName, err := util.ParseShareURI(sobj.Name)
@@ -1091,7 +1099,7 @@ func (manager *gcfsServiceManager) GetShare(ctx context.Context, obj *Share) (*S
 	}
 	instance, err := manager.GetMultishareInstance(ctx, obj.Parent)
 	if err != nil {
-		return nil, err
+		return nil, common.NewTemporaryError(codes.Unavailable, err)
 	}
 
 	return &Share{
