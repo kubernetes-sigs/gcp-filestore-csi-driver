@@ -22,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
@@ -153,6 +154,7 @@ func main() {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
+		clusterConfig.ContentType = runtime.ContentTypeProtobuf
 		klog.Infof("cluster config created")
 
 		kubeClient, err = kubernetes.NewForConfig(clusterConfig)
