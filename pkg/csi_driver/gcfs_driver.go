@@ -330,7 +330,7 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
 	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled {
 		// Start the lock release controller on node driver.
-		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
+		// driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
 	}
 	s.Wait()
 }

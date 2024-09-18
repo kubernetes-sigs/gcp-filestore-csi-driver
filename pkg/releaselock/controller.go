@@ -22,14 +22,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
-	"k8s.io/client-go/tools/leaderelection"
-	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	cache "k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -50,6 +48,7 @@ type LockReleaseController struct {
 
 	config         *LockReleaseControllerConfig
 	metricsManager *metrics.MetricsManager
+	nodeInformer   *cache.SharedIndexInformer
 }
 
 type LockReleaseControllerConfig struct {
@@ -61,7 +60,10 @@ type LockReleaseControllerConfig struct {
 	MetricEndpoint, MetricPath string
 }
 
-func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseControllerConfig) (*LockReleaseController, error) {
+func NewLockReleaseController(
+	client kubernetes.Interface,
+	config *LockReleaseControllerConfig,
+	nodeInformer *cache.SharedIndexInformer) (*LockReleaseController, error) {
 	// Register rpc procedure for lock release.
 	if err := RegisterLockReleaseProcedure(); err != nil {
 		klog.Errorf("Error initializing lockrelease controller: %v", err)
@@ -77,10 +79,11 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 	id := hostname + "_" + string(uuid.NewUUID())
 
 	lc := &LockReleaseController{
-		id:       id,
-		hostname: hostname,
-		client:   client,
-		config:   config,
+		id:           id,
+		hostname:     hostname,
+		client:       client,
+		config:       config,
+		nodeInformer: nodeInformer,
 	}
 
 	if config.MetricEndpoint != "" {
@@ -94,95 +97,54 @@ func NewLockReleaseController(client kubernetes.Interface, config *LockReleaseCo
 	return lc, nil
 }
 
-func (c *LockReleaseController) Run(ctx context.Context) {
-	run := func(ctx context.Context) {
-		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
-		wait.Forever(func() {
-			start := time.Now()
-			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
-			duration := time.Since(start)
-			c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
-			if err != nil {
-				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
-				return
-			}
-			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
+func (c *LockReleaseController) HandleCreateEvent(ctx context.Context, node *corev1.Node) error {
+	start := time.Now()
+	cmName := ConfigMapNamePrefix + node.Name
+	cm, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).Get(ctx, cmName, metav1.GetOptions{})
+	duration := time.Since(start)
+	c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.ReconcilerOpSource, duration)
 
-			start = time.Now()
-			nodes, err := c.listNodes(ctx)
-			duration = time.Since(start)
-			c.RecordKubeAPIMetrics(err, metrics.NodeResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
-			if err != nil {
-				klog.Errorf("Failed to list nodes: %v", err)
-				return
-			}
-			klog.Infof("Listed %d nodes", len(nodes))
-
-			for _, cm := range cmList.Items {
-				// Filter out root ca.
-				if cm.Name == rootCA {
-					continue
-				}
-				if err := c.syncLockInfo(ctx, &cm, nodes); err != nil {
-					klog.Errorf("Failed to sync lock info for configmap %s/%s: %v", cm.Namespace, cm.Name, err)
-				}
-			}
-		}, c.config.SyncPeriod)
-	}
-
-	rl, err := resourcelock.New(
-		resourcelock.LeasesResourceLock,
-		util.ManagedFilestoreCSINamespace,
-		leaseName,
-		nil,
-		c.client.CoordinationV1(),
-		resourcelock.ResourceLockConfig{
-			Identity: c.id,
-		})
 	if err != nil {
-		klog.Fatalf("Error creating resourcelock: %v", err)
+		klog.Errorf("Failed to get configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
+		return err
 	}
-
-	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
-		Lock:          rl,
-		LeaseDuration: c.config.LeaseDuration,
-		RenewDeadline: c.config.RenewDeadline,
-		RetryPeriod:   c.config.RetryPeriod,
-		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: run,
-			OnStoppedLeading: func() {
-				klog.Fatalf("%s no longer the leader", c.id)
-			},
-		},
-	})
-}
-
-func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap, nodes map[string]*corev1.Node) error {
-	nodeName, err := GKENodeNameFromConfigMap(cm)
+	klog.Infof("Got configmap (%v) in namespace %s", cm, util.ManagedFilestoreCSINamespace)
+	data := cm.DeepCopy().Data
+	latestNode, err := c.client.CoreV1().Nodes().Get(ctx, node.Name, metav1.GetOptions{})
 	if err != nil {
-		klog.Errorf("Failed to get GKE node name from configmap %s/%s: %v", cm.Namespace, cm.Name, err)
+		klog.Errorf("Failed to get node in namespace %v", err)
 		return err
 	}
 
-	node := nodes[nodeName]
-	data := cm.DeepCopy().Data
 	for key, filestoreIP := range data {
 		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := ParseConfigMapKey(key)
 		if err != nil {
 			klog.Errorf("Failed to parse configmap key %s: %v", key, err)
 			continue
 		}
-		klog.V(6).Infof("Verifying GKE node %s with nodeId %s nodeInternalIP %s exists or not", nodeName, gceInstanceID, gkeNodeInternalIP)
-		nodeExists, err := c.verifyNodeExists(node, gceInstanceID, gkeNodeInternalIP)
+		klog.V(6).Infof("Verifying GKE node %s with nodeId %s nodeInternalIP %s exists or not", node.Name, gceInstanceID, gkeNodeInternalIP)
+		entryMatchesNode, err := c.verifyConfigMapEntry(node, gceInstanceID, gkeNodeInternalIP)
 		if err != nil {
-			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", nodeName, gceInstanceID, gkeNodeInternalIP, err)
+			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", node.Name, gceInstanceID, gkeNodeInternalIP, err)
 			continue
 		}
-		if nodeExists {
-			klog.V(6).Infof("GKE node %s with nodeId %s nodeInternalIP %s still exists in API server, skip lock info reconciliation", nodeName, gceInstanceID, gkeNodeInternalIP)
+		if entryMatchesNode {
+			klog.V(6).Infof("GKE node %s with nodeId %s nodeInternalIP %s still exists in API server, skip lock info reconciliation", node.Name, gceInstanceID, gkeNodeInternalIP)
 			continue
 		}
-		klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s no longer exists, releasing lock for Filestore IP %s", nodeName, gceInstanceID, gkeNodeInternalIP, filestoreIP)
+
+		// Try to match the latest node, to prevent incorrect releasing the lock in case of a lagging informer/watch
+		entryMatchesLatestNode, err := c.verifyConfigMapEntry(latestNode, gceInstanceID, gkeNodeInternalIP)
+		if err != nil {
+			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", node.Name, gceInstanceID, gkeNodeInternalIP, err)
+			continue
+		}
+		if entryMatchesLatestNode {
+			klog.V(6).Infof("GKE node %s with nodeId %s nodeInternalIP %s exists in API server, skip lock info reconciliation", node.Name, gceInstanceID, gkeNodeInternalIP)
+			continue
+		}
+
+		klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s no longer exists, releasing lock for Filestore IP %s", node.Name, gceInstanceID, gkeNodeInternalIP, filestoreIP)
 		opErr := ReleaseLock(filestoreIP, gkeNodeInternalIP)
 		c.RecordLockReleaseMetrics(opErr)
 		if opErr != nil {
@@ -200,8 +162,63 @@ func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.Con
 	return nil
 }
 
-// verifyNodeExists validates if the given node object has the exact nodeID, and nodeInternalIP.
-func (c *LockReleaseController) verifyNodeExists(node *corev1.Node, expectedGCEInstanceID, expectedNodeInternalIP string) (bool, error) {
+func (c *LockReleaseController) HandleUpdateEvent(ctx context.Context, oldNode *corev1.Node, newNode *corev1.Node) error {
+	start := time.Now()
+	nodeName := newNode.Name
+	cmName := ConfigMapNamePrefix + nodeName
+	cm, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).Get(ctx, cmName, metav1.GetOptions{})
+	duration := time.Since(start)
+	c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.ReconcilerOpSource, duration)
+
+	if err != nil {
+		klog.Errorf("Failed to get configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
+		return err
+	}
+	klog.Infof("Got configmap (%v) in namespace %s", cm, util.ManagedFilestoreCSINamespace)
+
+	data := cm.DeepCopy().Data
+	for key, filestoreIP := range data {
+		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := ParseConfigMapKey(key)
+		if err != nil {
+			klog.Errorf("Failed to parse configmap key %s: %v", key, err)
+			continue
+		}
+		klog.V(6).Infof("Verifying GKE node %s with nodeId %s nodeInternalIP %s exists or not", nodeName, gceInstanceID, gkeNodeInternalIP)
+		entryMatchesNewNode, err := c.verifyConfigMapEntry(newNode, gceInstanceID, gkeNodeInternalIP)
+		if err != nil {
+			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", nodeName, gceInstanceID, gkeNodeInternalIP, err)
+			continue
+		}
+		entryMatchesOldNode, err := c.verifyConfigMapEntry(oldNode, gceInstanceID, gkeNodeInternalIP)
+		if err != nil {
+			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", nodeName, gceInstanceID, gkeNodeInternalIP, err)
+			continue
+		}
+		klog.Infof("Checked config map entry against old node(matching result %t), and new node(matching result %t)", entryMatchesOldNode, entryMatchesNewNode)
+		if entryMatchesNewNode {
+			klog.V(6).Infof("GKE node %s with nodeId %s nodeInternalIP %s still exists in API server, skip lock info reconciliation", nodeName, gceInstanceID, gkeNodeInternalIP)
+			continue
+		} else if entryMatchesOldNode {
+			klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s matches a node before update, releasing lock for Filestore IP %s", nodeName, gceInstanceID, gkeNodeInternalIP, filestoreIP)
+			opErr := ReleaseLock(filestoreIP, gkeNodeInternalIP)
+			c.RecordLockReleaseMetrics(opErr)
+			if opErr != nil {
+				klog.Errorf("Failed to release lock: %v", opErr)
+				continue
+			}
+			klog.Infof("Removing lock info key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
+
+			if err := c.RemoveKeyFromConfigMapWithRetry(ctx, cm, key); err != nil {
+				klog.Errorf("Failed to remove key %s from configmap %s/%s: %v", key, cm.Namespace, cm.Name, err)
+			}
+		}
+
+	}
+	return nil
+}
+
+// verifyConfigMapEntry validates if the given config map entry object has the exact nodeID, and nodeInternalIP.
+func (c *LockReleaseController) verifyConfigMapEntry(node *corev1.Node, expectedGCEInstanceID, expectedNodeInternalIP string) (bool, error) {
 	if node == nil {
 		return false, nil
 	}
@@ -224,7 +241,7 @@ func (c *LockReleaseController) verifyNodeExists(node *corev1.Node, expectedGCEI
 	return false, nil
 }
 
-func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*corev1.Node, error) {
+func (c *LockReleaseController) ListNodes(ctx context.Context) (map[string]*corev1.Node, error) {
 	nodeList, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -248,4 +265,19 @@ func (c *LockReleaseController) RecordLockReleaseMetrics(opErr error) {
 		return
 	}
 	c.metricsManager.RecordLockReleaseMetrics(opErr)
+}
+
+// GetId returns the ID of the LockReleaseController.
+func (c *LockReleaseController) GetId() string {
+	return c.id
+}
+
+// GetHost returns the hostname where the lock release controller is running on.
+func (c *LockReleaseController) GetHost() string {
+	return c.hostname
+}
+
+// GetClient returns the kubernetes client of the LockReleaseController.
+func (c *LockReleaseController) GetClient() kubernetes.Interface {
+	return c.client
 }
