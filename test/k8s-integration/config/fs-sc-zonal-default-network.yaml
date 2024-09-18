@@ -1,0 +1,8 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore-zonal
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: zonal
+volumeBindingMode: Immediate
