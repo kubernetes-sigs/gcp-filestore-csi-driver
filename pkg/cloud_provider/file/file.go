@@ -329,6 +329,9 @@ func (manager *gcfsServiceManager) GetInstance(ctx context.Context, obj *Service
 	instance, err := manager.instancesService.Get(instanceUri).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("Failed to get instance %v", instanceUri)
+		if IsNotFoundErr(err) {
+			return nil, err
+		}
 		return nil, common.NewTemporaryError(codes.Unavailable, err)
 	}
 
