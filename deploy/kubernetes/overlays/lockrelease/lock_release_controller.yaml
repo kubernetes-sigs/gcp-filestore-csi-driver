@@ -21,9 +21,9 @@ spec:
         kubernetes.io/os: linux
       containers:
       - name: filestore-lock-release-controller
-        image: 'gcr.io/shensiyan-joonix/gcp-filestore-csi-driver-lockrelease:7'
+        image: 'gcr.io/shensiyan-joonix/gcp-filestore-csi-driver-lockrelease:18'
         args:
-        - --v=5
+        - --v=6
         resources:                                               
           requests:                                              
             cpu: 5m                                              

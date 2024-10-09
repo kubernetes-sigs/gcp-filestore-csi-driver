@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: test-pod-deployment
+spec:
+  replicas: 1 # You can adjust the number of replicas as needed
+  selector:
+    matchLabels:
+      app: test-pod
+  template:
+    metadata:
+      labels:
+        app: test-pod
+    spec:
+      containers:
+      - name: busybox
+        image: busybox42/alpine-pod:latest
+        volumeMounts:
+        - mountPath: /mnt/mydir
+          name: mypvc
+      volumes:
+      - name: mypvc
+        persistentVolumeClaim:
+          claimName: test-pvc
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: test-pvc
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: enterprise-rwx
+  resources:
+    requests:
+      storage: 100Mi
+
