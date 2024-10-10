@@ -6,6 +6,8 @@ spec:
   template:
     spec:
       containers:
-        - name: gcp-filestore-driver
-          imagePullPolicy: Always
+      - name: gcp-filestore-driver
+        imagePullPolicy: Always
+      imagePullSecrets:
+      - name: gcr-json-key
 

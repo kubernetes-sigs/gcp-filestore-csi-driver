@@ -6,6 +6,8 @@ spec:
   template:
     spec:
       containers:
-        - name: nfs-services
-          imagePullPolicy: Always
+      - name: nfs-services
+        imagePullPolicy: Always
+      imagePullSecrets:
+      - name: gcr-json-key
 
