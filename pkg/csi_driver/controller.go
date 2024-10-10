@@ -53,10 +53,10 @@ const (
 	enterpriseTierMaxSize = 10 * util.Tb
 	highScaleTierMinSize  = 10 * util.Tb
 	highScaleTierMaxSize  = 100 * util.Tb
-	zonalLowTierMinSize   = 1 * util.Tb
-	zonalLowTierMaxSize   = 9984 * util.Gb
-	zonalHighTierMinSize  = 10 * util.Tb
-	zonalHighTierMaxSize  = 100 * util.Tb
+	zonalSmallTierMinSize = 1 * util.Tb
+	zonalSmallTierMaxSize = 9984 * util.Gb
+	zonalLargeTierMinSize = 10 * util.Tb
+	zonalLargeTierMaxSize = 100 * util.Tb
 	premiumTierMinSize    = 25 * util.Tb / 10
 	premiumTierMaxSize    = 639 * util.Tb / 10
 
@@ -112,8 +112,8 @@ var (
 	enterpriseRange = capacityRangeForTier{min: enterpriseTierMinSize, max: enterpriseTierMaxSize}
 	highScaleRange  = capacityRangeForTier{min: highScaleTierMinSize, max: highScaleTierMaxSize}
 	premiumRange    = capacityRangeForTier{min: premiumTierMinSize, max: premiumTierMaxSize}
-	zonalSmallRange = capacityRangeForTier{min: zonalLowTierMinSize, max: zonalLowTierMaxSize}
-	zonalLargeRange = capacityRangeForTier{min: zonalHighTierMinSize, max: zonalHighTierMaxSize}
+	zonalSmallRange = capacityRangeForTier{min: zonalSmallTierMinSize, max: zonalSmallTierMaxSize}
+	zonalLargeRange = capacityRangeForTier{min: zonalLargeTierMinSize, max: zonalLargeTierMaxSize}
 )
 
 // tierToCapacityRange maps tier names to their corresponding capacity ranges
@@ -513,11 +513,11 @@ func getTierFromParams(params map[string]string) string {
 }
 
 // validator function to check for invalid capacity size requests
-func invalidCapacityRange(capRange *csi.CapacityRange, tier string, validRange *capacityRangeForTier) error {
+func invalidCapacityRange(requestedCapRange *csi.CapacityRange, tier string, validRange *capacityRangeForTier) error {
 
-	requiredCap := capRange.GetRequiredBytes()
+	requiredCap := requestedCapRange.GetRequiredBytes()
 	requireSet := requiredCap > 0
-	limitCap := capRange.GetLimitBytes()
+	limitCap := requestedCapRange.GetLimitBytes()
 	limitSet := limitCap > 0
 
 	if limitSet && requireSet && limitCap < requiredCap {
@@ -549,12 +549,12 @@ func invalidCapacityRange(capRange *csi.CapacityRange, tier string, validRange *
 }
 
 // provisionableCapacityForTier returns capacity range for tier
-func provisionableCapacityForTier(capRange *csi.CapacityRange, tier string) *capacityRangeForTier {
+func provisionableCapacityForTier(requestedCapRange *csi.CapacityRange, tier string) *capacityRangeForTier {
 	tier = strings.ToLower(tier)
-	if tier == zonalTier && capRange != nil && capRange.GetRequiredBytes() > zonalLowTierMaxSize {
+	if tier == zonalTier && requestedCapRange != nil && requestedCapRange.GetRequiredBytes() > zonalSmallTierMaxSize {
 		// keep this check simple since the capacity bounds are checked thoroughly in the
 		// invalidCapacityRange() later.
-		tierToCapacityRange[zonalTier] = capacityRangeForTier{min: zonalHighTierMinSize, max: zonalHighTierMaxSize}
+		return &capacityRangeForTier{min: zonalLargeTierMinSize, max: zonalLargeTierMaxSize}
 	}
 	validRange, ok := tierToCapacityRange[tier]
 	if !ok {
@@ -595,7 +595,7 @@ func invalidVolumeExpansionRequest(capRange *csi.CapacityRange, currentCapacity 
 	requiredCap := capRange.GetRequiredBytes()
 	switch strings.ToLower(tier) {
 	case zonalTier:
-		if currentCapacity <= zonalLowTierMaxSize && requiredCap > zonalLowTierMaxSize {
+		if currentCapacity <= zonalSmallTierMaxSize && requiredCap > zonalSmallTierMaxSize {
 			klog.Warningf("volume expansion request of %v bytes is beyond the small zonal tier capacity (%v bytes)", currentCapacity, requiredCap)
 			return true
 		}
@@ -758,8 +758,7 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	// request cross the band size.
 	invalidExpansion := invalidVolumeExpansionRequest(req.GetCapacityRange(), filer.Volume.SizeBytes, filer.Tier)
 	if invalidExpansion {
-		klog.Warningf("Volume expansion not supported beyond small %s band. Please create a new instance with higher storage capacity.", filer.Tier)
-		return nil, status.Errorf(codes.InvalidArgument, "invalid request, file instance: %+v", filer)
+		return nil, status.Errorf(codes.InvalidArgument, "Volume expansion not supported beyond small %s band. Please create a new instance with higher storage capacity.", filer.Tier)
 	}
 
 	// getFileInstanceFromID doesn't have tier info set, we have to check the range after GetInstance call
