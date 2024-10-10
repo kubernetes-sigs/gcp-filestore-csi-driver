@@ -12,16 +12,16 @@ spec:
   volumes:
    - name: mypvc
      persistentVolumeClaim:
-       claimName: test-pvc
----
-kind: PersistentVolumeClaim
-apiVersion: v1
-metadata:
-  name: test-pvc
-spec:
-  accessModes:
-    - ReadWriteMany
-  storageClassName: csi-filestore
-  resources:
-    requests:
-      storage: 1Ti
+       claimName: podpvc
+# ---
+# kind: PersistentVolumeClaim
+# apiVersion: v1
+# metadata:
+#   name: test-pvc
+# spec:
+#   accessModes:
+#     - ReadWriteMany
+#   storageClassName: csi-filestore
+#   resources:
+#     requests:
+#       storage: 1Ti

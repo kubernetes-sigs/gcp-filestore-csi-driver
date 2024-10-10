@@ -76,7 +76,7 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		if err != nil {
 			return nil, err
 		}
-		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config)
+		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config, nil)
 		if err != nil {
 			return nil, err
 		}
