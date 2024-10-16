@@ -1015,6 +1015,54 @@ func TestGetRequestCapacity(t *testing.T) {
 			tier:  "BASIC_SSD",
 			bytes: 3 * util.Tb,
 		},
+		{
+			name: "required less than small ZONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 1 * util.Tb,
+		},
+		{
+			name: "required in small ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+			},
+			tier:  "ZONAL",
+			bytes: 3 * util.Tb,
+		},
+		{
+			name: "required in small ZONAL range all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9984 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 9984 * util.Gb,
+		},
+		{
+			name: "required in large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 10 * util.Tb,
+			},
+			tier:  "ZONAL",
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required in between small and large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9985 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required above large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 110 * util.Tb,
+			},
+			tier:          "ZONAL",
+			errorExpected: true,
+		},
 	}
 
 	for _, tc := range cases {
