@@ -10,6 +10,13 @@ metadata:
   name: gcp-filestore-csi-node-sa
   namespace: gcp-filestore-csi-driver
 ---
+##### Lock release controller Service Account, Roles, RoleBindings
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: filestore-lockrelease-controller-sa
+  namespace: gcp-filestore-csi-driver
+---
 ##### Controller Service Account, Roles, Rolebindings
 apiVersion: v1
 kind: ServiceAccount

@@ -54,7 +54,7 @@ var (
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
 	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
-	lockReleaseSyncPeriod = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
+	lockReleaseSyncPeriod = flag.Duration("lock-release-sync-period", 3600*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 3600 seconds.")
 
 	// Feature configurable shares per Filestore instance specific parameters.
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
