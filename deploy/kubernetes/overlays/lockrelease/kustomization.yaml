@@ -3,4 +3,4 @@ kind: Kustomization
 resources:
 - ../stable-master
 - configmap_rbac.yaml
-
+- lock_release_controller.yaml
