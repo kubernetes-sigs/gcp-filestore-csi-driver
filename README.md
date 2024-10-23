@@ -14,7 +14,7 @@ dynamically created and mounted by workloads.
 ## Project Status
 Status: GA
 
-Latest image: `registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.6.13`
+Latest image: `registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver:v1.7.0`
 
 Also see [known issues](KNOWN_ISSUES.md) and [CHANGELOG](CHANGELOG.md).
 
