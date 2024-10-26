@@ -106,7 +106,7 @@ func initTestNodeServerWithKubeClient(t *testing.T, client kubernetes.Interface)
 		mounter:               mounter,
 		metaService:           metaserice,
 		volumeLocks:           util.NewVolumeLocks(),
-		lockReleaseController: lockrelease.NewFakeLockReleaseControllerWithClient(client),
+		lockReleaseController: lockrelease.NewControllerBuilder().WithClient(client).Build(),
 		features:              &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{Enabled: true}},
 	}
 }
