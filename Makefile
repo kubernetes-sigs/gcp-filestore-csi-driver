@@ -15,6 +15,7 @@
 # Core Filestore CSI driver binary
 DRIVERBINARY=gcp-filestore-csi-driver
 WEBHOOKBINARY=gcp-filestore-csi-driver-webhook
+LOCKRELEASEBINARY=gcp-filestore-csi-driver-lockrelease
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
 $(info PWD is $(PWD))
 
@@ -44,6 +45,15 @@ else
 	WEBHOOK_STAGINGIMAGE=gcr.io/$(PROJECT)/gcp-filestore-csi-driver-webhook
 endif
 $(info WEBHOOK_STAGINGIMAGE is $(WEBHOOK_STAGINGIMAGE))
+
+LOCKRELEASE_STAGINGIMAGE=
+ifdef GCP_FS_CSI_LOCKRELEASE_STAGING_IMAGE
+	LOCKRELEASE_STAGINGIMAGE=$(GCP_FS_CSI_LOCKRELEASE_STAGING_IMAGE)
+else
+	LOCKRELEASE_STAGINGIMAGE=gcr.io/$(PROJECT)/gcp-filestore-csi-driver-lockrelease
+endif
+$(info LOCKRELEASE_STAGINGIMAGE is $(LOCKRELEASE_STAGINGIMAGE))
+
 
 BINDIR?=bin
 
@@ -141,6 +151,27 @@ build-image-and-push-linux-arm64: init-buildx
 build-and-push-multi-arch: build-image-and-push-linux-arm64 build-image-and-push-linux-amd64
 	docker manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
 	docker manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
+
+# Build the go binary for the CSI driver lock release controller.
+lockrelease:
+	mkdir -p ${BINDIR}
+	{                                                                                                                                                  \
+	set -e ;                                                                                                                                           \
+	CGO_ENABLED=0 go build -mod=vendor -a -ldflags '-X main.version=$(STAGINGVERSION) -extldflags "-static"' -o ${BINDIR}/${LOCKRELEASEBINARY} ./cmd/lockrelease/; \
+	}
+
+# Build the docker image for the lock release controller.
+lockrelease-image: init-buildx
+		{                                                                                                                                                                \
+		set -e ;                                                                                                                                                         \
+		docker buildx build \
+		    --platform linux/amd64 \
+			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
+			--build-arg BUILDPLATFORM=linux/amd64 \
+			--build-arg TARGETPLATFORM=linux/amd64 \
+			-f ./cmd/lockrelease/Dockerfile \
+			-t $(LOCKRELEASE_STAGINGIMAGE):$(STAGINGVERSION) --push .; \
+		}
 
 # Build the go binary for the CSI driver.
 # STAGINGVERSION may contain multiple tags (e.g. canary, vX.Y.Z etc). Use one of the tags
