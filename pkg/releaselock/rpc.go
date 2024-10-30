@@ -41,6 +41,8 @@ const (
 	notifyCloseChannelSize = 1
 )
 
+type FileStoreRPCClient struct{}
+
 type releaseLockResponse struct {
 	status releaseLockStatus
 }
@@ -69,7 +71,7 @@ func RegisterLockReleaseProcedure() error {
 // ReleaseLock calls the Filestore server to remove all advisory locks for a given GKE node IP.
 // hostIP is the internal IP address of the Filestore instance.
 // clientIP is the internal IP address of the GKE node.
-func ReleaseLock(hostIP, clientIP string) error {
+func (c *FileStoreRPCClient) ReleaseLock(hostIP, clientIP string) error {
 	// Check for valid IPV4 address.
 	if net.ParseIP(hostIP) == nil {
 		return fmt.Errorf("invalid Filestore IP address %s", hostIP)
