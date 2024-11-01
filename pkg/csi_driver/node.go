@@ -31,6 +31,7 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -303,8 +304,8 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	if mounted {
 		if s.features.FeatureLockRelease.Enabled {
 			klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists. Proceed to lock info configmap updates", volumeID, stagingTargetPath)
-			if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
-				return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
+			if err := s.nodeStageVolumeUpdateLockInfoWithRetry(ctx, req); err != nil {
+				return nil, status.Errorf(codes.Internal, "failed to store lock info after retry; NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
 			}
 		}
 		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
@@ -337,8 +338,8 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 
 	if s.features.FeatureLockRelease.Enabled {
 		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, proceed to lock info configmap updates.", volumeID, stagingTargetPath)
-		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
+		if err := s.nodeStageVolumeUpdateLockInfoWithRetry(ctx, req); err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to store lock info after retry; NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
 		}
 	}
 
@@ -496,58 +497,56 @@ func getFSStat(path string) (available, capacity, used, inodesFree, inodes, inod
 	return
 }
 
-// nodeStageVolumeUpdateLockInfo updates lock info after NodeStageVolume succeed.
-func (s *nodeServer) nodeStageVolumeUpdateLockInfo(ctx context.Context, req *csi.NodeStageVolumeRequest) error {
-	volumeID := req.GetVolumeId()
-	// No-op if filestore instance not support lock release.
-	attr := req.GetVolumeContext()
-	if val, ok := attr[attrSupportLockRelease]; !ok || strings.ToLower(val) != "true" {
-		klog.Infof("Lock release is not support on volume %s: missing volume attribute %s. The volume is not dynamically provisioned or the filestore instance is not in enterprise tier", volumeID, attrSupportLockRelease)
-		return nil
-	}
+func (s *nodeServer) nodeStageVolumeUpdateLockInfoWithRetry(ctx context.Context, req *csi.NodeStageVolumeRequest) error {
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		volumeID := req.GetVolumeId()
+		// No-op if filestore instance not support lock release.
+		attr := req.GetVolumeContext()
+		if val, ok := attr[attrSupportLockRelease]; !ok || strings.ToLower(val) != "true" {
+			klog.Infof("Lock release is not support on volume %s: missing volume attribute %s. The volume is not dynamically provisioned or the filestore instance is not in enterprise tier", volumeID, attrSupportLockRelease)
+			return nil
+		}
 
-	// Update the configMap after successful nfs mount operation.
-	nodeName := s.driver.config.NodeName
-	configmapName := lockrelease.ConfigMapNamePrefix + nodeName
-	klog.Infof("NodeStageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
-	start := time.Now()
-	cm, err := s.lockReleaseController.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace)
-	duration := time.Since(start)
-	s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.NodeStageOpSource, duration)
-	if err != nil {
-		klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
-		return err
-	}
-
-	lockInfoKey, err := s.generateLockInfoKeyFromVolumeID(volumeID)
-	if err != nil {
-		klog.Errorf("NodeStageVolume failed to generate lock info key for volume %s: %v", volumeID, err)
-		return err
-	}
-
-	// Create or update the configmap with lock info.
-	filestoreIP := attr[attrIP]
-	if cm == nil {
-		data := map[string]string{lockInfoKey: filestoreIP}
-		klog.Infof("NodeStageVolume creating configmap %+v with data %v for volume %s", klog.KObj(cm), data, volumeID)
+		// Update the configMap after successful nfs mount operation.
+		nodeName := s.driver.config.NodeName
+		configmapName := lockrelease.ConfigMapNamePrefix + nodeName
+		klog.Infof("NodeStageVolume getting configmap %s/%s for volume %s", util.ManagedFilestoreCSINamespace, configmapName, volumeID)
 		start := time.Now()
-		cm, err := s.lockReleaseController.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data)
+		cm, err := s.lockReleaseController.GetConfigMap(ctx, configmapName, util.ManagedFilestoreCSINamespace)
 		duration := time.Since(start)
-		s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.CreateOpType, metrics.NodeStageOpSource, duration)
+		s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.GetOpType, metrics.NodeStageOpSource, duration)
 		if err != nil {
-			klog.Errorf("NodeStageVolume failed to create configmap %+v with data %s for volume %s: %v", klog.KObj(cm), data, volumeID, err)
+			klog.Errorf("NodeStageVolume failed to get configmap %s/%s for volume %s: %v", util.ManagedFilestoreCSINamespace, configmapName, volumeID, err)
 			return err
 		}
-		klog.Infof("NodeStageVolume successfully created configmap %+v with data %v for volume %s", klog.KObj(cm), cm.Data, volumeID)
-		return nil
-	}
 
-	if err := s.lockReleaseController.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP); err != nil {
-		klog.Errorf("NodeStageVolume failed to update configmap %+v with lock info {%s: %s} for volume %s: %v", klog.KObj(cm), lockInfoKey, filestoreIP, volumeID, err)
-		return err
-	}
+		lockInfoKey, err := s.generateLockInfoKeyFromVolumeID(volumeID)
+		if err != nil {
+			klog.Errorf("NodeStageVolume failed to generate lock info key for volume %s: %v", volumeID, err)
+			return err
+		}
 
-	return nil
+		// Create or update the configmap with lock info.
+		filestoreIP := attr[attrIP]
+		if cm == nil {
+			data := map[string]string{lockInfoKey: filestoreIP}
+			klog.Infof("NodeStageVolume creating configmap %+v with data %v for volume %s", klog.KObj(cm), data, volumeID)
+			start := time.Now()
+			cm, err := s.lockReleaseController.CreateConfigMapWithData(ctx, configmapName, util.ManagedFilestoreCSINamespace, data)
+			duration := time.Since(start)
+			s.lockReleaseController.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.CreateOpType, metrics.NodeStageOpSource, duration)
+			if err != nil {
+				klog.Errorf("NodeStageVolume failed to create configmap %+v with data %s for volume %s: %v", klog.KObj(cm), data, volumeID, err)
+				return err
+			}
+			klog.Infof("NodeStageVolume successfully created configmap %+v with data %v for volume %s", klog.KObj(cm), cm.Data, volumeID)
+			return nil
+		}
+
+		updateErr := s.lockReleaseController.UpdateConfigMapWithKeyValue(ctx, cm, lockInfoKey, filestoreIP)
+		return updateErr
+	})
+
 }
 
 // nodeUnstageVolumeUpdateLockInfo updates lock info after NodeUnStageVolume succeed.

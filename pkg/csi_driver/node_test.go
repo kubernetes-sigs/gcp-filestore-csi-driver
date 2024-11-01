@@ -1020,7 +1020,7 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 		client := fake.NewSimpleClientset(test.existingCM)
 		server := initTestNodeServerWithKubeClient(t, client)
 		ctx := context.Background()
-		err := server.nodeStageVolumeUpdateLockInfo(ctx, test.req)
+		err := server.nodeStageVolumeUpdateLockInfoWithRetry(ctx, test.req)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
 		}
