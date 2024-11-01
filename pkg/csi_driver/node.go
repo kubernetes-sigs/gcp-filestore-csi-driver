@@ -50,6 +50,7 @@ var (
 )
 
 // nodeServer handles mounting and unmounting of GCFS volumes on a node
+// TODO(b/375481562): refactor config map utils & remove node driver's dependency on lockReleaseController
 type nodeServer struct {
 	driver                *GCFSDriver
 	mounter               mount.Interface
@@ -76,7 +77,7 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		if err != nil {
 			return nil, err
 		}
-		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config)
+		lc, err := lockrelease.NewLockReleaseController(client, ns.features.FeatureLockRelease.Config, nil)
 		if err != nil {
 			return nil, err
 		}
