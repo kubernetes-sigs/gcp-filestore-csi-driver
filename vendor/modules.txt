@@ -205,9 +205,6 @@ github.com/onsi/gomega/types
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/pmezard/go-difflib v1.0.0
-## explicit
-github.com/pmezard/go-difflib/difflib
 # github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
 ## explicit
 github.com/prashanthpai/sunrpc
@@ -241,13 +238,6 @@ github.com/spf13/cobra
 # github.com/spf13/pflag v1.0.5
 ## explicit; go 1.12
 github.com/spf13/pflag
-# github.com/stretchr/objx v0.5.2
-## explicit; go 1.20
-github.com/stretchr/objx
-# github.com/stretchr/testify v1.9.0
-## explicit; go 1.17
-github.com/stretchr/testify/assert
-github.com/stretchr/testify/mock
 # go.opencensus.io v0.24.0
 ## explicit; go 1.13
 go.opencensus.io
