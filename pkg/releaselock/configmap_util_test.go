@@ -179,7 +179,7 @@ func TestGetConfigMap(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewControllerBuilder().WithClient(client).Build()
+		controller := NewFakeLockReleaseControllerWithClient(client)
 		cm, err := controller.GetConfigMap(context.Background(), test.cmName, test.cmNamespace)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
 			t.Fatal(gotExpected)
@@ -274,7 +274,7 @@ func TestUpdateConfigMapWithKeyValue(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewControllerBuilder().WithClient(client).Build()
+		controller := NewFakeLockReleaseControllerWithClient(client)
 		ctx := context.Background()
 		err := controller.UpdateConfigMapWithKeyValue(ctx, test.existingCM, test.key, test.value)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
@@ -372,7 +372,7 @@ func TestRemoveKeyFromConfigMap(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewControllerBuilder().WithClient(client).Build()
+		controller := NewFakeLockReleaseControllerWithClient(client)
 		ctx := context.Background()
 		err := controller.RemoveKeyFromConfigMap(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
@@ -470,7 +470,7 @@ func TestRemoveKeyFromConfigMapWithRetry(t *testing.T) {
 	}
 	for _, test := range cases {
 		client := fake.NewSimpleClientset(test.existingCM)
-		controller := NewControllerBuilder().WithClient(client).Build()
+		controller := NewFakeLockReleaseControllerWithClient(client)
 		ctx := context.Background()
 		err := controller.RemoveKeyFromConfigMapWithRetry(ctx, test.existingCM, test.key)
 		if gotExpected := gotExpectedError(test.name, test.expectErr, err); gotExpected != nil {
