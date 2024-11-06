@@ -53,7 +53,8 @@ var (
 	resourceTagsStr                 = flag.String("resource-tags", "", "Resource tags to attach to each volume created. It is a comma separated list of tags of the form '<parentID_1>/<tagKey_1>/<tagValue_1>...<parentID_N>/<tagKey_N>/<tagValue_N>' where, parentID is the ID of Organization or Project resource where tag key and value resources exist, tagKey is the shortName of the tag key resource, tagValue is the shortName of the tag value resource. See https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing for more details.")
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
-	featureLockRelease = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
+	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
+	lockReleaseSyncPeriod = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
 
 	// Feature configurable shares per Filestore instance specific parameters.
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
@@ -170,6 +171,7 @@ func main() {
 				LeaseDuration:  *leaderElectionLeaseDuration,
 				RenewDeadline:  *leaderElectionRenewDeadline,
 				RetryPeriod:    *leaderElectionRetryPeriod,
+				SyncPeriod:     *lockReleaseSyncPeriod,
 				MetricEndpoint: *httpEndpoint,
 				MetricPath:     *metricsPath,
 			},
