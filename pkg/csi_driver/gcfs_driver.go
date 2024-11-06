@@ -326,6 +326,10 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	// Start the nonblocking GRPC.
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
+	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled {
+		// Start the lock release controller on node driver.
+		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
+	}
 	s.Wait()
 }
 
