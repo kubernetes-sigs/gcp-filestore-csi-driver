@@ -421,10 +421,15 @@ func TestGetShareRequestCapacity(t *testing.T) {
 }
 
 func TestExtractInstanceLabels(t *testing.T) {
+	var (
+		parameterLabels = "key1=value1,key2=value2"
+	)
+
 	tests := []struct {
 		name          string
 		params        map[string]string
 		driver        string
+		cliLabels     map[string]string
 		expectedLabel map[string]string
 		expectErr     bool
 	}{
@@ -453,10 +458,108 @@ func TestExtractInstanceLabels(t *testing.T) {
 				TagKeyClusterLocation:                  testLocation,
 			},
 		},
+		{
+			name:   "Parsing labels in storageClass fails(invalid KV separator(:) used)",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             "key1:value1,key2:value2",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectedLabel: nil,
+			expectErr:     true,
+		},
+		{
+			name:   "storageClass labels contain reserved metadata label(storage_gke_io_created-by)",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             "key1=value1,key2=value2,storage_gke_io_created-by=test_filestore",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectedLabel: nil,
+			expectErr:     true,
+		},
+		{
+			name:   "storageClass labels parameter not present, only the CLI labels are defined",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+			},
+			cliLabels: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+			},
+			expectedLabel: map[string]string{
+				"key3":                                 "value3",
+				"key4":                                 "value4",
+				tagKeyCreatedBy:                        testDrivernameLabelValue,
+				util.ParamMultishareInstanceScLabelKey: "testsc",
+				TagKeyClusterName:                      testClusterName,
+				TagKeyClusterLocation:                  testLocation,
+			},
+		},
+		{
+			name:   "CLI labels not defined, labels are defined only in storageClass object",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             parameterLabels,
+			},
+			cliLabels: nil,
+			expectedLabel: map[string]string{
+				"key1":                                 "value1",
+				"key2":                                 "value2",
+				tagKeyCreatedBy:                        testDrivernameLabelValue,
+				util.ParamMultishareInstanceScLabelKey: "testsc",
+				TagKeyClusterName:                      testClusterName,
+				TagKeyClusterLocation:                  testLocation,
+			},
+		},
+		{
+			name:   "CLI labels and storageClass labels parameter not defined",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+			},
+			cliLabels: nil,
+			expectedLabel: map[string]string{
+				tagKeyCreatedBy:                        testDrivernameLabelValue,
+				util.ParamMultishareInstanceScLabelKey: "testsc",
+				TagKeyClusterName:                      testClusterName,
+				TagKeyClusterLocation:                  testLocation,
+			},
+		},
+		{
+			name:   "CLI labels and storageClass labels has duplicates",
+			driver: testDriverName,
+			params: map[string]string{
+				ParamMultishareInstanceScLabel: "testsc",
+				ParameterKeyLabels:             parameterLabels,
+			},
+			cliLabels: map[string]string{
+				"key1": "value1",
+				"key2": "value202",
+			},
+			expectedLabel: map[string]string{
+				"key1":                                 "value1",
+				"key2":                                 "value2",
+				tagKeyCreatedBy:                        testDrivernameLabelValue,
+				util.ParamMultishareInstanceScLabelKey: "testsc",
+				TagKeyClusterName:                      testClusterName,
+				TagKeyClusterLocation:                  testLocation,
+			},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			label, err := extractInstanceLabels(tc.params, tc.driver, testClusterName, testLocation)
+			label, err := extractInstanceLabels(tc.params, tc.cliLabels, tc.driver, testClusterName, testLocation)
 			if tc.expectErr && err == nil {
 				t.Error("expected error, got none")
 			}
@@ -2860,6 +2963,30 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 			initialBackup: nil,
 			expectErr:     true,
 		},
+		{
+			name: "Parameters contain misconfigured labels(invalid KV separator(:) used)",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "modeInstance/us-central1/myinstance/myshare",
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+					"labels":                   "key1:value1",
+				},
+			},
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+				state: "CREATING",
+			},
+			expectErr: true,
+		},
 		//Success test cases
 		{
 			name: "No existing backup",
@@ -2888,6 +3015,32 @@ func TestCreateMultishareSnapshot(t *testing.T) {
 				Name:           backupName,
 				Parameters: map[string]string{
 					util.VolumeSnapshotTypeKey: "backup",
+				},
+			},
+			features: features,
+			initialBackup: &BackupTestInfo{
+				backup: &file.BackupInfo{
+					Project:            testProject,
+					Location:           testRegion,
+					SourceInstanceName: testInstanceName1,
+					SourceShare:        testShareName,
+					Name:               backupName,
+					BackupURI:          defaultBackupUri,
+					SourceVolumeId:     modeMultishare + "/" + testRegion + "/" + testInstanceName1 + "/" + testShareName,
+				},
+				state: "READY",
+			},
+		},
+		{
+			// If the incorrect labels were added, labels processing will not happen for already
+			// existing backup resources.
+			name: "Existing backup found, in state READY. Labels will not be processed.",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: defaultSourceVolumeID,
+				Name:           backupName,
+				Parameters: map[string]string{
+					util.VolumeSnapshotTypeKey: "backup",
+					"labels":                   "key1:value1",
 				},
 			},
 			features: features,
