@@ -89,7 +89,7 @@ func main() {
 	run := func(ctx context.Context) {
 		klog.Infof("Lock release controller %s started leading on node %s", c.GetId(), c.GetHost())
 		factory.Start(ctx.Done())
-		c.Run(ctx)
+		c.RunEventWorkers(ctx)
 	}
 
 	rl, err := resourcelock.New(

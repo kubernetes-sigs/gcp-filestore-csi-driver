@@ -131,8 +131,9 @@ type FeatureStateful struct {
 }
 
 type FeatureLockRelease struct {
-	Enabled bool
-	Config  *lockrelease.LockReleaseControllerConfig
+	Enabled    bool
+	Standalone bool
+	Config     *lockrelease.LockReleaseControllerConfig
 }
 
 type FeatureMaxSharesPerInstance struct {
@@ -328,6 +329,10 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	// Start the nonblocking GRPC.
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
+	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled && !driver.config.FeatureOptions.FeatureLockRelease.Standalone {
+		// Start the lock release controller on node driver.
+		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
+	}
 	s.Wait()
 }
 

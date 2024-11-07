@@ -30,6 +30,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/metrics"
@@ -41,6 +43,8 @@ import (
 const (
 	gceInstanceIDKey = "container.googleapis.com/instance_id"
 	LeaseName        = "filestore-csi-storage-gke-io-node"
+	// Root CA configmap in each namespace.
+	rootCA = "kube-root-ca.crt"
 )
 
 type NodeUpdatePair struct {
@@ -199,7 +203,153 @@ func NewLockReleaseController(
 	return lc, nil
 }
 
-func (c *LockReleaseController) Run(ctx context.Context) error {
+// TODO(b/377771989): Deperacte Run once lock release controller V2 is rolled out.
+func (c *LockReleaseController) Run(ctx context.Context) {
+	run := func(ctx context.Context) {
+		klog.Infof("Lock release controller %s started leading on node %s", c.id, c.hostname)
+		wait.Forever(func() {
+			start := time.Now()
+			cmList, err := c.client.CoreV1().ConfigMaps(util.ManagedFilestoreCSINamespace).List(ctx, metav1.ListOptions{})
+			duration := time.Since(start)
+			c.RecordKubeAPIMetrics(err, metrics.ConfigMapResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
+			if err != nil {
+				klog.Errorf("Failed to list configmap in namespace %s: %v", util.ManagedFilestoreCSINamespace, err)
+				return
+			}
+			klog.Infof("Listed %d configmaps in namespace %s", len(cmList.Items), util.ManagedFilestoreCSINamespace)
+
+			start = time.Now()
+			nodes, err := c.listNodes(ctx)
+			duration = time.Since(start)
+			c.RecordKubeAPIMetrics(err, metrics.NodeResourceType, metrics.ListOpType, metrics.ReconcilerOpSource, duration)
+			if err != nil {
+				klog.Errorf("Failed to list nodes: %v", err)
+				return
+			}
+			klog.Infof("Listed %d nodes", len(nodes))
+
+			for _, cm := range cmList.Items {
+				// Filter out root ca.
+				if cm.Name == rootCA {
+					continue
+				}
+				if err := c.syncLockInfo(ctx, &cm, nodes); err != nil {
+					klog.Errorf("Failed to sync lock info for configmap %s/%s: %v", cm.Namespace, cm.Name, err)
+				}
+			}
+		}, c.config.SyncPeriod)
+	}
+
+	rl, err := resourcelock.New(
+		resourcelock.LeasesResourceLock,
+		util.ManagedFilestoreCSINamespace,
+		LeaseName,
+		nil,
+		c.client.CoordinationV1(),
+		resourcelock.ResourceLockConfig{
+			Identity: c.id,
+		})
+	if err != nil {
+		klog.Fatalf("Error creating resourcelock: %v", err)
+	}
+
+	leaderelection.RunOrDie(ctx, leaderelection.LeaderElectionConfig{
+		Lock:          rl,
+		LeaseDuration: c.config.LeaseDuration,
+		RenewDeadline: c.config.RenewDeadline,
+		RetryPeriod:   c.config.RetryPeriod,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: run,
+			OnStoppedLeading: func() {
+				klog.Fatalf("%s no longer the leader", c.id)
+			},
+		},
+	})
+}
+
+// TODO(b/377771989): Deperacte listNodes once lock release controller V2 is rolled out.
+func (c *LockReleaseController) syncLockInfo(ctx context.Context, cm *corev1.ConfigMap, nodes map[string]*corev1.Node) error {
+	nodeName, err := GKENodeNameFromConfigMap(cm)
+	if err != nil {
+		klog.Errorf("Failed to get GKE node name from configmap %s/%s: %v", cm.Namespace, cm.Name, err)
+		return err
+	}
+
+	node := nodes[nodeName]
+	data := cm.DeepCopy().Data
+	for key, filestoreIP := range data {
+		_, _, _, _, gceInstanceID, gkeNodeInternalIP, err := ParseConfigMapKey(key)
+		if err != nil {
+			klog.Errorf("Failed to parse configmap key %s: %v", key, err)
+			continue
+		}
+		klog.V(6).Infof("Verifying GKE node %s with nodeId %s nodeInternalIP %s exists or not", nodeName, gceInstanceID, gkeNodeInternalIP)
+		nodeExists, err := c.verifyNodeExists(node, gceInstanceID, gkeNodeInternalIP)
+		if err != nil {
+			klog.Errorf("Failed to verify GKE node %s with nodeId %s nodeInternalIP %s still exists: %v", nodeName, gceInstanceID, gkeNodeInternalIP, err)
+			continue
+		}
+		if nodeExists {
+			klog.V(6).Infof("GKE node %s with nodeId %s nodeInternalIP %s still exists in API server, skip lock info reconciliation", nodeName, gceInstanceID, gkeNodeInternalIP)
+			continue
+		}
+		klog.Infof("GKE node %s with nodeId %s nodeInternalIP %s no longer exists, releasing lock for Filestore IP %s", nodeName, gceInstanceID, gkeNodeInternalIP, filestoreIP)
+		opErr := c.lockService.ReleaseLock(filestoreIP, gkeNodeInternalIP)
+		c.RecordLockReleaseMetrics(opErr)
+		if opErr != nil {
+			klog.Errorf("Failed to release lock: %v", opErr)
+			continue
+		}
+		klog.Infof("Removing lock info key %s from configmap %s/%s with data %v", key, cm.Namespace, cm.Name, cm.Data)
+		// Apply the "Get() and Update(), or retry" logic in RemoveKeyFromConfigMap().
+		// This will increase the number of k8s api calls,
+		// but reduce repetitive ReleaseLock() due to kubeclient api failures in each reconcile loop.
+		if err := c.RemoveKeyFromConfigMapWithRetry(ctx, cm, key); err != nil {
+			klog.Errorf("Failed to remove key %s from configmap %s/%s: %v", key, cm.Namespace, cm.Name, err)
+		}
+	}
+	return nil
+}
+
+// verifyNodeExists validates if the given node object has the exact nodeID, and nodeInternalIP.
+// TODO(b/377771989): Deperacte verifyNodeExists once lock release controller V2 is rolled out.
+func (c *LockReleaseController) verifyNodeExists(node *corev1.Node, expectedGCEInstanceID, expectedNodeInternalIP string) (bool, error) {
+	if node == nil {
+		return false, nil
+	}
+	if node.Annotations == nil {
+		return false, fmt.Errorf("node %s annotations is nil", node.Name)
+	}
+	instanceID, ok := node.Annotations[gceInstanceIDKey]
+	if !ok {
+		klog.Warningf("Node %s missing key %s in node.annotations", node.Name, gceInstanceIDKey)
+		return false, nil
+	}
+	if instanceID != expectedGCEInstanceID {
+		return false, nil
+	}
+	for _, address := range node.Status.Addresses {
+		if address.Type == corev1.NodeInternalIP && address.Address == expectedNodeInternalIP {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// TODO(b/377771989): Deperacte listNodes once lock release controller V2 is rolled out.
+func (c *LockReleaseController) listNodes(ctx context.Context) (map[string]*corev1.Node, error) {
+	nodeList, err := c.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	nodeMap := map[string]*corev1.Node{}
+	for _, node := range nodeList.Items {
+		nodeMap[node.Name] = node.DeepCopy()
+	}
+	return nodeMap, nil
+}
+
+func (c *LockReleaseController) RunEventWorkers(ctx context.Context) error {
 	defer utilruntime.HandleCrash()
 	defer c.updateEventQueue.ShutDown()
 	defer c.createEventQueue.ShutDown()
