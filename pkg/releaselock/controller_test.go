@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/stretchr/testify/mock"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -637,5 +638,50 @@ func TestHandleUpdateEvent(t *testing.T) {
 		if err == nil && test.expectedError {
 			t.Errorf("expected error but no error returned")
 		}
+	}
+}
+
+func TestListNodes(t *testing.T) {
+	node1 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node1",
+			Annotations: map[string]string{
+				gceInstanceIDKey: "node1-id",
+			},
+		},
+	}
+	node2 := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "node2",
+			Annotations: map[string]string{
+				gceInstanceIDKey: "node2-id",
+			},
+		},
+	}
+	controller := NewControllerBuilder().WithClient(fake.NewSimpleClientset(node1, node2)).Build()
+	expectedMap := map[string]*corev1.Node{
+		"node1": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node1",
+				Annotations: map[string]string{
+					gceInstanceIDKey: "node1-id",
+				},
+			},
+		},
+		"node2": {
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "node2",
+				Annotations: map[string]string{
+					gceInstanceIDKey: "node2-id",
+				},
+			},
+		},
+	}
+	nodes, err := controller.listNodes(context.Background())
+	if err != nil {
+		t.Fatalf("test listNodes failed: unexpected error: %v", err)
+	}
+	if diff := cmp.Diff(expectedMap, nodes); diff != "" {
+		t.Errorf("test listNodes failed: unexpected diff (-want +got):%s", diff)
 	}
 }
