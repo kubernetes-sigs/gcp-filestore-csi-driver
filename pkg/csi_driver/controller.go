@@ -38,14 +38,16 @@ const (
 	modeInstance      = "modeInstance"
 	newInstanceVolume = "vol1"
 
-	defaultTier    = "standard"
-	enterpriseTier = "enterprise"
-	premiumTier    = "premium"
-	basicHDDTier   = "basic_hdd"
-	basicSSDTier   = "basic_ssd"
-	highScaleTier  = "high_scale_ssd"
-	zonalTier      = "zonal"
-	defaultNetwork = "default"
+	defaultTier      = "standard"
+	enterpriseTier   = "enterprise"
+	premiumTier      = "premium"
+	basicHDDTier     = "basic_hdd"
+	basicSSDTier     = "basic_ssd"
+	highScaleTier    = "high_scale_ssd"
+	zonalTier        = "zonal"
+	defaultNetwork   = "default"
+	v3FileProtocol   = "NFS_V3"
+	v4_1FileProtocol = "NFS_V4_1"
 
 	defaultTierMinSize    = 1 * util.Tb
 	defaultTierMaxSize    = 639 * util.Tb / 10
@@ -87,6 +89,7 @@ const (
 	ParamMultishareInstanceScLabel = "instance-storageclass-label"
 	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
+	paramFileProtocol              = "protocol"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -617,6 +620,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
+	fileProtocol := v4_1FileProtocol
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -655,6 +659,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
+		case paramFileProtocol:
+			fileProtocol = v
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
@@ -676,6 +682,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		},
 		KmsKeyName:       kmsKeyName,
 		NfsExportOptions: nfsExportOptions,
+		Protocol:         fileProtocol,
 	}, nil
 }
 
@@ -699,9 +706,15 @@ func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstanc
 		}
 		resp.ContentSource = contentSource
 	}
-	if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
-		resp.VolumeContext[attrSupportLockRelease] = "true"
+
+	switch instance.Protocol {
+	case v4_1FileProtocol:
+	case v3FileProtocol:
+		if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
+			resp.VolumeContext[attrSupportLockRelease] = "true"
+		}
 	}
+
 	return resp
 }
 

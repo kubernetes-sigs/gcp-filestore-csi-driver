@@ -109,6 +109,7 @@ type ServiceInstance struct {
 	KmsKeyName       string
 	BackupSource     string
 	NfsExportOptions []*NfsExportOptions
+	Protocol         string
 }
 
 type Volume struct {
@@ -291,9 +292,10 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		KmsKeyName: obj.KmsKeyName,
 		Labels:     obj.Labels,
 		State:      obj.State,
+		Protocol:   obj.Protocol,
 	}
 
-	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v backup source %q",
+	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, backup source %q, protocol %v",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
@@ -303,7 +305,8 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		instance.Networks[0].ConnectMode,
 		instance.KmsKeyName,
 		instance.Labels,
-		instance.FileShares[0].SourceBackup)
+		instance.FileShares[0].SourceBackup,
+		obj.Protocol)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
@@ -370,6 +373,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 		Labels:       instance.Labels,
 		State:        instance.State,
 		BackupSource: instance.FileShares[0].SourceBackup,
+		Protocol:     instance.Protocol,
 	}, nil
 }
 
@@ -525,6 +529,7 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo 
 		SourceInstance:  backupInfo.BackupSource(),
 		SourceFileShare: backupInfo.SourceShare,
 		Labels:          backupInfo.Labels,
+		// TODO(riteshghorse): Check if we need FileSystemProtocol here
 	}
 	klog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupInfo.BackupURI)
 	opbackup, err := manager.backupService.Create(locationURI(backupInfo.Project, backupInfo.Location), backupobj).BackupId(backupInfo.Name).Context(ctx).Do()
