@@ -387,7 +387,7 @@ func getIPRanges(cidr string, ipRangesCount int, ipRangeSize int, t *testing.T) 
 		ipRanges[ipRangeString] = true
 	}
 	if err != nil {
-		t.Fatalf(err.Error())
+		t.Fatal(err.Error())
 	} else if i != ipRangesCount {
 		t.Fatalf("The required number of IP ranges %d are not available in the CIDR %s", ipRangesCount, cidr)
 	}
