@@ -125,9 +125,10 @@ type Network struct {
 }
 
 type Backup struct {
-	Backup         *filev1beta1.Backup
-	SourceInstance string
-	SourceShare    string
+	Backup            *filev1beta1.Backup
+	SourceInstance    string
+	SourceShare       string
+	FileSystemProtocl string
 }
 
 type BackupInfo struct {
@@ -517,9 +518,10 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 		return nil, err
 	}
 	return &Backup{
-		Backup:         backup,
-		SourceInstance: backup.SourceInstance,
-		SourceShare:    backup.SourceFileShare,
+		Backup:            backup,
+		SourceInstance:    backup.SourceInstance,
+		SourceShare:       backup.SourceFileShare,
+		FileSystemProtocl: backup.FileSystemProtocol,
 	}, nil
 }
 
@@ -529,7 +531,6 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo 
 		SourceInstance:  backupInfo.BackupSource(),
 		SourceFileShare: backupInfo.SourceShare,
 		Labels:          backupInfo.Labels,
-		// TODO(riteshghorse): Check if we need FileSystemProtocol here
 	}
 	klog.V(4).Infof("Creating backup object %+v for the URI %v", *backupobj, backupInfo.BackupURI)
 	opbackup, err := manager.backupService.Create(locationURI(backupInfo.Project, backupInfo.Location), backupobj).BackupId(backupInfo.Name).Context(ctx).Do()
