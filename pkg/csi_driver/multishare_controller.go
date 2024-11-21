@@ -573,6 +573,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
+	fileProtocol := ""
 	for k, v := range req.GetParameters() {
 		switch strings.ToLower(k) {
 		case paramTier:
@@ -592,6 +593,8 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 				return nil, status.Error(codes.InvalidArgument, "nfsExportOptions are disabled")
 			}
 			continue
+		case paramFileProtocol:
+			fileProtocol = v
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
@@ -626,6 +629,10 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		return nil, status.Errorf(codes.InvalidArgument, err.Error())
 	}
 
+	if fileProtocol == "" {
+		fileProtocol = v4_1FileProtocol
+	}
+
 	f := &file.MultishareInstance{
 		Project:       m.cloud.Project,
 		Name:          instanceName,
@@ -639,6 +646,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		KmsKeyName:  kmsKeyName,
 		Labels:      labels,
 		Description: generateInstanceDescFromEcfsDesc(m.ecfsDescription),
+		Protocol:    fileProtocol,
 	}
 	if m.featureMaxSharePerInstance {
 		f.MaxShareCount = maxShareCount
@@ -672,6 +680,7 @@ func (m *MultishareController) checkVolumeContentSource(ctx context.Context, req
 	return "", nil
 
 }
+
 func generateNewShare(name string, parent *file.MultishareInstance, req *csi.CreateVolumeRequest, sourceSnapshotId string) (*file.Share, error) {
 	if parent == nil {
 		return nil, status.Error(codes.Internal, "parent multishare instance is empty")
@@ -843,6 +852,12 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 	}
 	if m.featureMaxSharePerInstance {
 		resp.Volume.VolumeContext[attrMaxShareSize] = strconv.Itoa(int(maxShareSizeBytes))
+	}
+	switch s.Parent.Protocol {
+	case v3FileProtocol:
+		resp.Volume.VolumeContext[attrFileProtocol] = v3FileProtocol
+	default:
+		resp.Volume.VolumeContext[attrFileProtocol] = v4_1FileProtocol
 	}
 	klog.Infof("CreateVolume resp: %+v", resp)
 	return resp, nil

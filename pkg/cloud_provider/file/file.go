@@ -85,6 +85,7 @@ type MultishareInstance struct {
 	KmsKeyName         string
 	Description        string
 	MaxShareCount      int
+	Protocol           string
 }
 
 func (i *MultishareInstance) String() string {
@@ -996,6 +997,7 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 		Labels:        instance.Labels,
 		Description:   instance.Description,
 		MaxShareCount: int64(instance.MaxShareCount),
+		Protocol:      instance.Protocol,
 	}
 
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
@@ -1025,6 +1027,7 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 		KmsKeyName:        obj.KmsKeyName,
 		Labels:            obj.Labels,
 		Description:       obj.Description,
+		Protocol:          obj.Protocol,
 	}
 	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
@@ -1144,7 +1147,6 @@ func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListF
 				klog.Errorf("Failed to parse share url :%s", sobj.Name)
 				return nil, err
 			}
-
 			s := &Share{
 				Name: shareName,
 				Parent: &MultishareInstance{
