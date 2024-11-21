@@ -38,14 +38,16 @@ const (
 	modeInstance      = "modeInstance"
 	newInstanceVolume = "vol1"
 
-	defaultTier    = "standard"
-	enterpriseTier = "enterprise"
-	premiumTier    = "premium"
-	basicHDDTier   = "basic_hdd"
-	basicSSDTier   = "basic_ssd"
-	highScaleTier  = "high_scale_ssd"
-	zonalTier      = "zonal"
-	defaultNetwork = "default"
+	defaultTier      = "standard"
+	enterpriseTier   = "enterprise"
+	premiumTier      = "premium"
+	basicHDDTier     = "basic_hdd"
+	basicSSDTier     = "basic_ssd"
+	highScaleTier    = "high_scale_ssd"
+	zonalTier        = "zonal"
+	defaultNetwork   = "default"
+	v3FileProtocol   = "NFS_V3"
+	v4_1FileProtocol = "NFS_V4_1"
 
 	defaultTierMinSize    = 1 * util.Tb
 	defaultTierMaxSize    = 639 * util.Tb / 10
@@ -72,6 +74,7 @@ const (
 	attrIP                 = "ip"
 	attrVolume             = "volume"
 	attrSupportLockRelease = "supportLockRelease"
+	attrFileProtocol       = "fileProtocol"
 )
 
 // CreateVolume parameters
@@ -87,6 +90,7 @@ const (
 	ParamMultishareInstanceScLabel = "instance-storageclass-label"
 	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
+	paramFileProtocol              = "protocol"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -603,6 +607,14 @@ func invalidVolumeExpansionRequest(capRange *csi.CapacityRange, currentCapacity 
 	return false
 }
 
+func isBasicTier(tier string) bool {
+	switch tier {
+	case defaultTier, premiumTier, basicHDDTier, basicSSDTier:
+		return true
+	}
+	return false
+}
+
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
 func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
@@ -617,6 +629,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
+	fileProtocol := ""
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -655,12 +668,29 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
+		case paramFileProtocol:
+			fileProtocol = v
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
 	}
+
+	switch fileProtocol {
+	case v4_1FileProtocol:
+		if isBasicTier(tier) {
+			return nil, status.Errorf(codes.FailedPrecondition, "Filestore does not support NFSv4.1 protocol with Basic tiers")
+		}
+	case v3FileProtocol:
+	default:
+		if isBasicTier(tier) {
+			fileProtocol = v3FileProtocol
+		} else {
+			fileProtocol = v4_1FileProtocol
+		}
+	}
+
 	return &file.ServiceInstance{
 		Project:  s.config.cloud.Project,
 		Name:     name,
@@ -676,6 +706,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		},
 		KmsKeyName:       kmsKeyName,
 		NfsExportOptions: nfsExportOptions,
+		Protocol:         fileProtocol,
 	}, nil
 }
 
@@ -699,9 +730,23 @@ func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstanc
 		}
 		resp.ContentSource = contentSource
 	}
-	if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
-		resp.VolumeContext[attrSupportLockRelease] = "true"
+
+	switch instance.Protocol {
+	case v4_1FileProtocol:
+		resp.VolumeContext[attrFileProtocol] = v4_1FileProtocol
+	case v3FileProtocol:
+		resp.VolumeContext[attrFileProtocol] = v3FileProtocol
+		if s.config.features.FeatureLockRelease.Enabled && strings.ToLower(instance.Tier) == enterpriseTier {
+			resp.VolumeContext[attrSupportLockRelease] = "true"
+		}
+	default:
+		if isBasicTier(instance.Tier) {
+			resp.VolumeContext[attrFileProtocol] = v3FileProtocol
+		} else {
+			resp.VolumeContext[attrFileProtocol] = v4_1FileProtocol
+		}
 	}
+
 	return resp
 }
 
