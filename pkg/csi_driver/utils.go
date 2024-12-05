@@ -52,13 +52,12 @@ func NewNodeServiceCapability(cap csi.NodeServiceCapability_RPC_Type) *csi.NodeS
 }
 
 func logGRPC(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-	klog.V(3).Infof("GRPC call: %s", info.FullMethod)
-	klog.V(5).Infof("GRPC request: %+v", pbSanitizer.StripSecretsCSI03(req).String())
+	klog.V(5).Infof("GRPC call: %s, GRPC request: %+v", info.FullMethod, pbSanitizer.StripSecretsCSI03(req).String())
 	resp, err := handler(ctx, req)
 	if err != nil {
-		klog.Errorf("GRPC error: %v", err.Error())
+		klog.Errorf("GRPC call: %s, GRPC error: %v", info.FullMethod, err.Error())
 	} else {
-		klog.V(5).Infof("GRPC response: %+v", resp)
+		klog.V(5).Infof("GRPC call: %s, GRPC response: %+v", info.FullMethod, resp)
 	}
 	return resp, err
 }
