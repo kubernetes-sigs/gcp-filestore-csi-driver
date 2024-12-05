@@ -158,15 +158,15 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 
 	err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
 	if err != nil {
-		klog.Errorf("Mount %q failed, cleaning up", targetPath)
+		klog.Errorf("Mount %q failed on node %s, cleaning up", targetPath, s.driver.config.NodeName)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			klog.Errorf("Unmount %q failed: %v", targetPath, unmntErr.Error())
+			klog.Errorf("Unmount %q failed on node %s: %v", targetPath, s.driver.config.NodeName, unmntErr.Error())
 		}
 
 		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", targetPath, err.Error())
 	}
 
-	klog.V(4).Infof("Successfully mounted %s", targetPath)
+	klog.V(4).Infof("Successfully mounted %s on node %s", targetPath, s.driver.config.NodeName)
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
@@ -302,17 +302,17 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 
 	if mounted {
 		if s.features.FeatureLockRelease.Enabled {
-			klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists. Proceed to lock info configmap updates", volumeID, stagingTargetPath)
+			klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists on node %s. Proceed to lock info configmap updates", volumeID, stagingTargetPath, s.driver.config.NodeName)
 			if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
 			}
 		}
-		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s, mount already exists.", volumeID, stagingTargetPath)
+		klog.V(4).Infof("NodeStageVolume succeeded on volume %v to staging target path %s on node %s, mount already exists.", volumeID, stagingTargetPath, s.driver.config.NodeName)
 		return &csi.NodeStageVolumeResponse{}, nil
 	}
 
 	if needsCreateDir {
-		klog.V(4).Infof("NodeStageVolume attempting mkdir for path %s", stagingTargetPath)
+		klog.V(4).Infof("NodeStageVolume attempting mkdir for path %s on node %s", stagingTargetPath, s.driver.config.NodeName)
 		if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
 			return nil, fmt.Errorf("mkdir failed for path %s (%w)", stagingTargetPath, err)
 		}
@@ -328,21 +328,21 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 
 	err = s.mounter.Mount(source, stagingTargetPath, fstype, options)
 	if err != nil {
-		klog.Errorf("Mount %q failed, cleaning up", stagingTargetPath)
+		klog.Errorf("Mount %q failed on node %s, cleaning up", stagingTargetPath, s.driver.config.NodeName)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
-			klog.Errorf("Unmount %q failed: %v", stagingTargetPath, unmntErr.Error())
+			klog.Errorf("Unmount %q failed on node %s: %v", stagingTargetPath, s.driver.config.NodeName, unmntErr.Error())
 		}
-		return nil, status.Errorf(codes.Internal, "mount %q failed: %v", stagingTargetPath, err.Error())
+		return nil, status.Errorf(codes.Internal, "mount %q failed on node %s: %v", stagingTargetPath, s.driver.config.NodeName, err.Error())
 	}
 
 	if s.features.FeatureLockRelease.Enabled {
-		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, proceed to lock info configmap updates.", volumeID, stagingTargetPath)
+		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s on node %s, proceed to lock info configmap updates.", volumeID, stagingTargetPath, s.driver.config.NodeName)
 		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
 		}
 	}
 
-	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s", volumeID, stagingTargetPath)
+	klog.V(4).Infof("NodeStageVolume succeeded on volume %v to path %s on node %s", volumeID, stagingTargetPath, s.driver.config.NodeName)
 	return &csi.NodeStageVolumeResponse{}, nil
 }
 
@@ -367,13 +367,13 @@ func (s *nodeServer) NodeUnstageVolume(ctx context.Context, req *csi.NodeUnstage
 	}
 
 	if s.features.FeatureLockRelease.Enabled {
-		klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s, proceed to lock info configmap updates", volumeID, stagingTargetPath)
+		klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s on node %s, proceed to lock info configmap updates", volumeID, stagingTargetPath, s.driver.config.NodeName)
 		if err := s.nodeUnstageVolumeUpdateLockInfo(ctx, req); err != nil {
-			return nil, status.Errorf(codes.Internal, "failed to update lock info after NodeUnstageVolume succeeded on volume %v from staging target path %s: %v", volumeID, stagingTargetPath, err.Error())
+			return nil, status.Errorf(codes.Internal, "failed to update lock info after NodeUnstageVolume succeeded on volume %v from staging target path %s on node %s: %v", volumeID, stagingTargetPath, s.driver.config.NodeName, err.Error())
 		}
 	}
 
-	klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s", volumeID, stagingTargetPath)
+	klog.V(4).Infof("NodeUnstageVolume succeeded on volume %v from staging target path %s on node %s", volumeID, stagingTargetPath, s.driver.config.NodeName)
 	return &csi.NodeUnstageVolumeResponse{}, nil
 }
 
