@@ -104,8 +104,8 @@ github.com/golang/protobuf/ptypes/wrappers
 ## explicit; go 1.12
 github.com/google/gnostic/compiler
 github.com/google/gnostic/openapiv2
-# github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49
-## explicit; go 1.18
+# github.com/google/gnostic-models v0.6.9
+## explicit; go 1.21
 github.com/google/gnostic-models/compiler
 github.com/google/gnostic-models/extensions
 github.com/google/gnostic-models/jsonschema
@@ -152,8 +152,8 @@ github.com/google/uuid
 ## explicit; go 1.19
 github.com/googleapis/enterprise-certificate-proxy/client
 github.com/googleapis/enterprise-certificate-proxy/client/util
-# github.com/googleapis/gax-go/v2 v2.13.0
-## explicit; go 1.20
+# github.com/googleapis/gax-go/v2 v2.14.0
+## explicit; go 1.21
 github.com/googleapis/gax-go/v2
 github.com/googleapis/gax-go/v2/apierror
 github.com/googleapis/gax-go/v2/apierror/internal/proto
@@ -438,11 +438,11 @@ google.golang.org/api/transport/http/internal/propagation
 # google.golang.org/genproto v0.0.0-20241021214115-324edc3d5d38
 ## explicit; go 1.21
 google.golang.org/genproto/googleapis/type/expr
-# google.golang.org/genproto/googleapis/api v0.0.0-20241015192408-796eee8c2d53
+# google.golang.org/genproto/googleapis/api v0.0.0-20241104194629-dd2ea8efbc28
 ## explicit; go 1.21
 google.golang.org/genproto/googleapis/api
 google.golang.org/genproto/googleapis/api/annotations
-# google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38
+# google.golang.org/genproto/googleapis/rpc v0.0.0-20241104194629-dd2ea8efbc28
 ## explicit; go 1.21
 google.golang.org/genproto/googleapis/rpc/code
 google.golang.org/genproto/googleapis/rpc/errdetails
