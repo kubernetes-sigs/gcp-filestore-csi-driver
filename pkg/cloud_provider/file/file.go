@@ -85,6 +85,7 @@ type MultishareInstance struct {
 	KmsKeyName         string
 	Description        string
 	MaxShareCount      int
+	Protocol           string
 }
 
 func (i *MultishareInstance) String() string {
@@ -109,6 +110,7 @@ type ServiceInstance struct {
 	KmsKeyName       string
 	BackupSource     string
 	NfsExportOptions []*NfsExportOptions
+	Protocol         string
 }
 
 type Volume struct {
@@ -124,9 +126,10 @@ type Network struct {
 }
 
 type Backup struct {
-	Backup         *filev1beta1.Backup
-	SourceInstance string
-	SourceShare    string
+	Backup            *filev1beta1.Backup
+	SourceInstance    string
+	SourceShare       string
+	FileSystemProtocl string
 }
 
 type BackupInfo struct {
@@ -291,9 +294,10 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		KmsKeyName: obj.KmsKeyName,
 		Labels:     obj.Labels,
 		State:      obj.State,
+		Protocol:   obj.Protocol,
 	}
 
-	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v backup source %q",
+	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, backup source %q, protocol %v",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
@@ -303,7 +307,8 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		instance.Networks[0].ConnectMode,
 		instance.KmsKeyName,
 		instance.Labels,
-		instance.FileShares[0].SourceBackup)
+		instance.FileShares[0].SourceBackup,
+		obj.Protocol)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
@@ -370,6 +375,7 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 		Labels:       instance.Labels,
 		State:        instance.State,
 		BackupSource: instance.FileShares[0].SourceBackup,
+		Protocol:     instance.Protocol,
 	}, nil
 }
 
@@ -513,9 +519,10 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 		return nil, err
 	}
 	return &Backup{
-		Backup:         backup,
-		SourceInstance: backup.SourceInstance,
-		SourceShare:    backup.SourceFileShare,
+		Backup:            backup,
+		SourceInstance:    backup.SourceInstance,
+		SourceShare:       backup.SourceFileShare,
+		FileSystemProtocl: backup.FileSystemProtocol,
 	}, nil
 }
 
@@ -990,6 +997,7 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 		Labels:        instance.Labels,
 		Description:   instance.Description,
 		MaxShareCount: int64(instance.MaxShareCount),
+		Protocol:      instance.Protocol,
 	}
 
 	op, err := manager.multishareInstancesService.Create(locationURI(instance.Project, instance.Location), targetinstance).InstanceId(instance.Name).Context(ctx).Do()
@@ -1019,6 +1027,7 @@ func (manager *gcfsServiceManager) StartResizeMultishareInstanceOp(ctx context.C
 		KmsKeyName:        obj.KmsKeyName,
 		Labels:            obj.Labels,
 		Description:       obj.Description,
+		Protocol:          obj.Protocol,
 	}
 	op, err := manager.multishareInstancesService.Patch(instanceuri, targetinstance).UpdateMask(multishareCapacityUpdateMask).Context(ctx).Do()
 	if err != nil {
@@ -1138,7 +1147,6 @@ func (manager *gcfsServiceManager) ListShares(ctx context.Context, filter *ListF
 				klog.Errorf("Failed to parse share url :%s", sobj.Name)
 				return nil, err
 			}
-
 			s := &Share{
 				Name: shareName,
 				Parent: &MultishareInstance{
