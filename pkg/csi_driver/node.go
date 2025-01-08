@@ -300,8 +300,13 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		}
 	}
 
+	fileProtocol, ok := attr[attrFileProtocol]
+	if !ok {
+		fileProtocol = v3FileProtocol
+	}
+
 	if mounted {
-		if s.features.FeatureLockRelease.Enabled {
+		if fileProtocol == v3FileProtocol && s.features.FeatureLockRelease.Enabled {
 			klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s, mount already exists on node %s. Proceed to lock info configmap updates", volumeID, stagingTargetPath, s.driver.config.NodeName)
 			if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
 				return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())
@@ -335,7 +340,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		return nil, status.Errorf(codes.Internal, "mount %q failed on node %s: %v", stagingTargetPath, s.driver.config.NodeName, err.Error())
 	}
 
-	if s.features.FeatureLockRelease.Enabled {
+	if fileProtocol == v3FileProtocol && s.features.FeatureLockRelease.Enabled {
 		klog.V(4).Infof("NodeStageVolume mounted volume %v to staging target path %s on node %s, proceed to lock info configmap updates.", volumeID, stagingTargetPath, s.driver.config.NodeName)
 		if err := s.nodeStageVolumeUpdateLockInfo(ctx, req); err != nil {
 			return nil, status.Errorf(codes.Internal, "failed to store lock info after NodeStageVolume succeeded on volume %v to path %s: %v", volumeID, stagingTargetPath, err.Error())

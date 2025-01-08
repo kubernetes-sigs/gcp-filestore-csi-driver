@@ -690,6 +690,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 					TagKeyClusterName:                      testClusterName,
 					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 	}
@@ -704,7 +705,7 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 				t.Errorf("unexpected error: %q", err)
 			}
 			if !reflect.DeepEqual(filer, tc.expectedInstance) {
-				t.Errorf("got filer %+v, want %+v", filer, tc.expectedInstance)
+				t.Errorf("got filer %v, want %+v", filer, tc.expectedInstance)
 			}
 		})
 	}
@@ -749,6 +750,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					Network: file.Network{
 						Ip: "1.1.1.1",
 					},
+					Protocol: v3FileProtocol,
 				},
 				CapacityBytes: 1 * util.Tb,
 			},
@@ -758,7 +760,8 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					VolumeId:      modeMultishare + "/" + testInstanceScPrefix + "/" + testProject + "/" + testLocation + "/" + testInstanceName + "/" + testShareName,
 					CapacityBytes: 1 * util.Tb,
 					VolumeContext: map[string]string{
-						attrIP: "1.1.1.1",
+						attrIP:           "1.1.1.1",
+						attrFileProtocol: v3FileProtocol,
 					},
 				},
 			},
@@ -780,6 +783,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					Network: file.Network{
 						Ip: "1.1.1.1",
 					},
+					Protocol: v4_1FileProtocol,
 				},
 				CapacityBytes: 1 * util.Tb,
 			},
@@ -791,6 +795,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					VolumeContext: map[string]string{
 						attrIP:           "1.1.1.1",
 						attrMaxShareSize: strconv.Itoa(util.Tb),
+						attrFileProtocol: v4_1FileProtocol,
 					},
 				},
 			},
@@ -823,6 +828,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 					VolumeContext: map[string]string{
 						attrIP:           "1.1.1.1",
 						attrMaxShareSize: strconv.Itoa(100 * util.Gb),
+						attrFileProtocol: v3FileProtocol,
 					},
 				},
 			},
@@ -1160,6 +1166,81 @@ func TestMultishareCreateVolume(t *testing.T) {
 			},
 		},
 		{
+			name: "1 initial ready 1Tib instances with 0 shares having NFSv3 Protocol, 1 initial ready 1Tib instances with 0 shares having NFSv4 Protocol, create 100Gib share in a NFSv4 instance, success response",
+			initInstances: []*file.MultishareInstance{
+				{
+					Name:     testInstanceName1,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "enterprise",
+					Network: file.Network{
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
+					},
+					State:    "READY",
+					Protocol: v3FileProtocol,
+				},
+				{
+					Name:     testInstanceName2,
+					Location: "us-central1",
+					Project:  "test-project",
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      "",
+					},
+					CapacityBytes: 1 * util.Tb,
+					Tier:          "enterprise",
+					Network: file.Network{
+						Ip:          testIP,
+						Name:        defaultNetwork,
+						ConnectMode: directPeering,
+					},
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
+				},
+			},
+			ops: []OpItem{},
+			req: &csi.CreateVolumeRequest{
+				Name: testVolName,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: 100 * util.Gb,
+				},
+				Parameters: map[string]string{
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramTier:                      "enterprise",
+					paramFileProtocol:              v4_1FileProtocol,
+				},
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 100 * util.Gb,
+					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName2, testShareName),
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
+					},
+				},
+			},
+		},
+		{
 			name: "1 initial ready 1Tib instances with 0 shares, 1 busy instance, create 100Gib share and use the ready instance, success response",
 			initInstances: []*file.MultishareInstance{
 				{
@@ -1178,7 +1259,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 						Name:        defaultNetwork,
 						ConnectMode: directPeering,
 					},
-					State: "READY",
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
 				},
 				{
 					Name:     testInstanceName2,
@@ -1196,7 +1278,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 						Name:        defaultNetwork,
 						ConnectMode: directPeering,
 					},
-					State: "READY",
+					State:    "CREATING",
+					Protocol: v4_1FileProtocol,
 				},
 			},
 			ops: []OpItem{
@@ -1214,6 +1297,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 				Parameters: map[string]string{
 					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 					paramTier:                      "enterprise",
+					paramFileProtocol:              v4_1FileProtocol,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -1231,7 +1315,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 				},
 			},
@@ -1300,7 +1385,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					Network: file.Network{
 						Ip: testIP,
 					},
-					State: "READY",
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
 				},
 			},
 			initShares: []*file.Share{
@@ -1318,7 +1404,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 						Network: file.Network{
 							Ip: testIP,
 						},
-						State: "READY",
+						State:    "READY",
+						Protocol: v4_1FileProtocol,
 					},
 					CapacityBytes:  100 * util.Gb,
 					MountPointName: testShareName,
@@ -1332,6 +1419,7 @@ func TestMultishareCreateVolume(t *testing.T) {
 				},
 				Parameters: map[string]string{
 					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramFileProtocol:              v4_1FileProtocol,
 				},
 				VolumeCapabilities: []*csi.VolumeCapability{
 					{
@@ -1349,7 +1437,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 				},
 			},
@@ -1539,6 +1628,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 							"squashMode": "NO_ROOT_SQUASH"
 							}
 					]`,
+					paramFileProtocol: v4_1FileProtocol,
 				},
 				VolumeCapabilities: volumeCapabilities,
 				VolumeContentSource: &csi.VolumeContentSource{
@@ -1569,7 +1659,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -1608,7 +1699,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v3FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -1641,7 +1733,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 						Name:        defaultNetwork,
 						ConnectMode: directPeering,
 					},
-					State: "READY",
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
 				},
 				{
 					Name:     testInstanceName2,
@@ -1659,7 +1752,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 						Name:        defaultNetwork,
 						ConnectMode: directPeering,
 					},
-					State: "READY",
+					State:    "CREATING",
+					Protocol: v4_1FileProtocol,
 				},
 			},
 			ops: []OpItem{
@@ -1677,6 +1771,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 				Parameters: map[string]string{
 					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 					paramTier:                      "enterprise",
+					paramFileProtocol:              v4_1FileProtocol,
 				},
 				VolumeCapabilities: volumeCapabilities,
 				VolumeContentSource: &csi.VolumeContentSource{
@@ -1693,7 +1788,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -1725,7 +1821,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 						Name:        defaultNetwork,
 						ConnectMode: directPeering,
 					},
-					State: "READY",
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
 				},
 			},
 			req: &csi.CreateVolumeRequest{
@@ -1736,6 +1833,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 				Parameters: map[string]string{
 					ParamMultishareInstanceScLabel: testInstanceScPrefix,
 					paramTier:                      "enterprise",
+					paramFileProtocol:              v4_1FileProtocol,
 				},
 				VolumeCapabilities: volumeCapabilities,
 				VolumeContentSource: &csi.VolumeContentSource{
@@ -1752,7 +1850,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -1782,7 +1881,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					Network: file.Network{
 						Ip: testIP,
 					},
-					State: "READY",
+					State:    "READY",
+					Protocol: v4_1FileProtocol,
 				},
 			},
 			initShares: []*file.Share{
@@ -1800,7 +1900,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 						Network: file.Network{
 							Ip: testIP,
 						},
-						State: "READY",
+						State:    "READY",
+						Protocol: v4_1FileProtocol,
 					},
 					CapacityBytes:  100 * util.Gb,
 					MountPointName: testShareName,
@@ -1815,6 +1916,7 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 				},
 				Parameters: map[string]string{
 					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+					paramFileProtocol:              v4_1FileProtocol,
 				},
 				VolumeCapabilities: volumeCapabilities,
 				VolumeContentSource: &csi.VolumeContentSource{
@@ -1831,7 +1933,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 					CapacityBytes: 100 * util.Gb,
 					VolumeId:      fmt.Sprintf(multishareVolIdFmt, testInstanceScPrefix, testProject, testRegion, testInstanceName1, testShareName),
 					VolumeContext: map[string]string{
-						attrIP: testIP,
+						attrIP:           testIP,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{

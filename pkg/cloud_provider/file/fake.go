@@ -95,6 +95,7 @@ func (manager *fakeServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		State:            "READY",
 		BackupSource:     obj.BackupSource,
 		NfsExportOptions: obj.NfsExportOptions,
+		Protocol:         obj.Protocol,
 	}
 
 	manager.createdInstances[obj.Name] = instance
