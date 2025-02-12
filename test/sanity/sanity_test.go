@@ -56,7 +56,10 @@ func TestSanity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to get cloud provider: %v", err)
 	}
-	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	fakeMounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	mounter := &mount.SafeFormatAndMount{
+		Interface: fakeMounter,
+	}
 
 	meta, err := metadata.NewFakeService()
 	if err != nil {
