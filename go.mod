@@ -17,7 +17,7 @@ require (
 	github.com/onsi/gomega v1.36.2
 	github.com/prashanthpai/sunrpc v0.0.0-20210303180433-689a3880d90a
 	github.com/spf13/cobra v1.8.1
-	github.com/spf13/pflag v1.0.5
+	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/net v0.35.0
 	golang.org/x/oauth2 v0.26.0
