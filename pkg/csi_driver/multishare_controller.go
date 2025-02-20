@@ -350,7 +350,7 @@ func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx co
 	if share.State != "READY" {
 		return nil, status.Errorf(codes.Aborted, "share %s not ready, state %s", share.Name, share.State)
 	}
-	return m.generateCSICreateVolumeResponse(instancePrefix, share, maxShareSizeSizeBytes)
+	return m.generateCSICreateVolumeResponse(instancePrefix, s, maxShareSizeSizeBytes)
 }
 
 func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -573,6 +573,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	network := defaultNetwork
 	connectMode := directPeering
 	kmsKeyName := ""
+	fileProtocol := ""
 	for k, v := range req.GetParameters() {
 		switch strings.ToLower(k) {
 		case paramTier:
@@ -592,6 +593,8 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 				return nil, status.Error(codes.InvalidArgument, "nfsExportOptions are disabled")
 			}
 			continue
+		case paramFileProtocol:
+			fileProtocol = v
 		// Ignore the cidr flag as it is not passed to the cloud provider
 		// It will be used to get unreserved IP in the reserveIPV4Range function
 		// ignore IPRange flag as it will be handled at the same place as cidr
@@ -623,7 +626,11 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	}
 	labels, err := extractInstanceLabels(req.GetParameters(), m.extraVolumeLabels, m.driver.config.Name, m.clustername, location)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	if fileProtocol == "" {
+		fileProtocol = v3FileProtocol
 	}
 
 	f := &file.MultishareInstance{
@@ -639,6 +646,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		KmsKeyName:  kmsKeyName,
 		Labels:      labels,
 		Description: generateInstanceDescFromEcfsDesc(m.ecfsDescription),
+		Protocol:    fileProtocol,
 	}
 	if m.featureMaxSharePerInstance {
 		f.MaxShareCount = maxShareCount
@@ -672,6 +680,7 @@ func (m *MultishareController) checkVolumeContentSource(ctx context.Context, req
 	return "", nil
 
 }
+
 func generateNewShare(name string, parent *file.MultishareInstance, req *csi.CreateVolumeRequest, sourceSnapshotId string) (*file.Share, error) {
 	if parent == nil {
 		return nil, status.Error(codes.Internal, "parent multishare instance is empty")
@@ -816,7 +825,7 @@ func getShareRequestCapacity(capRange *csi.CapacityRange, minShareSizeBytes, max
 func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share, maxShareSizeBytes int64) (*csi.CreateVolumeResponse, error) {
 	volId, err := generateMultishareVolumeIdFromShare(instancePrefix, s)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, err.Error())
+		return nil, status.Error(codes.Internal, err.Error())
 	}
 
 	resp := &csi.CreateVolumeResponse{
@@ -843,6 +852,12 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 	}
 	if m.featureMaxSharePerInstance {
 		resp.Volume.VolumeContext[attrMaxShareSize] = strconv.Itoa(int(maxShareSizeBytes))
+	}
+
+	if s.Parent.Protocol == v4_1FileProtocol {
+		resp.Volume.VolumeContext[attrFileProtocol] = v4_1FileProtocol
+	} else {
+		resp.Volume.VolumeContext[attrFileProtocol] = v3FileProtocol
 	}
 	klog.Infof("CreateVolume resp: %+v", resp)
 	return resp, nil

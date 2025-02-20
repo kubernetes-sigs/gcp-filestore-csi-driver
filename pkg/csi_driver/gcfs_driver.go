@@ -29,10 +29,12 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
 	clientset "sigs.k8s.io/gcp-filestore-csi-driver/pkg/client/clientset/versioned"
@@ -129,8 +131,9 @@ type FeatureStateful struct {
 }
 
 type FeatureLockRelease struct {
-	Enabled bool
-	Config  *lockrelease.LockReleaseControllerConfig
+	Enabled    bool
+	Standalone bool
+	Config     *lockrelease.LockReleaseControllerConfig
 }
 
 type FeatureMaxSharesPerInstance struct {
@@ -326,7 +329,7 @@ func (driver *GCFSDriver) Run(endpoint string) {
 	// Start the nonblocking GRPC.
 	s := NewNonBlockingGRPCServer()
 	s.Start(endpoint, driver.ids, driver.cs, driver.ns)
-	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled {
+	if driver.config.RunNode && driver.config.FeatureOptions.FeatureLockRelease.Enabled && !driver.config.FeatureOptions.FeatureLockRelease.Standalone {
 		// Start the lock release controller on node driver.
 		driver.ns.(*nodeServer).lockReleaseController.Run(context.Background())
 	}
@@ -342,7 +345,9 @@ func initMultishareReconciler(driverConfig *GCFSDriverConfig) (*MultishareReconc
 	config.QPS = (float32)(driverConfig.FeatureOptions.FeatureStateful.KubeAPIQPS)
 	config.Burst = driverConfig.FeatureOptions.FeatureStateful.KubeAPIBurst
 
-	kubeClient, err := kubernetes.NewForConfig(config)
+	configProtobuf := rest.CopyConfig(config)
+	configProtobuf.ContentType = runtime.ContentTypeProtobuf
+	kubeClient, err := kubernetes.NewForConfig(configProtobuf)
 	if err != nil {
 		klog.Error(err.Error())
 		os.Exit(1)
@@ -411,6 +416,7 @@ func runMultishareReconciler(driverConfig *GCFSDriverConfig, recon *MultishareRe
 			if err != nil {
 				klog.Fatal(err.Error())
 			}
+			config.ContentType = runtime.ContentTypeProtobuf
 
 			leClient, err := kubernetes.NewForConfig(config)
 			if err != nil {

@@ -22,6 +22,7 @@ import (
 	"os"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
@@ -52,9 +53,10 @@ var (
 	resourceTagsStr                 = flag.String("resource-tags", "", "Resource tags to attach to each volume created. It is a comma separated list of tags of the form '<parentID_1>/<tagKey_1>/<tagValue_1>...<parentID_N>/<tagKey_N>/<tagValue_N>' where, parentID is the ID of Organization or Project resource where tag key and value resources exist, tagKey is the shortName of the tag key resource, tagValue is the shortName of the tag value resource. See https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing for more details.")
 
 	// Feature lock release specific parameters, only take effect when feature-lock-release is set to true.
-	featureLockRelease    = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
-	lockReleaseSyncPeriod = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
-
+	featureLockRelease = flag.Bool("feature-lock-release", false, "if set to true, the node driver will support Filestore lock release.")
+	// featureLockRelease must be set as true when featureLockReleaseStandalone is true. Standalone implementation will override part of the original lock release implementation when true.
+	featureLockReleaseStandalone = flag.Bool("feature-lock-release-standalone", false, "if set to true, the node driver will not support v1 Filestore lock release.")
+	lockReleaseSyncPeriod        = flag.Duration("lock-release-sync-period", 60*time.Second, "Duration, in seconds, the sync period of the lock release controller. Defaults to 60 seconds.")
 	// Feature configurable shares per Filestore instance specific parameters.
 	featureMaxSharePerInstance = flag.Bool("feature-max-shares-per-instance", false, "If this feature flag is enabled, allows the user to configure max shares packed per Filestore instance")
 	descOverrideMaxShareCount  = flag.String("desc-override-max-shares-per-instance", "", "If non-empty, the filestore instance description override is used to configure max share count per instance. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
@@ -153,6 +155,7 @@ func main() {
 			klog.Error(err.Error())
 			os.Exit(1)
 		}
+		clusterConfig.ContentType = runtime.ContentTypeProtobuf
 		klog.Infof("cluster config created")
 
 		kubeClient, err = kubernetes.NewForConfig(clusterConfig)
@@ -164,7 +167,8 @@ func main() {
 
 	featureOptions := &driver.GCFSDriverFeatureOptions{
 		FeatureLockRelease: &driver.FeatureLockRelease{
-			Enabled: *featureLockRelease,
+			Enabled:    *featureLockRelease,
+			Standalone: *featureLockReleaseStandalone,
 			Config: &lockrelease.LockReleaseControllerConfig{
 				LeaseDuration:  *leaderElectionLeaseDuration,
 				RenewDeadline:  *leaderElectionRenewDeadline,

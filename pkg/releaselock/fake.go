@@ -15,10 +15,39 @@ package lockrelease
 
 import "k8s.io/client-go/kubernetes"
 
-func NewFakeLockReleaseController() *LockReleaseController {
-	return &LockReleaseController{}
+type FakeLockReleaseControllerBuilder struct {
+	client      kubernetes.Interface
+	processor   EventProcessor
+	lockService LockService
 }
 
-func NewFakeLockReleaseControllerWithClient(client kubernetes.Interface) *LockReleaseController {
-	return &LockReleaseController{client: client}
+func NewControllerBuilder() *FakeLockReleaseControllerBuilder {
+	return &FakeLockReleaseControllerBuilder{}
+}
+
+func (b *FakeLockReleaseControllerBuilder) WithClient(client kubernetes.Interface) *FakeLockReleaseControllerBuilder {
+	b.client = client
+	return b
+}
+
+func (b *FakeLockReleaseControllerBuilder) WithProcessor(processor EventProcessor) *FakeLockReleaseControllerBuilder {
+	b.processor = processor
+	return b
+}
+
+func (b *FakeLockReleaseControllerBuilder) WithLockService(lockService LockService) *FakeLockReleaseControllerBuilder {
+	b.lockService = lockService
+	return b
+}
+
+func (b *FakeLockReleaseControllerBuilder) Build() *LockReleaseController {
+	c := &LockReleaseController{
+		client:         b.client,
+		eventProcessor: b.processor,
+		lockService:    b.lockService,
+	}
+	if b.processor != nil {
+		b.processor.SetController(c)
+	}
+	return c
 }

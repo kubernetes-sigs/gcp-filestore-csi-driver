@@ -95,7 +95,7 @@ func serve(w http.ResponseWriter, r *http.Request, admit admitHandler) {
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		msg := fmt.Sprintf("contentType=%s, expect application/json", contentType)
-		klog.Errorf(msg)
+		klog.Error(msg)
 		http.Error(w, msg, http.StatusBadRequest)
 		return
 	}
@@ -117,7 +117,7 @@ func serve(w http.ResponseWriter, r *http.Request, admit admitHandler) {
 		requestedAdmissionReview, ok := obj.(*v1.AdmissionReview)
 		if !ok {
 			msg := fmt.Sprintf("Expected v1.AdmissionReview but got: %T", obj)
-			klog.Errorf(msg)
+			klog.Error(msg)
 			http.Error(w, msg, http.StatusBadRequest)
 			return
 		}

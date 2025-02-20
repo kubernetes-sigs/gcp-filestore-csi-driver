@@ -248,7 +248,7 @@ func (recon *MultishareReconciler) sendShareRequests(instanceInfos map[string]*v
 		if assignedInstanceInfo.Status == nil || assignedInstanceInfo.Status.InstanceStatus != v1.READY || assignedInstanceInfo.Status.CapacityBytes < assignedInstanceInfo.Spec.CapacityBytes {
 			klog.Infof("Instance %s is not ready", assignedInstanceInfo.Name)
 			if assignedInstanceInfo.Status != nil && assignedInstanceInfo.Status.Error != "" {
-				recon.updateShareInfoErr(shareInfo, fmt.Errorf(assignedInstanceInfo.Status.Error))
+				recon.updateShareInfoErr(shareInfo, fmt.Errorf("%v", assignedInstanceInfo.Status.Error))
 			}
 			continue
 		}
@@ -487,7 +487,7 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 
 	labels, err := extractInstanceLabels(params, recon.config.ExtraVolumeLabels, recon.config.Name, recon.config.ClusterName, clusterLocation)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, err.Error())
+		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	instance := &file.MultishareInstance{

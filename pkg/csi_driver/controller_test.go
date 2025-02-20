@@ -144,8 +144,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 					CapacityBytes: defaultTierMinSize,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -191,8 +192,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 					CapacityBytes: premiumTierMinSize,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -230,7 +232,7 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 						},
 					},
 				},
-				Parameters:         map[string]string{"tier": enterpriseTier},
+				Parameters:         map[string]string{"tier": enterpriseTier, paramFileProtocol: v4_1FileProtocol},
 				VolumeCapabilities: volumeCapabilities,
 			},
 			resp: &csi.CreateVolumeResponse{
@@ -238,8 +240,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 					CapacityBytes: testBytes,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v4_1FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -306,8 +309,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 					CapacityBytes: testBytes,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
 					},
 					ContentSource: &csi.VolumeContentSource{
 						Type: &csi.VolumeContentSource_Snapshot{
@@ -459,14 +463,50 @@ func TestCreateVolume(t *testing.T) {
 						},
 					},
 				},
+				Parameters: map[string]string{
+					"tier":     zonalTier,
+					"protocol": v4_1FileProtocol,
+				},
 			},
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
 					CapacityBytes: 1 * util.Tb,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v4_1FileProtocol,
+					},
+				},
+			},
+			features: features,
+		},
+		{
+			name: "create volume without providing protocol for basic",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": basicHDDTier,
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
 					},
 				},
 			},
@@ -655,8 +695,9 @@ func TestCreateVolume(t *testing.T) {
 					CapacityBytes: 1 * util.Tb,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
-						attrIP:     testIP,
-						attrVolume: newInstanceVolume,
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
 					},
 				},
 			},
@@ -1015,6 +1056,54 @@ func TestGetRequestCapacity(t *testing.T) {
 			tier:  "BASIC_SSD",
 			bytes: 3 * util.Tb,
 		},
+		{
+			name: "required less than small ZONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 1 * util.Tb,
+		},
+		{
+			name: "required in small ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+			},
+			tier:  "ZONAL",
+			bytes: 3 * util.Tb,
+		},
+		{
+			name: "required in small ZONAL range all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9984 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 9984 * util.Gb,
+		},
+		{
+			name: "required in large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 10 * util.Tb,
+			},
+			tier:  "ZONAL",
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required in between small and large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9985 * util.Gb,
+			},
+			tier:  "ZONAL",
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required above large ZONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 110 * util.Tb,
+			},
+			tier:          "ZONAL",
+			errorExpected: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1058,6 +1147,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					Name:      newInstanceVolume,
 					SizeBytes: testBytes,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 		{
@@ -1097,6 +1187,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					Name:      newInstanceVolume,
 					SizeBytes: testBytes,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 		{
@@ -1141,6 +1232,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					Name:      newInstanceVolume,
 					SizeBytes: testBytes,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 		{
@@ -1173,6 +1265,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					Name:      newInstanceVolume,
 					SizeBytes: testBytes,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 		{
@@ -1213,6 +1306,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					Name:      newInstanceVolume,
 					SizeBytes: testBytes,
 				},
+				Protocol: v3FileProtocol,
 			},
 		},
 		{
@@ -1237,6 +1331,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					SizeBytes: testBytes,
 				},
 				KmsKeyName: "foo-key",
+				Protocol:   v3FileProtocol,
 			},
 		},
 		{
@@ -1262,6 +1357,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 					SizeBytes: testBytes,
 				},
 				KmsKeyName: "foo-key",
+				Protocol:   v3FileProtocol,
 			},
 		},
 		{

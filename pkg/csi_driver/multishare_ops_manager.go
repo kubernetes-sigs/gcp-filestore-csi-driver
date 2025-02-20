@@ -78,7 +78,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 	createShareOp := containsOpWithShareName(shareName, util.ShareCreate, ops)
 	if createShareOp != nil {
 		msg := fmt.Sprintf("Share create op %s in progress", createShareOp.Id)
-		klog.Infof(msg)
+		klog.Info(msg)
 		return nil, nil, status.Error(codes.Aborted, msg)
 	}
 
@@ -94,7 +94,7 @@ func (m *MultishareOpsManager) setupEligibleInstanceAndStartWorkflow(ctx context
 			return nil, nil, err
 		}
 		for _, s := range shares {
-			if s.Name == shareName {
+			if s.Name == shareName && s.Parent.Protocol == instance.Protocol {
 				return nil, s, nil
 			}
 		}
@@ -418,7 +418,7 @@ func (m *MultishareOpsManager) runEligibleInstanceCheck(ctx context.Context, req
 			}
 		}
 
-		return nil, status.Errorf(codes.Aborted, errorString)
+		return nil, status.Error(codes.Aborted, errorString)
 
 	}
 
@@ -704,22 +704,33 @@ func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *cs
 
 // A source instance will be considered as "matched" with the target instance
 // if and only if the following requirements were met:
+//
 //  1. Both source and target instance should have a label with key
 //     "storage_gke_io_storage-class-id", and the value should be the same.
+//
 //  2. (Check if exists) The ip address of the target instance should be
 //     within the ip range specified in "reserved-ipv4-cidr".
+//
 //  3. (Check if exists) The ip address of the target instance should be
 //     within the ip range specified in "reserved-ip-range".
+//
 //  4. Both source and target instance should be in the same location.
+//
 //  5. Both source and target instance should be under the same tier.
+//
 //  6. Both source and target instance should be in the same VPC network.
 //
-// 7, Both source and target instance should have the same connect mode.
+//  7. Both source and target instance should have the same connect mode.
+//
 //  8. Both source and target instance should have the same KmsKeyName.
+//
 //  9. Both source and target instance should have a label with key
 //     "gke_cluster_location", and the value should be the same.
+//
 //  10. Both source and target instance should have a label with key
 //     "gke_cluster_name", and the value should be the same.
+//
+//  11. Both source and target instance should have the same FileSystem protocol.
 func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
 	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, TagKeyClusterLocation, TagKeyClusterName}
 	for _, labelKey := range matchLabels {
@@ -740,6 +751,11 @@ func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateV
 			return false, nil
 		}
 	}
+
+	if source.Protocol != target.Protocol {
+		return false, nil
+	}
+
 	// Skip validation for parameter "reserved-ip-range" since it requires
 	// extra compute api auth and not clear if it's required.
 	if strings.EqualFold(source.Location, target.Location) &&
@@ -749,5 +765,6 @@ func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateV
 		strings.EqualFold(source.KmsKeyName, target.KmsKeyName) {
 		return true, nil
 	}
+
 	return false, nil
 }
