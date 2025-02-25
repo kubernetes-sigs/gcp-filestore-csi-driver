@@ -529,7 +529,9 @@ func invalidCapacityRange(requestedCapRange *csi.CapacityRange, tier string, val
 	}
 
 	if requireSet {
-		if requiredCap > validRange.max {
+		if !limitSet && requiredCap > validRange.max {
+			klog.Warningf("request bytes %vTiB is more than maximum instance size bytes %vTiB for tier %s, but no upper bound was specified. Rounding off capacity request to %vTiB for tier %s", float64(requiredCap)/util.Tb, float64(validRange.max)/util.Tb, tier, float64(validRange.max)/util.Tb, tier)
+		} else if requiredCap > validRange.max {
 			return fmt.Errorf("request bytes %vTiB is more than maximum instance size bytes %vTiB for tier %s", float64(requiredCap)/util.Tb, float64(validRange.max)/util.Tb, tier)
 		}
 
