@@ -14,6 +14,7 @@ limitations under the License.
 package metrics
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -23,6 +24,8 @@ import (
 	"google.golang.org/grpc/status"
 	"k8s.io/component-base/metrics"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/common"
 )
 
 const (
@@ -147,7 +150,7 @@ func (mm *MetricsManager) recordComponentVersionMetric() error {
 }
 
 func (mm *MetricsManager) RecordOperationMetrics(opErr error, methodName string, filestoreMode string, opDuration time.Duration) {
-	operationSeconds.WithLabelValues(getErrorCode(opErr), methodName, filestoreMode).Observe(opDuration.Seconds())
+	operationSeconds.WithLabelValues(errorCodeLabelValue(opErr), methodName, filestoreMode).Observe(opDuration.Seconds())
 }
 
 func (mm *MetricsManager) RecordKubeAPIMetrics(opErr error, resourceType, opType, opSource string, opDuration time.Duration) {
@@ -192,6 +195,20 @@ func (mm *MetricsManager) EmitGKEComponentVersion() error {
 	}
 
 	return nil
+}
+
+// errorCodeLabelValue returns the label value for the given operation error.
+func errorCodeLabelValue(operationErr error) string {
+	err := codes.OK.String()
+	if operationErr != nil {
+		// If the operationErr is a TemporaryError, unwrap the temporary error before passing it to CodeForError.
+		var tempErr *common.TemporaryError
+		if errors.As(operationErr, &tempErr) {
+			operationErr = tempErr.Unwrap()
+		}
+		err = getErrorCode(file.StatusError(operationErr))
+	}
+	return err
 }
 
 // Server represents any type that could serve HTTP requests for the metrics
