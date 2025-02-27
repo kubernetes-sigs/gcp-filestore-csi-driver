@@ -822,6 +822,22 @@ func TestGetRequestCapacity(t *testing.T) {
 			bytes: 1 * util.Tb,
 		},
 		{
+			name: "required above small zonal",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 11 * util.Tb,
+			},
+			tier:  zonalTier,
+			bytes: 11 * util.Tb,
+		},
+		{
+			name: "required in between small and large zonal",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9990 * util.Gb,
+			},
+			tier:  zonalTier,
+			bytes: 10 * util.Tb,
+		},
+		{
 			name: "required above min",
 			capRange: &csi.CapacityRange{
 				RequiredBytes: 1*util.Tb + 1*util.Gb,
@@ -881,8 +897,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max default",
+			name: "required above max default with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    50 * util.Tb,
 				RequiredBytes: 100 * util.Tb,
 			},
 			tier:          defaultTier,
@@ -915,12 +932,21 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max enterprise",
+			name: "required above max enterprise with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    50 * util.Tb,
 				RequiredBytes: 100 * util.Tb,
 			},
 			tier:          enterpriseTier,
 			errorExpected: true,
+		},
+		{
+			name: "required above max enterprise without limit",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Tb,
+			},
+			tier:  enterpriseTier,
+			bytes: 100 * util.Tb,
 		},
 		{
 			name: "required and limit both in range enterprise",
@@ -940,8 +966,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max highScale",
+			name: "required above max highScale with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    100 * util.Tb,
 				RequiredBytes: 200 * util.Tb,
 			},
 			tier:          highScaleTier,
@@ -965,8 +992,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max premium",
+			name: "required above max premium with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    60 * util.Tb,
 				RequiredBytes: 70 * util.Tb,
 			},
 			tier:          premiumTier,
@@ -990,8 +1018,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max basicSSD",
+			name: "required above max basicSSD with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    639 * util.Tb / 10,
 				RequiredBytes: 70 * util.Tb,
 			},
 			tier:          basicSSDTier,
@@ -1015,8 +1044,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			errorExpected: true,
 		},
 		{
-			name: "required above max basicHDD",
+			name: "required above max basicHDD with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    639 * util.Tb / 10,
 				RequiredBytes: 70 * util.Tb,
 			},
 			tier:          basicHDDTier,
@@ -1040,8 +1070,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			bytes: 100 * util.Tb,
 		},
 		{
-			name: "required above max BASIC_SSD all cap",
+			name: "required above max BASIC_SSD all cap with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    639 * util.Tb / 10,
 				RequiredBytes: 70 * util.Tb,
 			},
 			tier:          "BASIC_SSD",
@@ -1097,8 +1128,9 @@ func TestGetRequestCapacity(t *testing.T) {
 			bytes: 10 * util.Tb,
 		},
 		{
-			name: "required above large ZONAL range",
+			name: "required above large ZONAL range with limit set",
 			capRange: &csi.CapacityRange{
+				LimitBytes:    100 * util.Tb,
 				RequiredBytes: 110 * util.Tb,
 			},
 			tier:          "ZONAL",
