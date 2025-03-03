@@ -23,6 +23,7 @@ import (
 	csipb "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 
 	"k8s.io/apimachinery/pkg/util/wait"
 )
@@ -93,6 +94,9 @@ func (c *CsiClient) CreateVolume(volName, zone, snapshotID string, parameters ma
 		Name:               volName,
 		VolumeCapabilities: stdVolCaps,
 		Parameters:         parameters,
+		CapacityRange: &csipb.CapacityRange{
+			RequiredBytes: 1 * util.Tb,
+		},
 	}
 	if zone != "" {
 		cvr.AccessibilityRequirements = &csi.TopologyRequirement{
