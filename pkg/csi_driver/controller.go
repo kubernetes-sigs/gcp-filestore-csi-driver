@@ -529,13 +529,15 @@ func invalidCapacityRange(requestedCapRange *csi.CapacityRange, tier string, val
 	}
 
 	if requireSet {
-		if requiredCap > validRange.max {
-			return fmt.Errorf("request bytes %vTiB is more than maximum instance size bytes %vTiB for tier %s", float64(requiredCap)/util.Tb, float64(validRange.max)/util.Tb, tier)
+		if !limitSet && requiredCap > validRange.max {
+			klog.Warningf("Request bytes %vTiB is more than maximum instance size bytes %vTiB for tier %s, but no upper bound was specified. Rounding off capacity request to %vTiB for tier %s", float64(requiredCap)/util.Tb, float64(validRange.max)/util.Tb, tier, float64(validRange.max)/util.Tb, tier)
+		} else if requiredCap > validRange.max {
+			return fmt.Errorf("Request bytes %vTiB is more than maximum instance size bytes %vTiB for tier %s", float64(requiredCap)/util.Tb, float64(validRange.max)/util.Tb, tier)
 		}
 
 		if !limitSet && requiredCap < validRange.min {
 			// Avoid surprising users by provisioning more than Requested
-			klog.Warningf("required bytes %vTiB is less than minimum instance size capacity %vTiB for tier %s, but no upper bound was specified. Rounding up capacity request to %vTiB for tier %s.", float64(requiredCap)/util.Tb, float64(validRange.min)/util.Tb, tier, float64(validRange.min)/util.Tb, tier)
+			klog.Warningf("Required bytes %vTiB is less than minimum instance size capacity %vTiB for tier %s, but no upper bound was specified. Rounding up capacity request to %vTiB for tier %s.", float64(requiredCap)/util.Tb, float64(validRange.min)/util.Tb, tier, float64(validRange.min)/util.Tb, tier)
 		}
 	}
 	if limitSet {
