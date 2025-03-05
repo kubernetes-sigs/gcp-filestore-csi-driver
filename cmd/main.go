@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 	mount "k8s.io/mount-utils"
+	"k8s.io/utils/exec"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	metadataservice "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
@@ -205,7 +206,7 @@ func main() {
 		},
 	}
 
-	mounter := mount.New("")
+	mounter := mount.NewSafeFormatAndMount(mount.New(""), exec.New())
 	config := &driver.GCFSDriverConfig{
 		Name:              driverName,
 		Version:           version,
