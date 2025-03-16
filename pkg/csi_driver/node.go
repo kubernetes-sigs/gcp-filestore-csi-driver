@@ -29,6 +29,7 @@ import (
 	"golang.org/x/sys/unix"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	kuberuntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/klog/v2"
@@ -73,6 +74,7 @@ func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService meta
 		if err != nil {
 			return nil, err
 		}
+		config.ContentType = kuberuntime.ContentTypeProtobuf
 		client, err := kubernetes.NewForConfig(config)
 		if err != nil {
 			return nil, err
