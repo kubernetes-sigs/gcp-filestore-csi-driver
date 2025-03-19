@@ -18,6 +18,7 @@ import (
 	"flag"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -53,6 +54,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create an in cluster config: %v", err)
 	}
+	config.ContentType = runtime.ContentTypeProtobuf
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.Fatalf("Failed to create a new discovery client: %v", err)

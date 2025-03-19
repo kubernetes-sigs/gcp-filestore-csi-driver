@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	apimachineryversion "k8s.io/apimachinery/pkg/version"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -233,6 +234,7 @@ func getKubeClient() (kubernetes.Interface, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create config: %v", err)
 	}
+	config.ContentType = runtime.ContentTypeProtobuf
 	kubeClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create client: %v", err)
