@@ -111,6 +111,9 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 			Enabled: true,
 		},
 		FeatureLockRelease: &FeatureLockRelease{},
+		FeatureNFSv4Support: &FeatureNFSv4Support{
+			Enabled: true,
+		},
 	}
 
 	cases := []struct {
@@ -219,6 +222,55 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				backupName:     backupName,
 				backupLocation: testRegion,
 				SourceVolumeId: modeInstance + "/" + testZone + "/" + instanceName + "/" + shareName,
+			},
+		},
+		{
+			name: "from enterprise tier snapshot",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeContentSource: &csi.VolumeContentSource{
+					Type: &csi.VolumeContentSource_Snapshot{
+						Snapshot: &csi.VolumeContentSource_SnapshotSource{
+							SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+						},
+					},
+				},
+				Parameters:         map[string]string{"tier": enterpriseTier, paramFileProtocol: v4_1FileProtocol},
+				VolumeCapabilities: volumeCapabilities,
+			},
+			features: features,
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: testBytes,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v4_1FileProtocol,
+					},
+					ContentSource: &csi.VolumeContentSource{
+						Type: &csi.VolumeContentSource_Snapshot{
+							Snapshot: &csi.VolumeContentSource_SnapshotSource{
+								SnapshotId: "projects/test-project/locations/us-central1/backups/mybackup",
+							},
+						},
+					},
+				},
+			},
+			initialBackup: &BackupInfo{
+				s: &file.ServiceInstance{
+					Project:  testProject,
+					Location: testRegion,
+					Name:     instanceName,
+					Tier:     enterpriseTier,
+					Volume: file.Volume{
+						Name:      shareName,
+						SizeBytes: testBytes,
+					},
+				},
+				backupName:     backupName,
+				backupLocation: testRegion,
+				SourceVolumeId: modeInstance + "/" + testRegion + "/" + instanceName + "/" + shareName,
 			},
 		},
 		{
@@ -392,6 +444,9 @@ func TestCreateVolume(t *testing.T) {
 			Enabled: true,
 		},
 		FeatureLockRelease: &FeatureLockRelease{},
+		FeatureNFSv4Support: &FeatureNFSv4Support{
+			Enabled: true,
+		},
 	}
 	cases := []struct {
 		name            string
@@ -401,6 +456,38 @@ func TestCreateVolume(t *testing.T) {
 		features        *GCFSDriverFeatureOptions
 		expectedOptions []*file.NfsExportOptions
 	}{
+		{
+			name: "valid defaults",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier":     zonalTier,
+					"protocol": v4_1FileProtocol,
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v4_1FileProtocol,
+					},
+				},
+			},
+			features: features,
+		},
 		{
 			name: "create volume without providing protocol for basic",
 			req: &csi.CreateVolumeRequest{
