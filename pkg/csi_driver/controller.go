@@ -670,6 +670,10 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
+		case paramFileProtocol:
+			if s.config.features.FeatureNFSv4Support.Enabled {
+				fileProtocol = v
+			}
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:

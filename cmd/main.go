@@ -63,6 +63,9 @@ var (
 	descOverrideMinShareSizeGB = flag.String("desc-override-min-shares-size-gb", "", "If non-empty, the filestore instance description override is used to configure min share size. This flag is ignored if 'feature-max-shares-per-instance' flag is false. Both 'desc-override-max-shares-per-instance' and 'desc-override-min-shares-size-gb' must be provided. 'ecfsDescription' is ignored, if this flag is provided.")
 	coreInformerResyncPeriod   = flag.Duration("core-informer-resync-repriod", 15*time.Minute, "Core informer resync period.")
 
+	// Feature Filestore NFSv4, only take effect when feature-nfs-v4 is set to true.
+	featureNFSv4Support = flag.Bool("feature-nfs-v4", false, "if set to true, the Filestore CSI driver will support NFSv4 support for Filestore.")
+
 	// Feature multishare backups enabled
 	featureMultishareBackups        = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
 	featureNFSExportOptionsOnCreate = flag.Bool("feature-nfs-export-options", false, "if set to true, the driver will accpet nfs-export-options-on-create parameter and configure IP Access rules")
@@ -202,6 +205,9 @@ func main() {
 		},
 		FeatureNFSExportOptionsOnCreate: &driver.FeatureNFSExportOptionsOnCreate{
 			Enabled: *featureNFSExportOptionsOnCreate,
+		},
+		FeatureNFSv4Support: &driver.FeatureNFSv4Support{
+			Enabled: *featureNFSv4Support,
 		},
 	}
 
