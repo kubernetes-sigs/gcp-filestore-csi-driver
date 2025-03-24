@@ -303,7 +303,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	}
 
 	fileProtocol, ok := attr[attrFileProtocol]
-	if !ok {
+	if (s.features.FeatureNFSv4Support != nil && !s.features.FeatureNFSv4Support.Enabled) || !ok {
 		fileProtocol = v3FileProtocol
 	}
 
