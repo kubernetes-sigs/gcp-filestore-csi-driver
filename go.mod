@@ -1,7 +1,7 @@
 module sigs.k8s.io/gcp-filestore-csi-driver
 
 go 1.21
-toolchain go1.23.4
+toolchain go1.24.1
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
@@ -65,7 +65,7 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.5 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.6 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.0 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
