@@ -29,11 +29,11 @@ require (
 	google.golang.org/protobuf v1.36.5
 	gopkg.in/gcfg.v1 v1.2.3
 	k8s.io/api v0.26.0
-	k8s.io/apimachinery v0.32.1
+	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v11.0.1-0.20190805182717-6502b5e7b1b5+incompatible
 	k8s.io/component-base v0.26.0
 	k8s.io/klog/v2 v2.130.1
-	k8s.io/mount-utils v0.32.1
+	k8s.io/mount-utils v0.32.3
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
 	sigs.k8s.io/boskos v0.0.0-20201002225104-ae3497d24cd7
 	sigs.k8s.io/controller-runtime v0.12.1
@@ -113,7 +113,7 @@ require (
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/test-infra v0.0.0-20201007205216-b54c51c3a44a // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.5.0 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
