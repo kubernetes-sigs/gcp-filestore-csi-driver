@@ -56,13 +56,13 @@ const (
 )
 
 type GCFSDriverConfig struct {
-	Name              string          // Driver name
-	Version           string          // Driver version
-	NodeName          string          // Node name
-	RunController     bool            // Run CSI controller service
-	RunNode           bool            // Run CSI node service
-	Mounter           mount.Interface // Mount library
-	Cloud             *cloud.Cloud    // Cloud provider
+	Name              string                    // Driver name
+	Version           string                    // Driver version
+	NodeName          string                    // Node name
+	RunController     bool                      // Run CSI controller service
+	RunNode           bool                      // Run CSI node service
+	Mounter           *mount.SafeFormatAndMount // Mount library
+	Cloud             *cloud.Cloud              // Cloud provider
 	MetadataService   metadataservice.Service
 	EnableMultishare  bool
 	Reconciler        *MultishareReconciler
