@@ -270,6 +270,7 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 	// Validate volume attributes
 	var source string
 	attr := req.GetVolumeContext()
+	sourcePath := attr[attrSourcePath]
 	if isMultishareVolId(volumeID) {
 		if err := validateMultishareVolumeAttributes(attr); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -278,12 +279,12 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		source = fmt.Sprintf("%s:/%s", attr[attrIP], shareName)
+		source = fmt.Sprintf("%s:/%s/%s", attr[attrIP], shareName, sourcePath)
 	} else {
 		if err := validateVolumeAttributes(attr); err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
-		source = fmt.Sprintf("%s:/%s", attr[attrIP], attr[attrVolume])
+		source = fmt.Sprintf("%s:/%s/%s", attr[attrIP], attr[attrVolume], sourcePath)
 	}
 
 	if acquired := s.volumeLocks.TryAcquire(volumeID); !acquired {
