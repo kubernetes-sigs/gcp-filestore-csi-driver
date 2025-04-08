@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Build driver go binary
-FROM --platform=$BUILDPLATFORM golang:1.23.2 as builder
+FROM --platform=$BUILDPLATFORM golang:1.23.8 as builder
 
 ARG STAGINGVERSION
 ARG TARGETPLATFORM
@@ -71,7 +71,7 @@ RUN apt-mark hold apt gnupg adduser passwd libsemanage2 libcap2 mount nfs-common
 # https://github.com/kubernetes/release/blob/78ecea5a708046ee2d4e71be5dc73393b8d7d7cc/images/build/debian-base/bookworm/Dockerfile.build#L44-L54. 
 # The commented out packages are nfs dependencies, and should not be removed.
 RUN echo "Yes, do as I say!" | apt-get purge -y --allow-remove-essential \
-   # bash \
+    # bash \
     e2fslibs \
     e2fsprogs \
     # init \
@@ -87,34 +87,34 @@ RUN echo "Yes, do as I say!" | apt-get purge -y --allow-remove-essential \
     libss2 \
     ncurses-base \
     ncurses-bin
-    # systemd \
-    # systemd-sysv \
+# systemd \
+# systemd-sysv \
 
 # Cleanup cached and unnecessary files.
 RUN apt-get autoremove -y && \
     apt-get clean -y && \
     tar -czf /usr/share/copyrights.tar.gz /usr/share/doc/*/copyright && \
     rm -rf \
-        /usr/share/doc \
-        /usr/share/man \
-        /usr/share/info \
-        /usr/share/locale \
-        /var/lib/apt/lists/* \
-        /var/log/* \
-        /var/cache/debconf/* \
-        /usr/share/common-licenses* \
-        /usr/share/bash-completion \
-        ~/.bashrc \
-        ~/.profile \
-        # /etc/systemd \
-        # /lib/lsb \
-        /lib/udev \
-        /usr/lib/x86_64-linux-gnu/gconv/IBM* \
-        /usr/lib/x86_64-linux-gnu/gconv/EBC* && \
+    /usr/share/doc \
+    /usr/share/man \
+    /usr/share/info \
+    /usr/share/locale \
+    /var/lib/apt/lists/* \
+    /var/log/* \
+    /var/cache/debconf/* \
+    /usr/share/common-licenses* \
+    /usr/share/bash-completion \
+    ~/.bashrc \
+    ~/.profile \
+    # /etc/systemd \
+    # /lib/lsb \
+    /lib/udev \
+    /usr/lib/x86_64-linux-gnu/gconv/IBM* \
+    /usr/lib/x86_64-linux-gnu/gconv/EBC* && \
     mkdir -p /usr/share/man/man1 /usr/share/man/man2 \
-        /usr/share/man/man3 /usr/share/man/man4 \
-        /usr/share/man/man5 /usr/share/man/man6 \
-        /usr/share/man/man7 /usr/share/man/man8
+    /usr/share/man/man3 /usr/share/man/man4 \
+    /usr/share/man/man5 /usr/share/man/man6 \
+    /usr/share/man/man7 /usr/share/man/man8
 
 # Copy driver into image
 FROM deps
