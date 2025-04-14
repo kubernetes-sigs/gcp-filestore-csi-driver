@@ -134,7 +134,7 @@ func (i *InstanceInfo) CreateOrGetInstance(serviceAccount string) error {
 			if op != nil {
 				ret = fmt.Sprintf("%s. op error: %v", ret, op.Error)
 			}
-			return fmt.Errorf(ret)
+			return fmt.Errorf("%v", ret)
 		} else if op.Error != nil {
 			return fmt.Errorf("could not create instance %s: %+v", i.name, op.Error)
 		}
@@ -206,7 +206,7 @@ func getexternalIP(instance *compute.Instance) string {
 }
 
 func getTimestamp() string {
-	return fmt.Sprintf(time.Now().Format(timestampFormat))
+	return fmt.Sprintf("%s", time.Now().Format(timestampFormat))
 }
 
 func machineType(zone, machine string) string {
