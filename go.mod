@@ -1,7 +1,6 @@
 module sigs.k8s.io/gcp-filestore-csi-driver
 
-go 1.21
-toolchain go1.23.4
+go 1.24.2
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
@@ -19,7 +18,7 @@ require (
 	github.com/spf13/cobra v1.9.1
 	github.com/spf13/pflag v1.0.6
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/net v0.35.0
+	golang.org/x/net v0.36.0
 	golang.org/x/oauth2 v0.27.0
 	golang.org/x/sys v0.30.0
 	golang.org/x/time v0.10.0
