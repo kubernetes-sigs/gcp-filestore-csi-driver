@@ -1276,6 +1276,7 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		CapacityStepSizeGb: instance.CapacityStepSizeGb,
 		Description:        instance.Description,
 		MaxShareCount:      int(instance.MaxShareCount),
+		Protocol:           instance.Protocol,
 	}, nil
 }
 
