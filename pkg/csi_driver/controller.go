@@ -75,6 +75,7 @@ const (
 	attrVolume             = "volume"
 	attrSupportLockRelease = "supportLockRelease"
 	attrFileProtocol       = "fileProtocol"
+	attrSourcePath         = "sourcePath"
 )
 
 // CreateVolume parameters
@@ -91,6 +92,7 @@ const (
 	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
 	paramFileProtocol              = "protocol"
+	paramSourcePath                = "source-path"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -189,6 +191,14 @@ func (m *controllerServer) Run(stopCh <-chan struct{}) {
 	}
 
 	m.config.multiShareController.Run(stopCh)
+}
+
+func getSourcePathFromParameters(parameters map[string]string) string {
+	if p, ok := parameters[paramSourcePath]; ok {
+		return p
+	}
+
+	return ""
 }
 
 // CreateVolume creates a GCFS instance
@@ -337,6 +347,10 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance)}
+
+	if p := getSourcePathFromParameters(req.GetParameters()); p != "" {
+		resp.Volume.VolumeContext[attrSourcePath] = p
+	}
 
 	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
@@ -675,6 +689,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 				fileProtocol = v
 			}
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
+		case paramSourcePath:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)

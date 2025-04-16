@@ -153,7 +153,14 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 	if err != nil {
 		return nil, err
 	}
-	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, maxShareSizeBytes)
+
+	resp, err := m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, maxShareSizeBytes)
+
+	if p := getSourcePathFromParameters(req.GetParameters()); p != "" {
+		resp.Volume.VolumeContext[attrSourcePath] = p
+	}
+
+	return resp, err
 }
 
 func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
