@@ -1,6 +1,7 @@
 module sigs.k8s.io/gcp-filestore-csi-driver
 
-go 1.21
+go 1.23.0
+
 toolchain go1.23.4
 
 require (
@@ -19,9 +20,9 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/net v0.33.0
+	golang.org/x/net v0.38.0
 	golang.org/x/oauth2 v0.25.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.31.0
 	golang.org/x/time v0.9.0
 	google.golang.org/api v0.216.0
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250102185135-69823020774d
@@ -97,10 +98,10 @@ require (
 	go.opentelemetry.io/otel/trace v1.31.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.36.0 // indirect
+	golang.org/x/sync v0.12.0 // indirect
+	golang.org/x/term v0.30.0 // indirect
+	golang.org/x/text v0.23.0 // indirect
 	google.golang.org/genproto v0.0.0-20241021214115-324edc3d5d38 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241209162323-e6fa225c2576 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect
