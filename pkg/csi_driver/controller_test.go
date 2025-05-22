@@ -714,6 +714,13 @@ func TestCreateVolume(t *testing.T) {
 	for _, test := range cases {
 		cs := initTestController(t).(*controllerServer)
 		cs.config.features = test.features
+
+		if tags, ok := test.req.GetParameters()[cloud.ParameterKeyResourceTags]; ok {
+			cs.config.tagManager.(*cloud.FakeTagServiceManager).
+				On("ValidateResourceTags", context.TODO(), tags).
+				Return(nil, nil)
+		}
+
 		cs.config.tagManager.(*cloud.FakeTagServiceManager).
 			On("AttachResourceTags", context.TODO(), cloud.FilestoreInstance, testCSIVolume, testLocation, test.req.GetName(), test.req.GetParameters()).
 			Return(nil)
