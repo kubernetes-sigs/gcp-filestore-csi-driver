@@ -451,12 +451,13 @@ func TestCreateVolume(t *testing.T) {
 		},
 	}
 	cases := []struct {
-		name            string
-		req             *csi.CreateVolumeRequest
-		resp            *csi.CreateVolumeResponse
-		expectErr       bool
-		features        *GCFSDriverFeatureOptions
-		expectedOptions []*file.NfsExportOptions
+		name                   string
+		req                    *csi.CreateVolumeRequest
+		resp                   *csi.CreateVolumeResponse
+		expectErr              bool
+		features               *GCFSDriverFeatureOptions
+		expectedOptions        []*file.NfsExportOptions
+		validateTagsShouldFail bool
 	}{
 		{
 			name: "valid defaults",
@@ -592,6 +593,29 @@ func TestCreateVolume(t *testing.T) {
 				},
 			},
 			expectErr: true,
+		},
+		{
+			name: "validating resource tags fails",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"network":                      "test",
+					cloud.ParameterKeyResourceTags: "kubernetes/invalid/tag",
+				},
+			},
+			expectErr:              true,
+			features:               features,
+			validateTagsShouldFail: true,
 		},
 		// TODO: create failed
 		// TODO: instance already exists error
@@ -782,6 +806,19 @@ func TestCreateVolume(t *testing.T) {
 	for _, test := range cases {
 		cs := initTestController(t).(*controllerServer)
 		cs.config.features = test.features
+
+		if tags, ok := test.req.GetParameters()[cloud.ParameterKeyResourceTags]; ok {
+			if test.validateTagsShouldFail {
+				cs.config.tagManager.(*cloud.FakeTagServiceManager).
+					On("ValidateResourceTags", context.TODO(), tags).
+					Return(nil, fmt.Errorf("mock failure: invalid resource tags"))
+			} else {
+				cs.config.tagManager.(*cloud.FakeTagServiceManager).
+					On("ValidateResourceTags", context.TODO(), tags).
+					Return(nil, nil)
+			}
+		}
+
 		cs.config.tagManager.(*cloud.FakeTagServiceManager).
 			On("AttachResourceTags", context.TODO(), cloud.FilestoreInstance, testCSIVolume, testLocation, test.req.GetName(), test.req.GetParameters()).
 			Return(nil)
@@ -796,6 +833,15 @@ func TestCreateVolume(t *testing.T) {
 		}
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed; got success", test.name)
+		}
+		if test.validateTagsShouldFail {
+			serverError, ok := status.FromError(err)
+			if !ok {
+				t.Fatalf("test %q failed: Could not get error status code from err: %v", test.name, err)
+			}
+			if serverError.Code() != codes.InvalidArgument {
+				t.Errorf("test %q failed: Expected error code: %v, got: %v. err: %v", test.name, codes.InvalidArgument, serverError.Code(), err)
+			}
 		}
 		if !cmp.Equal(resp, test.resp, protocmp.Transform()) {
 			t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", test.name, resp, test.resp, cmp.Diff(resp, test.resp, protocmp.Transform()))
