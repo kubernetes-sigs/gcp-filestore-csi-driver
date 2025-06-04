@@ -75,6 +75,7 @@ const (
 	attrVolume             = "volume"
 	attrSupportLockRelease = "supportLockRelease"
 	attrFileProtocol       = "fileProtocol"
+	attrMountOptions       = "mountOptions"
 )
 
 // CreateVolume parameters
@@ -91,6 +92,7 @@ const (
 	ParamNfsExportOptions          = "nfs-export-options-on-create"
 	paramMaxVolumeSize             = "max-volume-size"
 	paramFileProtocol              = "protocol"
+	paramMountOptions              = "mount-options"
 
 	// Keys for PV and PVC parameters as reported by external-provisioner
 	ParameterKeyPVCName      = "csi.storage.k8s.io/pvc/name"
@@ -337,7 +339,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 	if err := s.config.tagManager.AttachResourceTags(ctx, cloud.FilestoreInstance, filer.Name, filer.Location, req.GetName(), req.GetParameters()); err != nil {
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
-	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance)}
+	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance, req.GetParameters()[paramMountOptions])}
 
 	klog.Infof("CreateVolume succeeded: %+v", resp)
 	return resp, nil
@@ -679,7 +681,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if s.config.features.FeatureNFSv4Support.Enabled {
 				fileProtocol = v
 			}
-		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName:
+		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMountOptions:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
@@ -716,14 +718,19 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 }
 
 // fileInstanceToCSIVolume generates a CSI volume spec from the cloud Instance
-func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string) *csi.Volume {
+func (s *controllerServer) fileInstanceToCSIVolume(instance *file.ServiceInstance, mode string, mountOptions string) *csi.Volume {
+	volumeContext := map[string]string{
+		attrIP:     instance.Network.Ip,
+		attrVolume: instance.Volume.Name,
+	}
+	if mountOptions != "" {
+		volumeContext[attrMountOptions] = mountOptions
+	}
+
 	resp := &csi.Volume{
 		VolumeId:      getVolumeIDFromFileInstance(instance, mode),
 		CapacityBytes: instance.Volume.SizeBytes,
-		VolumeContext: map[string]string{
-			attrIP:     instance.Network.Ip,
-			attrVolume: instance.Volume.Name,
-		},
+		VolumeContext: volumeContext,
 	}
 	if instance.BackupSource != "" {
 		contentSource := &csi.VolumeContentSource{

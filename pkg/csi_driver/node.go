@@ -95,6 +95,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	readOnly := req.GetReadonly()
 	targetPath := req.GetTargetPath()
 	stagingTargetPath := req.GetStagingTargetPath()
+	volumeContext := req.GetVolumeContext()
 	if len(targetPath) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "NodePublishVolume target path must be provided")
 	}
@@ -157,6 +158,10 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	}
 	if capMount := req.GetVolumeCapability().GetMount(); capMount != nil {
 		options = append(options, capMount.GetMountFlags()...)
+	}
+
+	if mountOptions := volumeContext[attrMountOptions]; mountOptions != "" {
+		options = append(options, mountOptions)
 	}
 
 	err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
