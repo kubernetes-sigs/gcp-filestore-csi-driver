@@ -1,0 +1,12 @@
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: custom-2
+  namespace: gcp-filestore-csi-driver
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: csi-filestore-zonal
+  resources:
+    requests:
+      storage: 1Ti

@@ -1,0 +1,12 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore-zonal
+  namespace: gcp-filestore-csi-driver
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  tier: zonal
+  network: default
+volumeBindingMode: WaitForFirstConsumer
+allowVolumeExpansion: true
+reclaimPolicy: Delete

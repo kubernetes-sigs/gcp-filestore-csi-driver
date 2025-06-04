@@ -26,7 +26,9 @@ import (
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/google/go-cmp/cmp"
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
+	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
@@ -736,8 +738,8 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 			if !tc.expectError && err != nil {
 				t.Error("unexpected error")
 			}
-			if !reflect.DeepEqual(resp, tc.expectedResp) {
-				t.Errorf("got %v, want %v", resp, tc.expectedResp)
+			if !cmp.Equal(resp, tc.expectedResp, protocmp.Transform()) {
+				t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", tc.name, resp, tc.expectedResp, cmp.Diff(resp, tc.expectedResp, protocmp.Transform()))
 			}
 		})
 	}
@@ -1313,8 +1315,8 @@ func TestMultishareCreateVolume(t *testing.T) {
 				if tc.resp == nil && resp != nil {
 					t.Errorf("mismatch in response")
 				}
-				if !reflect.DeepEqual(resp, tc.resp) {
-					t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+				if !cmp.Equal(resp, tc.resp, protocmp.Transform()) {
+					t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", tc.name, resp, tc.resp, cmp.Diff(resp, tc.resp, protocmp.Transform()))
 				}
 			}
 		})
@@ -1856,8 +1858,8 @@ func TestMultishareCreateVolumeFromBackup(t *testing.T) {
 				if tc.resp == nil && resp != nil {
 					t.Errorf("mismatch in response")
 				}
-				if !reflect.DeepEqual(resp, tc.resp) {
-					t.Errorf("got resp %+v, expected %+v", resp, tc.resp)
+				if !cmp.Equal(resp, tc.resp, protocmp.Transform()) {
+					t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", tc.name, resp, tc.resp, cmp.Diff(resp, tc.resp, protocmp.Transform()))
 				}
 			}
 		})
