@@ -58,6 +58,7 @@ type nodeServer struct {
 	volumeLocks           *util.VolumeLocks
 	lockReleaseController *lockrelease.LockReleaseController
 	features              *GCFSDriverFeatureOptions
+	csi.UnimplementedNodeServer
 }
 
 func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service, featureOptions *GCFSDriverFeatureOptions) (csi.NodeServer, error) {

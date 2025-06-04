@@ -22,9 +22,11 @@ import (
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/google/go-cmp/cmp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/testing/protocmp"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/klog/v2"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -380,8 +382,8 @@ func TestCreateVolumeFromSnapshot(t *testing.T) {
 				}
 			}
 		}
-		if !reflect.DeepEqual(resp, test.resp) {
-			t.Errorf("test %q failed: got resp %+v, expected %+v", test.name, resp, test.resp)
+		if !cmp.Equal(resp, test.resp, protocmp.Transform()) {
+			t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", test.name, resp, test.resp, cmp.Diff(resp, test.resp, protocmp.Transform()))
 		}
 	}
 }
@@ -642,8 +644,8 @@ func TestCreateVolume(t *testing.T) {
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed; got success", test.name)
 		}
-		if !reflect.DeepEqual(resp, test.resp) {
-			t.Errorf("test %q failed: got resp %+v, expected %+v", test.name, resp, test.resp)
+		if !cmp.Equal(resp, test.resp, protocmp.Transform()) {
+			t.Errorf("test %q failed: got resp %+v, expected %+v, diff: %s", test.name, resp, test.resp, cmp.Diff(resp, test.resp, protocmp.Transform()))
 		}
 
 		if !test.expectErr && test.req.Parameters[ParamNfsExportOptions] != "" {
@@ -709,6 +711,30 @@ func TestControllerGetCapabilities(t *testing.T) {
 
 // TODO:
 func TestControllerExpandVolume(t *testing.T) {
+}
+
+func TestControllerModifyVolume_Unimplemented(t *testing.T) {
+	ctrl := &controllerServer{}
+
+	req := &csi.ControllerModifyVolumeRequest{}
+	resp, err := ctrl.ControllerModifyVolume(context.Background(), req)
+
+	if resp != nil {
+		t.Errorf("expected nil response, got: %v", resp)
+	}
+	if err == nil {
+		t.Fatalf("expected error, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok {
+		t.Fatalf("expected gRPC status error, got: %v", err)
+	}
+	if st.Code() != codes.Unimplemented {
+		t.Errorf("expected Unimplemented code, got: %v", st.Code())
+	}
+	if st.Message() != "ControllerModifyVolume is not implemented" {
+		t.Errorf("unexpected error message: %v", st.Message())
+	}
 }
 
 func TestGetRequestCapacity(t *testing.T) {
