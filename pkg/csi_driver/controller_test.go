@@ -711,6 +711,40 @@ func TestCreateVolume(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "create volume with mount options",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier":          zonalTier,
+					"protocol":      v4_1FileProtocol,
+					"mount-options": "noatime,nodiratime",
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v4_1FileProtocol,
+						attrMountOptions: "noatime,nodiratime",
+					},
+				},
+			},
+			features: features,
+		},
 	}
 
 	for _, test := range cases {
