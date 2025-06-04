@@ -333,6 +333,22 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "valid request with mountOptions in VolumeContext",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext: map[string]string{
+					attrIP:           "1.1.1.1",
+					attrVolume:       "test-volume",
+					attrMountOptions: "noatime,nodiratime",
+				},
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "noatime,nodiratime"}},
+		},
 		// TODO: Revisit this (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47).
 		// {
 		// 	name: "target path doesn't exist",
@@ -1031,6 +1047,50 @@ func TestNodeStageVolumeUpdateLockInfo(t *testing.T) {
 		if diff := cmp.Diff(test.expectedCM, cm); diff != "" {
 			t.Errorf("test %q failed: unexpected diff (-want +got):\n%s", test.name, diff)
 		}
+	}
+}
+
+func TestNodeStageVolume_AppendsMountOptions(t *testing.T) {
+	testEnv := initTestNodeServer(t)
+	attr := map[string]string{
+		attrIP:           "10.0.0.1",
+		attrVolume:       "vol1",
+		attrMountOptions: "hard,intr",
+	}
+	req := &csi.NodeStageVolumeRequest{
+		VolumeId:          "vol-test",
+		StagingTargetPath: "/tmp/stage",
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		VolumeContext: attr,
+	}
+
+	_, err := testEnv.ns.NodeStageVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("NodeStageVolume failed: %v", err)
+	}
+
+	fm := testEnv.fm
+	if len(fm.MountPoints) == 0 {
+		t.Fatalf("expected a mount call")
+	}
+	found := false
+	for _, mp := range fm.MountPoints {
+		for _, opt := range mp.Opts {
+			if opt == "hard,intr" {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected mount options 'hard,intr' to be present in mount call")
 	}
 }
 
