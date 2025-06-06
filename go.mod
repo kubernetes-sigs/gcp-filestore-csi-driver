@@ -1,12 +1,13 @@
 module sigs.k8s.io/gcp-filestore-csi-driver
 
-go 1.21
-toolchain go1.24.1
+go 1.23.0
+
+toolchain go1.24.2
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0
 	cloud.google.com/go/resourcemanager v1.10.1
-	github.com/container-storage-interface/spec v1.8.0
+	github.com/container-storage-interface/spec v1.11.0
 	github.com/golang/protobuf v1.5.4
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
