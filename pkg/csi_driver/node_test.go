@@ -333,6 +333,22 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name: "valid request with mountOptions in VolumeContext",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext: map[string]string{
+					attrIP:           "1.1.1.1",
+					attrVolume:       "test-volume",
+					attrMountOptions: "noatime,nodiratime",
+				},
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "noatime,nodiratime"}},
+		},
 		// TODO: Revisit this (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47).
 		// {
 		// 	name: "target path doesn't exist",
