@@ -473,8 +473,9 @@ func TestCreateVolume(t *testing.T) {
 					},
 				},
 				Parameters: map[string]string{
-					"tier":     zonalTier,
-					"protocol": v4_1FileProtocol,
+					"tier":        zonalTier,
+					"protocol":    v4_1FileProtocol,
+					"source-path": "marketing/dir1",
 				},
 			},
 			resp: &csi.CreateVolumeResponse{
@@ -485,6 +486,7 @@ func TestCreateVolume(t *testing.T) {
 						attrIP:           testIP,
 						attrVolume:       newInstanceVolume,
 						attrFileProtocol: v4_1FileProtocol,
+						attrSourcePath:   "marketing/dir1",
 					},
 				},
 			},

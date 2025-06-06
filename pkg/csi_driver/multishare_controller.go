@@ -233,6 +233,11 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 		return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("%v operation %q poll error: %w", shareCreateWorkflow.opType, shareCreateWorkflow.opName, err))
 	}
 	resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes)
+
+	if p := getSourcePathFromParameters(req.GetParameters()); p != "" {
+		resp.Volume.VolumeContext[attrSourcePath] = p
+	}
+
 	return resp, file.StatusError(err)
 }
 
