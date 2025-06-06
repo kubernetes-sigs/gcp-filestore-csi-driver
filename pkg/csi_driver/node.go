@@ -54,7 +54,7 @@ var (
 // TODO(b/375481562): refactor config map utils & remove node driver's dependency on lockReleaseController
 type nodeServer struct {
 	driver                *GCFSDriver
-	mounter               mount.Interface
+	mounter               *mount.SafeFormatAndMount
 	metaService           metadata.Service
 	volumeLocks           *util.VolumeLocks
 	lockReleaseController *lockrelease.LockReleaseController
@@ -62,7 +62,7 @@ type nodeServer struct {
 	csi.UnimplementedNodeServer
 }
 
-func newNodeServer(driver *GCFSDriver, mounter mount.Interface, metaService metadata.Service, featureOptions *GCFSDriverFeatureOptions) (csi.NodeServer, error) {
+func newNodeServer(driver *GCFSDriver, mounter *mount.SafeFormatAndMount, metaService metadata.Service, featureOptions *GCFSDriverFeatureOptions) (csi.NodeServer, error) {
 	ns := &nodeServer{
 		driver:      driver,
 		mounter:     mounter,
