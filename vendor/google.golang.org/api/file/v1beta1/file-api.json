@@ -502,7 +502,7 @@
                       "type": "string"
                     },
                     "updateMask": {
-                      "description": "Required. Mask of fields to update. At least one path must be supplied in this field. The elements of the repeated paths field may only include these fields: * \"description\" * \"file_shares\" * \"labels\"",
+                      "description": "Required. Mask of fields to update. At least one path must be supplied in this field. The elements of the repeated paths field may only include these fields: * \"description\" * \"directory_services\" * \"file_shares\" * \"labels\"",
                       "format": "google-fieldmask",
                       "location": "query",
                       "type": "string"
@@ -511,6 +511,34 @@
                   "path": "v1beta1/{+name}",
                   "request": {
                     "$ref": "Instance"
+                  },
+                  "response": {
+                    "$ref": "Operation"
+                  },
+                  "scopes": [
+                    "https://www.googleapis.com/auth/cloud-platform"
+                  ]
+                },
+                "promoteReplica": {
+                  "description": "Promote an standby instance (replica).",
+                  "flatPath": "v1beta1/projects/{projectsId}/locations/{locationsId}/instances/{instancesId}:promoteReplica",
+                  "httpMethod": "POST",
+                  "id": "file.projects.locations.instances.promoteReplica",
+                  "parameterOrder": [
+                    "name"
+                  ],
+                  "parameters": {
+                    "name": {
+                      "description": "Required. The resource name of the instance, in the format `projects/{project_id}/locations/{location_id}/instances/{instance_id}`.",
+                      "location": "path",
+                      "pattern": "^projects/[^/]+/locations/[^/]+/instances/[^/]+$",
+                      "required": true,
+                      "type": "string"
+                    }
+                  },
+                  "path": "v1beta1/{+name}:promoteReplica",
+                  "request": {
+                    "$ref": "PromoteReplicaRequest"
                   },
                   "response": {
                     "$ref": "Operation"
@@ -557,7 +585,7 @@
                   ],
                   "parameters": {
                     "name": {
-                      "description": "Required. `projects/{project_id}/locations/{location_id}/instances/{instance_id}`. The resource name of the instance, in the format",
+                      "description": "Required. The resource name of the instance, in the format `projects/{project_id}/locations/{location_id}/instances/{instance_id}`.",
                       "location": "path",
                       "pattern": "^projects/[^/]+/locations/[^/]+/instances/[^/]+$",
                       "required": true,
@@ -1041,7 +1069,7 @@
       }
     }
   },
-  "revision": "20231210",
+  "revision": "20240716",
   "rootUrl": "https://file.googleapis.com/",
   "schemas": {
     "Backup": {
@@ -1067,6 +1095,21 @@
         "downloadBytes": {
           "description": "Output only. Amount of bytes that will be downloaded if the backup is restored",
           "format": "int64",
+          "readOnly": true,
+          "type": "string"
+        },
+        "fileSystemProtocol": {
+          "description": "Output only. The file system protocol of the source Filestore instance that this backup is created from.",
+          "enum": [
+            "FILE_PROTOCOL_UNSPECIFIED",
+            "NFS_V3",
+            "NFS_V4_1"
+          ],
+          "enumDescriptions": [
+            "FILE_PROTOCOL_UNSPECIFIED serves a \"not set\" default value when a FileProtocol is a separate field in a message.",
+            "NFS 3.0.",
+            "NFS 4.1."
+          ],
           "readOnly": true,
           "type": "string"
         },
@@ -1157,6 +1200,13 @@
           "format": "int64",
           "readOnly": true,
           "type": "string"
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional. Input only. Immutable. Tag keys/values directly bound to this resource. For example: \"123/environment\": \"production\", \"123/costCenter\": \"marketing\"",
+          "type": "object"
         }
       },
       "type": "object"
@@ -1570,7 +1620,7 @@
         },
         "directoryServices": {
           "$ref": "DirectoryServicesConfig",
-          "description": "Directory Services configuration for Kerberos-based authentication. Should only be set if protocol is \"NFS_V4_1\"."
+          "description": "Optional. Directory Services configuration for Kerberos-based authentication. Should only be set if protocol is \"NFS_V4_1\"."
         },
         "etag": {
           "description": "Server-specified ETag for the instance resource to prevent simultaneous updates from overwriting each other.",
@@ -1635,6 +1685,10 @@
           ],
           "type": "string"
         },
+        "replication": {
+          "$ref": "Replication",
+          "description": "Optional. Replicaition configuration."
+        },
         "satisfiesPzi": {
           "description": "Output only. Reserved for future use.",
           "readOnly": true,
@@ -1658,7 +1712,8 @@
             "SUSPENDED",
             "REVERTING",
             "SUSPENDING",
-            "RESUMING"
+            "RESUMING",
+            "PROMOTING"
           ],
           "enumDescriptions": [
             "State not set.",
@@ -1671,7 +1726,8 @@
             "The instance is suspended. You can get further details from the `suspension_reasons` field of the `Instance` resource.",
             "The instance is reverting to a snapshot.",
             "The instance is in the process of becoming suspended.",
-            "The instance is in the process of becoming active."
+            "The instance is in the process of becoming active.",
+            "The replica instance is being promoted."
           ],
           "readOnly": true,
           "type": "string"
@@ -1696,6 +1752,13 @@
           },
           "readOnly": true,
           "type": "array"
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional. Input only. Immutable. Tag keys/values directly bound to this resource. For example: \"123/environment\": \"production\", \"123/costCenter\": \"marketing\"",
+          "type": "object"
         },
         "tier": {
           "description": "The service tier of the instance.",
@@ -1890,7 +1953,7 @@
       "type": "object"
     },
     "MaintenancePolicy": {
-      "description": "LINT.IfChange Defines policies to service maintenance events.",
+      "description": "Defines policies to service maintenance events.",
       "id": "MaintenancePolicy",
       "properties": {
         "createTime": {
@@ -1959,11 +2022,11 @@
       "id": "ManagedActiveDirectoryConfig",
       "properties": {
         "computer": {
-          "description": "The computer name is used as a prefix to the mount remote target. Example: if the computer_name is `my-computer`, the mount command will look like: `$mount -o vers=4,sec=krb5 my-computer.filestore.:`.",
+          "description": "Required. The computer name is used as a prefix to the mount remote target. Example: if the computer is `my-computer`, the mount command will look like: `$mount -o vers=4.1,sec=krb5 my-computer.filestore.: `.",
           "type": "string"
         },
         "domain": {
-          "description": "Fully qualified domain name.",
+          "description": "Required. The domain resource name, in the format `projects/{project_id}/locations/global/domains/{domain}`.",
           "type": "string"
         }
       },
@@ -2173,6 +2236,89 @@
       },
       "type": "object"
     },
+    "PromoteReplicaRequest": {
+      "description": "PromoteReplicaRequest promotes a Filestore standby instance (replica).",
+      "id": "PromoteReplicaRequest",
+      "properties": {},
+      "type": "object"
+    },
+    "ReplicaConfig": {
+      "description": "Replica configuration for the instance.",
+      "id": "ReplicaConfig",
+      "properties": {
+        "lastActiveSyncTime": {
+          "description": "Output only. The timestamp of the latest replication snapshot taken on the active instance and is already replicated safely.",
+          "format": "google-datetime",
+          "type": "string"
+        },
+        "peerInstance": {
+          "description": "The peer instance.",
+          "type": "string"
+        },
+        "state": {
+          "description": "Output only. The replica state.",
+          "enum": [
+            "STATE_UNSPECIFIED",
+            "CREATING",
+            "READY",
+            "REMOVING",
+            "FAILED"
+          ],
+          "enumDescriptions": [
+            "State not set.",
+            "The replica is being created.",
+            "The replica is ready.",
+            "The replica is being removed.",
+            "The replica is experiencing an issue and might be unusable. You can get further details from the `stateReasons` field of the `ReplicaConfig` object."
+          ],
+          "type": "string"
+        },
+        "stateReasons": {
+          "description": "Output only. Additional information about the replication state, if available.",
+          "items": {
+            "enum": [
+              "STATE_REASON_UNSPECIFIED",
+              "PEER_INSTANCE_UNREACHABLE"
+            ],
+            "enumDescriptions": [
+              "Reason not specified.",
+              "The peer instance is unreachable."
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "Replication": {
+      "description": "Replication specifications.",
+      "id": "Replication",
+      "properties": {
+        "replicas": {
+          "description": "Replicas configuration on the instance. For now, only a single replica config is supported.",
+          "items": {
+            "$ref": "ReplicaConfig"
+          },
+          "type": "array"
+        },
+        "role": {
+          "description": "Output only. The replication role.",
+          "enum": [
+            "ROLE_UNSPECIFIED",
+            "ACTIVE",
+            "STANDBY"
+          ],
+          "enumDescriptions": [
+            "Role not set.",
+            "The instance is a Active replication member, functions as the replication source instance.",
+            "The instance is a Standby replication member, functions as the replication destination instance."
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "RestoreInstanceRequest": {
       "description": "RestoreInstanceRequest restores an existing instance's file share from a backup.",
       "id": "RestoreInstanceRequest",
@@ -2358,6 +2504,13 @@
           ],
           "readOnly": true,
           "type": "string"
+        },
+        "tags": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Optional. Input only. Immutable. Tag keys/values directly bound to this resource. For example: \"123/environment\": \"production\", \"123/costCenter\": \"marketing\"",
+          "type": "object"
         }
       },
       "type": "object"
