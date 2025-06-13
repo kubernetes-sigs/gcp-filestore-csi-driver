@@ -139,6 +139,7 @@ type capacityRangeForTier struct {
 
 // controllerServer handles volume provisioning
 type controllerServer struct {
+	csi.UnimplementedControllerServer
 	config *controllerServerConfig
 }
 
@@ -505,6 +506,10 @@ func (s *controllerServer) ControllerGetCapabilities(ctx context.Context, req *c
 	return &csi.ControllerGetCapabilitiesResponse{
 		Capabilities: s.config.driver.cscap,
 	}, nil
+}
+
+func (d *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "ControllerModifyVolume is not implemented")
 }
 
 // getTierFromParams returns the provided tier or default

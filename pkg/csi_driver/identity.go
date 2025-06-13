@@ -23,6 +23,7 @@ import (
 
 type identityServer struct {
 	driver *GCFSDriver
+	csi.UnimplementedIdentityServer
 }
 
 func newIdentityServer(driver *GCFSDriver) csi.IdentityServer {
