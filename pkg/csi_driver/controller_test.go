@@ -745,6 +745,37 @@ func TestCreateVolume(t *testing.T) {
 			},
 			features: features,
 		},
+		{
+			name: "create volume with regional tier",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": regionalTier,
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
+					},
+				},
+			},
+			features: features,
+		},
 	}
 
 	for _, test := range cases {
@@ -1195,6 +1226,71 @@ func TestGetRequestCapacity(t *testing.T) {
 			tier:          "ZONAL",
 			errorExpected: true,
 		},
+		{
+			name: "required above small regional",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 11 * util.Tb,
+			},
+			tier:  regionalTier,
+			bytes: 11 * util.Tb,
+		},
+		{
+			name: "required in between small and large regional",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 9990 * util.Gb,
+			},
+			tier:  regionalTier,
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required less than small REGIONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 100 * util.Gb,
+			},
+			tier:  regionalTier,
+			bytes: regionalSmallTierMinSize,
+		},
+		{
+			name: "required in small REGIONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 3 * util.Tb,
+			},
+			tier:  regionalTier,
+			bytes: 3 * util.Tb,
+		},
+		{
+			name: "required in small REGIONAL range all cap",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: regionalSmallTierMaxSize,
+			},
+			tier:  regionalTier,
+			bytes: regionalSmallTierMaxSize,
+		},
+		{
+			name: "required in large REGIONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 10 * util.Tb,
+			},
+			tier:  regionalTier,
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required in between small and large REGIONAL range",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: regionalSmallTierMaxSize + 1,
+			},
+			tier:  regionalTier,
+			bytes: 10 * util.Tb,
+		},
+		{
+			name: "required above large REGIONAL range with limit set",
+			capRange: &csi.CapacityRange{
+				LimitBytes:    100 * util.Tb,
+				RequiredBytes: 110 * util.Tb,
+			},
+			tier:          regionalTier,
+			errorExpected: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1464,6 +1560,36 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				ParamConnectMode: "CONNECT_MODE_UNSPECIFIED",
 			},
 			expectErr: true,
+		},
+		{
+			name: "regional tier sets region as location",
+			params: map[string]string{
+				paramTier: regionalTier,
+			},
+			toporeq: &csi.TopologyRequirement{
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "us-central1-c",
+						},
+					},
+				},
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: testRegion, // Should be region, not zone
+				Tier:     regionalTier,
+				Network: file.Network{
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+				Protocol: v3FileProtocol,
+			},
 		},
 	}
 
