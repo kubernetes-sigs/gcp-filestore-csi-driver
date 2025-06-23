@@ -120,9 +120,6 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	}
 	s := &Service{client: client, BasePath: basePath, logger: internaloption.GetLogger(opts)}
 	s.Projects = NewProjectsService(s)
-	if err != nil {
-		return nil, err
-	}
 	if endpoint != "" {
 		s.BasePath = endpoint
 	}
@@ -449,21 +446,22 @@ func (s DenyMaintenancePeriod) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
-// DirectoryServicesConfig: Directory Services configuration for Kerberos-based
-// authentication.
+// DirectoryServicesConfig: Directory Services configuration.
 type DirectoryServicesConfig struct {
+	// Ldap: Configuration for LDAP servers.
+	Ldap *LdapConfig `json:"ldap,omitempty"`
 	// ManagedActiveDirectory: Configuration for Managed Service for Microsoft
 	// Active Directory.
 	ManagedActiveDirectory *ManagedActiveDirectoryConfig `json:"managedActiveDirectory,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "ManagedActiveDirectory") to
-	// unconditionally include in API requests. By default, fields with empty or
-	// default values are omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "Ldap") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "ManagedActiveDirectory") to
-	// include in API requests with the JSON null value. By default, fields with
-	// empty values are omitted from API requests. See
+	// NullFields is a list of field names (e.g. "Ldap") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -566,6 +564,15 @@ type GoogleCloudSaasacceleratorManagementProvidersV1Instance struct {
 	// to Maintenance Window notifications
 	// (go/slm-rollout-maintenance-policies#prerequisites).
 	ConsumerDefinedName string `json:"consumerDefinedName,omitempty"`
+	// ConsumerProjectNumber: Optional. The consumer_project_number associated with
+	// this Apigee instance. This field is added specifically to support Apigee
+	// integration with SLM Rollout and UMM. It represents the numerical project ID
+	// of the GCP project that consumes this Apigee instance. It is used for SLM
+	// rollout notifications and UMM integration, enabling proper mapping to
+	// customer projects and log delivery for Apigee instances. This field
+	// complements consumer_project_id and may be used for specific Apigee
+	// scenarios where the numerical ID is required.
+	ConsumerProjectNumber string `json:"consumerProjectNumber,omitempty"`
 	// CreateTime: Output only. Timestamp when the resource was created.
 	CreateTime string `json:"createTime,omitempty"`
 	// InstanceType: Optional. The instance_type of this instance of format:
@@ -961,8 +968,8 @@ type Instance struct {
 	DeletionProtectionReason string `json:"deletionProtectionReason,omitempty"`
 	// Description: The description of the instance (2048 characters or less).
 	Description string `json:"description,omitempty"`
-	// DirectoryServices: Optional. Directory Services configuration for
-	// Kerberos-based authentication. Should only be set if protocol is "NFS_V4_1".
+	// DirectoryServices: Optional. Directory Services configuration. Should only
+	// be set if protocol is "NFS_V4_1".
 	DirectoryServices *DirectoryServicesConfig `json:"directoryServices,omitempty"`
 	// Etag: Server-specified ETag for the instance resource to prevent
 	// simultaneous updates from overwriting each other.
@@ -1089,6 +1096,45 @@ type Instance struct {
 
 func (s Instance) MarshalJSON() ([]byte, error) {
 	type NoMethod Instance
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// LdapConfig: LdapConfig contains all the parameters for connecting to LDAP
+// servers.
+type LdapConfig struct {
+	// Domain: Required. The LDAP domain name in the format of `my-domain.com`.
+	Domain string `json:"domain,omitempty"`
+	// GroupsOu: Optional. The groups Organizational Unit (OU) is optional. This
+	// parameter is a hint to allow faster lookup in the LDAP namespace. In case
+	// that this parameter is not provided, Filestore instance will query the whole
+	// LDAP namespace.
+	GroupsOu string `json:"groupsOu,omitempty"`
+	// Servers: Required. The servers names are used for specifying the LDAP
+	// servers names. The LDAP servers names can come with two formats: 1. DNS
+	// name, for example: `ldap.example1.com`, `ldap.example2.com`. 2. IP address,
+	// for example: `10.0.0.1`, `10.0.0.2`, `10.0.0.3`. All servers names must be
+	// in the same format: either all DNS names or all IP addresses.
+	Servers []string `json:"servers,omitempty"`
+	// UsersOu: Optional. The users Organizational Unit (OU) is optional. This
+	// parameter is a hint to allow faster lookup in the LDAP namespace. In case
+	// that this parameter is not provided, Filestore instance will query the whole
+	// LDAP namespace.
+	UsersOu string `json:"usersOu,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Domain") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Domain") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s LdapConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod LdapConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -1430,6 +1476,9 @@ type NetworkConfig struct {
 	//   "PRIVATE_SERVICE_ACCESS" - Connect to your Filestore instance using
 	// Private Service Access. Private services access provides an IP address range
 	// for multiple Google Cloud services, including Filestore.
+	//   "PRIVATE_SERVICE_CONNECT" - Connect to your Filestore instance using
+	// Private Service Connect. A connection policy must exist in the region for
+	// the VPC network and the google-cloud-filestore service class.
 	ConnectMode string `json:"connectMode,omitempty"`
 	// IpAddresses: Output only. IPv4 addresses in the format
 	// `{octet1}.{octet2}.{octet3}.{octet4}` or IPv6 addresses in the format
@@ -1445,6 +1494,9 @@ type NetworkConfig struct {
 	// Network: The name of the Google Compute Engine VPC network
 	// (https://cloud.google.com/vpc/docs/vpc) to which the instance is connected.
 	Network string `json:"network,omitempty"`
+	// PscConfig: Optional. Private Service Connect configuration. Should only be
+	// set when connect_mode is PRIVATE_SERVICE_CONNECT.
+	PscConfig *PscConfig `json:"pscConfig,omitempty"`
 	// ReservedIpRange: Optional, reserved_ip_range can have one of the following
 	// two types of values. * CIDR range value when using DIRECT_PEERING connect
 	// mode. * Allocated IP address range
@@ -1505,6 +1557,10 @@ type NfsExportOptions struct {
 	// NfsExportOptions. An error will be returned. The limit is 64 IP
 	// ranges/addresses for each FileShareConfig among all NfsExportOptions.
 	IpRanges []string `json:"ipRanges,omitempty"`
+	// Network: Optional. The source VPC network for ip_ranges. Required for
+	// instances using Private Service Connect, optional otherwise. If provided,
+	// must be the same network specified in the `NetworkConfig.network` field.
+	Network string `json:"network,omitempty"`
 	// SecurityFlavors: The security flavors allowed for mount operations. The
 	// default is AUTH_SYS.
 	//
@@ -1732,6 +1788,31 @@ type PromoteReplicaRequest struct {
 
 func (s PromoteReplicaRequest) MarshalJSON() ([]byte, error) {
 	type NoMethod PromoteReplicaRequest
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// PscConfig: Private Service Connect configuration.
+type PscConfig struct {
+	// EndpointProject: Consumer service project in which the Private Service
+	// Connect endpoint would be set up. This is optional, and only relevant in
+	// case the network is a shared VPC. If this is not specified, the endpoint
+	// would be setup in the VPC host project.
+	EndpointProject string `json:"endpointProject,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "EndpointProject") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "EndpointProject") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s PscConfig) MarshalJSON() ([]byte, error) {
+	type NoMethod PscConfig
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -2281,20 +2362,20 @@ func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall 
 	return c
 }
 
+// ExtraLocationTypes sets the optional parameter "extraLocationTypes": A list
+// of extra location types that should be used as conditions for controlling
+// the visibility of the locations.
+func (c *ProjectsLocationsListCall) ExtraLocationTypes(extraLocationTypes ...string) *ProjectsLocationsListCall {
+	c.urlParams_.SetMulti("extraLocationTypes", append([]string{}, extraLocationTypes...))
+	return c
+}
+
 // Filter sets the optional parameter "filter": A filter to narrow down results
 // to a preferred subset. The filtering language accepts strings like
 // "displayName=tokyo", and is documented in more detail in AIP-160
 // (https://google.aip.dev/160).
 func (c *ProjectsLocationsListCall) Filter(filter string) *ProjectsLocationsListCall {
 	c.urlParams_.Set("filter", filter)
-	return c
-}
-
-// IncludeUnrevealedLocations sets the optional parameter
-// "includeUnrevealedLocations": If true, the returned list will include
-// locations which are not yet revealed.
-func (c *ProjectsLocationsListCall) IncludeUnrevealedLocations(includeUnrevealedLocations bool) *ProjectsLocationsListCall {
-	c.urlParams_.Set("includeUnrevealedLocations", fmt.Sprint(includeUnrevealedLocations))
 	return c
 }
 
