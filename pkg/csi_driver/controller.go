@@ -45,22 +45,27 @@ const (
 	basicSSDTier     = "basic_ssd"
 	highScaleTier    = "high_scale_ssd"
 	zonalTier        = "zonal"
+	regionalTier     = "regional"
 	defaultNetwork   = "default"
 	v3FileProtocol   = "NFS_V3"
 	v4_1FileProtocol = "NFS_V4_1"
 
-	defaultTierMinSize    = 100 * util.Gb
-	defaultTierMaxSize    = 639 * util.Tb / 10
-	enterpriseTierMinSize = 1 * util.Tb
-	enterpriseTierMaxSize = 10 * util.Tb
-	highScaleTierMinSize  = 10 * util.Tb
-	highScaleTierMaxSize  = 100 * util.Tb
-	zonalSmallTierMinSize = 1 * util.Tb
-	zonalSmallTierMaxSize = 9984 * util.Gb
-	zonalLargeTierMinSize = 10 * util.Tb
-	zonalLargeTierMaxSize = 100 * util.Tb
-	premiumTierMinSize    = 25 * util.Tb / 10
-	premiumTierMaxSize    = 639 * util.Tb / 10
+	defaultTierMinSize       = 100 * util.Gb
+	defaultTierMaxSize       = 639 * util.Tb / 10
+	enterpriseTierMinSize    = 1 * util.Tb
+	enterpriseTierMaxSize    = 10 * util.Tb
+	highScaleTierMinSize     = 10 * util.Tb
+	highScaleTierMaxSize     = 100 * util.Tb
+	zonalSmallTierMinSize    = 1 * util.Tb
+	zonalSmallTierMaxSize    = 9984 * util.Gb
+	zonalLargeTierMinSize    = 10 * util.Tb
+	zonalLargeTierMaxSize    = 100 * util.Tb
+	regionalSmallTierMinSize = 1 * util.Tb
+	regionalSmallTierMaxSize = 9984 * util.Gb
+	regionalLargeTierMinSize = 10 * util.Tb
+	regionalLargeTierMaxSize = 100 * util.Tb
+	premiumTierMinSize       = 25 * util.Tb / 10
+	premiumTierMaxSize       = 639 * util.Tb / 10
 
 	directPeering        = "DIRECT_PEERING"
 	privateServiceAccess = "PRIVATE_SERVICE_ACCESS"
@@ -114,12 +119,14 @@ const (
 
 // Parameters to define capacity range for Filestore tiers
 var (
-	defaultRange    = capacityRangeForTier{min: defaultTierMinSize, max: defaultTierMaxSize}
-	enterpriseRange = capacityRangeForTier{min: enterpriseTierMinSize, max: enterpriseTierMaxSize}
-	highScaleRange  = capacityRangeForTier{min: highScaleTierMinSize, max: highScaleTierMaxSize}
-	premiumRange    = capacityRangeForTier{min: premiumTierMinSize, max: premiumTierMaxSize}
-	zonalSmallRange = capacityRangeForTier{min: zonalSmallTierMinSize, max: zonalSmallTierMaxSize}
-	zonalLargeRange = capacityRangeForTier{min: zonalLargeTierMinSize, max: zonalLargeTierMaxSize}
+	defaultRange       = capacityRangeForTier{min: defaultTierMinSize, max: defaultTierMaxSize}
+	enterpriseRange    = capacityRangeForTier{min: enterpriseTierMinSize, max: enterpriseTierMaxSize}
+	highScaleRange     = capacityRangeForTier{min: highScaleTierMinSize, max: highScaleTierMaxSize}
+	premiumRange       = capacityRangeForTier{min: premiumTierMinSize, max: premiumTierMaxSize}
+	zonalSmallRange    = capacityRangeForTier{min: zonalSmallTierMinSize, max: zonalSmallTierMaxSize}
+	zonalLargeRange    = capacityRangeForTier{min: zonalLargeTierMinSize, max: zonalLargeTierMaxSize}
+	regionalSmallRange = capacityRangeForTier{min: regionalSmallTierMinSize, max: regionalSmallTierMaxSize}
+	regionalLargeRange = capacityRangeForTier{min: regionalLargeTierMinSize, max: regionalLargeTierMaxSize}
 )
 
 // tierToCapacityRange maps tier names to their corresponding capacity ranges
@@ -131,6 +138,7 @@ var tierToCapacityRange map[string]capacityRangeForTier = map[string]capacityRan
 	premiumTier:    premiumRange,
 	basicSSDTier:   premiumRange, //these two are aliases
 	basicHDDTier:   defaultRange, //these two are aliases
+	regionalTier:   regionalSmallRange,
 }
 
 // capacityRangeForTier represents minimum and maximum capacity values for a tier
@@ -361,7 +369,7 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 	if filer.Tier == enterpriseTier {
 		ipRangeSize = util.IpRangeSizeEnterprise
 	}
-	if filer.Tier == highScaleTier || filer.Tier == zonalTier {
+	if filer.Tier == highScaleTier || filer.Tier == zonalTier || filer.Tier == regionalTier {
 		ipRangeSize = util.IpRangeSizeHighScale
 	}
 	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
@@ -575,6 +583,11 @@ func provisionableCapacityForTier(requestedCapRange *csi.CapacityRange, tier str
 		// invalidCapacityRange() later.
 		return &zonalLargeRange
 	}
+	if tier == regionalTier && requestedCapRange != nil && requestedCapRange.GetRequiredBytes() > regionalSmallTierMaxSize {
+		// keep this check simple since the capacity bounds are checked thoroughly in the
+		// invalidCapacityRange() later.
+		return &regionalLargeRange
+	}
 	validRange, ok := tierToCapacityRange[tier]
 	if !ok {
 		validRange = tierToCapacityRange[defaultTier]
@@ -618,6 +631,11 @@ func invalidVolumeExpansionRequest(capRange *csi.CapacityRange, currentCapacity 
 			klog.Warningf("volume expansion request of %v bytes is beyond the small zonal tier capacity (%v bytes)", currentCapacity, requiredCap)
 			return true
 		}
+	case regionalTier:
+		if currentCapacity <= regionalSmallTierMaxSize && requiredCap > regionalSmallTierMaxSize {
+			klog.Warningf("volume expansion request of %v bytes is beyond the small regional tier capacity (%v bytes)", currentCapacity, requiredCap)
+			return true
+		}
 	}
 	return false
 }
@@ -652,7 +670,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		// Cloud API will validate these
 		case paramTier:
 			tier = v
-			if tier == enterpriseTier {
+			if tier == enterpriseTier || tier == regionalTier {
 				region, err := util.GetRegionFromZone(location)
 				if err != nil {
 					return nil, fmt.Errorf("failed to get region from zone %s: %w", location, err)
