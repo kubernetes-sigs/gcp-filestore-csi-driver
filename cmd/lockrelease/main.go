@@ -79,11 +79,11 @@ func main() {
 
 	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			klog.Infof("Node informer received node create event. %v", obj)
+			klog.V(8).Infof("Node informer received node create event. %v", obj)
 			c.EnqueueCreateEventObject(obj)
 		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
-			klog.Infof("Node informer received node update event. old %v, new %v", oldObj, newObj)
+			klog.V(8).Infof("Node informer received node update event. old %v, new %v", oldObj, newObj)
 			c.EnqueueUpdateEventObject(oldObj, newObj)
 		},
 	})

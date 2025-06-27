@@ -416,7 +416,7 @@ func (c *LockReleaseController) processNextCreateEvent(ctx context.Context) bool
 		// If no error occurs then we Forget this item so it does not
 		// get queued again until another change happens.
 		c.createEventQueue.Forget(obj)
-		klog.Infof("Successfully processed node create event object %v", obj)
+		klog.V(8).Infof("Successfully processed node create event object %v", obj)
 		return true
 	}
 
@@ -452,7 +452,7 @@ func (c *LockReleaseController) processNextUpdateEventWorkItem(ctx context.Conte
 		// If no error occurs then we Forget this item so it does not
 		// get queued again until another change happens.
 		c.updateEventQueue.Forget(obj)
-		klog.Infof("Successfully processed node update event object %v", obj)
+		klog.V(8).Infof("Successfully processed node update event object %v", obj)
 		return true
 	}
 
