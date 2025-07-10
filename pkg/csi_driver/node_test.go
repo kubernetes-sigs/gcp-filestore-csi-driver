@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"github.com/google/go-cmp/cmp"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	mount "k8s.io/mount-utils"
+	"k8s.io/utils/exec"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
@@ -75,12 +77,11 @@ var (
 
 type nodeServerTestEnv struct {
 	ns csi.NodeServer
-	fm *mount.FakeMounter
+	fm *mount.SafeFormatAndMount
 }
 
 func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
-	// TODO: make a constructor in FakeMmounter library
-	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	mounter := NewFakeSafeBlockingMounter(nil)
 	metaserice, err := metadata.NewFakeService()
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
@@ -96,7 +97,7 @@ func initTestNodeServer(t *testing.T) *nodeServerTestEnv {
 }
 
 func initTestNodeServerWithKubeClient(t *testing.T, client kubernetes.Interface) *nodeServer {
-	mounter := &mount.FakeMounter{MountPoints: []mount.MountPoint{}}
+	mounter := NewFakeSafeBlockingMounter(nil)
 	metaserice, err := metadata.NewFakeService()
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
@@ -367,7 +368,11 @@ func TestNodePublishVolume(t *testing.T) {
 	for _, test := range cases {
 		testEnv := initTestNodeServer(t)
 		if test.mounts != nil {
-			testEnv.fm.MountPoints = test.mounts
+			if _, ok := testEnv.fm.Interface.(*FakeBlockingMounter); ok {
+				testEnv.fm.Interface.(*FakeBlockingMounter).MountPoints = test.mounts
+			} else {
+				t.Errorf("no FakeBlockingMounter present")
+			}
 		}
 
 		_, err = testEnv.ns.NodePublishVolume(context.TODO(), test.req)
@@ -377,8 +382,11 @@ func TestNodePublishVolume(t *testing.T) {
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed: got success", test.name)
 		}
-
-		validateMountPoint(t, test.name, testEnv.fm, test.expectedMount)
+		mounter, ok := testEnv.fm.Interface.(*FakeBlockingMounter)
+		if !ok {
+			t.Errorf("no FakeBlockingMounter present")
+		}
+		validateMountPoint(t, test.name, mounter, test.expectedMount)
 		// TODO: ValidateMountActions if possible.
 	}
 }
@@ -466,7 +474,11 @@ func testWindowsNodePublishVolume(t *testing.T) {
 	for _, test := range cases {
 		testEnv := initTestNodeServer(t)
 		if test.mounts != nil {
-			testEnv.fm.MountPoints = test.mounts
+			if _, ok := testEnv.fm.Interface.(*FakeBlockingMounter); ok {
+				testEnv.fm.Interface.(*FakeBlockingMounter).MountPoints = test.mounts
+			} else {
+				t.Errorf("no FakeBlockingMounter present")
+			}
 		}
 
 		_, err = testEnv.ns.NodePublishVolume(context.TODO(), test.req)
@@ -476,8 +488,11 @@ func testWindowsNodePublishVolume(t *testing.T) {
 		if test.expectErr && err == nil {
 			t.Errorf("test %q failed: got success", test.name)
 		}
-
-		validateMountPoint(t, test.name, testEnv.fm, test.expectedMount)
+		mounter, ok := testEnv.fm.Interface.(*FakeBlockingMounter)
+		if !ok {
+			t.Errorf("no FakeBlockingMounter present")
+		}
+		validateMountPoint(t, test.name, mounter, test.expectedMount)
 		// TODO: ValidateMountActions if possible.
 	}
 	goOs = defaultOsString
@@ -543,7 +558,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 	for _, test := range cases {
 		testEnv := initTestNodeServer(t)
 		if test.mounts != nil {
-			testEnv.fm.MountPoints = test.mounts
+			if _, ok := testEnv.fm.Interface.(*FakeBlockingMounter); ok {
+				testEnv.fm.Interface.(*FakeBlockingMounter).MountPoints = test.mounts
+			} else {
+				t.Errorf("no FakeBlockingMounter present")
+			}
 		}
 
 		_, err = testEnv.ns.NodeUnpublishVolume(context.TODO(), test.req)
@@ -554,7 +573,11 @@ func TestNodeUnpublishVolume(t *testing.T) {
 			t.Errorf("test %q failed: got success", test.name)
 		}
 
-		validateMountPoint(t, test.name, testEnv.fm, test.expectedMount)
+		mounter, ok := testEnv.fm.Interface.(*FakeBlockingMounter)
+		if !ok {
+			t.Errorf("no FakeBlockingMounter present")
+		}
+		validateMountPoint(t, test.name, mounter, test.expectedMount)
 		// TODO: ValidateMountActions if possible.
 	}
 }
@@ -684,7 +707,7 @@ func TestNodeGetVolumeStats(t *testing.T) {
 
 }
 
-func validateMountPoint(t *testing.T, name string, fm *mount.FakeMounter, e *mount.MountPoint) {
+func validateMountPoint(t *testing.T, name string, fm *FakeBlockingMounter, e *mount.MountPoint) {
 	if e == nil {
 		if len(fm.MountPoints) != 0 {
 			t.Errorf("test %q failed: got mounts %+v, expected none", name, fm.MountPoints)
@@ -737,15 +760,25 @@ func NewFakeBlockingMounter(operationUnblocker chan chan struct{}) *FakeBlocking
 	}
 }
 
+func NewFakeSafeBlockingMounter(operationUnblocker chan chan struct{}) *mount.SafeFormatAndMount {
+	fakeBlockingMounter := &FakeBlockingMounter{
+		FakeMounter:        &mount.FakeMounter{MountPoints: []mount.MountPoint{}},
+		OperationUnblocker: operationUnblocker,
+	}
+	return mount.NewSafeFormatAndMount(fakeBlockingMounter, exec.New(), mount.WithMaxConcurrentFormat(1, 1*time.Minute))
+}
+
 func (m *FakeBlockingMounter) Mount(source string, target string, fstype string, options []string) error {
-	execute := make(chan struct{})
-	m.OperationUnblocker <- execute
-	<-execute
+	if m.OperationUnblocker != nil {
+		execute := make(chan struct{})
+		m.OperationUnblocker <- execute
+		<-execute
+	}
 	return m.FakeMounter.Mount(source, target, fstype, options)
 }
 
 func initBlockingTestNodeServer(t *testing.T, operationUnblocker chan chan struct{}) *nodeServerTestEnv {
-	mounter := NewFakeBlockingMounter(operationUnblocker)
+	mounter := NewFakeSafeBlockingMounter(operationUnblocker)
 	metaserice, err := metadata.NewFakeService()
 	if err != nil {
 		t.Fatalf("Failed to init metadata service")
