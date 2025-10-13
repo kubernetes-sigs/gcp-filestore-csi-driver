@@ -13,7 +13,7 @@
 # limitations under the License.
 
 # Build driver go binary
-FROM --platform=$BUILDPLATFORM golang:1.24.2 as builder
+FROM --platform=$BUILDPLATFORM golang:1.25.2 as builder
 
 ARG STAGINGVERSION
 ARG TARGETPLATFORM
