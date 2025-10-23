@@ -18,17 +18,15 @@ package remote
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"k8s.io/klog/v2"
 )
 
 func CreateDriverArchive(archiveName, pkgPath, binPath string) (string, error) {
 	klog.V(2).Infof("Building archive...")
-	tarDir, err := ioutil.TempDir("", "driver-temp-archive")
+	tarDir, err := os.MkdirTemp("", "driver-temp-archive")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory %v", err)
 	}
@@ -40,24 +38,32 @@ func CreateDriverArchive(archiveName, pkgPath, binPath string) (string, error) {
 		return "", fmt.Errorf("failed to setup test package %q: %v", tarDir, err)
 	}
 
-	// Build the tar
-	out, err := exec.Command("tar", "-zcvf", archiveName, "-C", tarDir, ".").CombinedOutput()
+	// Build the tar into a unique temp file to avoid collisions when tests run
+	// in parallel (multiple goroutines creating the same filename).
+	tmpFile, err := os.CreateTemp("", "e2e_driver_binaries-*.tar.gz")
 	if err != nil {
+		return "", fmt.Errorf("failed to create temp file for archive: %v", err)
+	}
+	tmpPath := tmpFile.Name()
+	if err := tmpFile.Close(); err != nil {
+		return "", fmt.Errorf("failed to close temp file %s: %v", tmpPath, err)
+	}
+
+	// Build the tar into the temp path
+	out, err := exec.Command("tar", "-zcvf", tmpPath, "-C", tarDir, ".").CombinedOutput()
+	if err != nil {
+		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to build tar %v.  Output:\n%s", err, out)
 	}
 
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("failed to get working directory %v", err)
-	}
-	return filepath.Join(dir, archiveName), nil
+	return tmpPath, nil
 }
 
 func setupBinaries(tarDir, pkgPath, binPath string) error {
 	klog.V(4).Infof("Making binaries and copying to temp dir...")
 	out, err := exec.Command("make", "driver", "-C", pkgPath).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("Failed to make at %s: %v: %v", pkgPath, string(out), err)
+		return fmt.Errorf("failed to make at %s: %v: %v", pkgPath, string(out), err)
 	}
 
 	// Copy binaries
