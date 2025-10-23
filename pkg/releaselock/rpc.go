@@ -16,7 +16,6 @@ package lockrelease
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"net"
 	"net/rpc"
 	"strconv"
@@ -85,24 +84,23 @@ func (c *FileStoreRPCClient) ReleaseLock(hostIP, clientIP string) error {
 	}
 
 	// Connect to RPC server.
-	serverAddress := fmt.Sprintf("%s:%s", hostIP, strconv.Itoa(int(port)))
+	serverAddress := net.JoinHostPort(hostIP, strconv.Itoa(int(port)))
 	klog.Infof("Connecting to RPC server at address %s", serverAddress)
 	conn, err := net.DialTimeout(protocol, serverAddress, connectionTimeout)
 	if err != nil {
 		return fmt.Errorf("failed to connect to Filestore at address %s: %w", serverAddress, err)
 	}
 
-	// Get notified when server closes the connection.
-	notifyClose := make(chan io.ReadWriteCloser, notifyCloseChannelSize)
-	go func() {
-		for rwc := range notifyClose {
-			conn := rwc.(net.Conn)
-			klog.Infof("Server %s disconnected", conn.RemoteAddr().String())
-		}
-	}()
+	// Ensure the network connection is closed on all return paths to avoid
+	// leaking OS file descriptors and goroutines inside the codec.
+	defer conn.Close()
 
-	// Create client using sunrpc codec.
-	client := sunrpc.NewClientCodec(conn, notifyClose)
+	// Create client using sunrpc codec. We don't provide a notify channel
+	// because the codec is nil-safe and will not attempt to send
+	// notifications if the channel is nil. Passing nil avoids creating a
+	// per-call channel and eliminates any risk of leaking goroutines or
+	// unread notifications.
+	client := sunrpc.NewClientCodec(conn, nil)
 
 	klog.Infof("Calling Filestore address %s to release all locks for GKE node %s", serverAddress, clientIP)
 
