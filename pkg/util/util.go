@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -163,14 +162,18 @@ func GetRegionFromZone(location string) (string, error) {
 func ParseTimestamp(timestamp string) (*timestamppb.Timestamp, error) {
 	t, err := time.Parse(time.RFC3339, timestamp)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to parse timestamp %v: %v", timestamp, err.Error())
+		return nil, status.Errorf(codes.Internal, "failed to parse timestamp %v: %v", timestamp, err.Error())
 	}
 
-	tp, err := ptypes.TimestampProto(t)
-	if err != nil {
-		return nil, status.Errorf(codes.Internal, "Failed to covert timestamp %v: %v", timestamp, err.Error())
+	// ptypes.TimestampProto is deprecated; use timestamppb.New
+	tp := timestamppb.New(t)
+	if tp == nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert timestamp %v", timestamp)
 	}
-	return tp, err
+	if err := tp.CheckValid(); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to convert timestamp %v: %v", timestamp, err.Error())
+	}
+	return tp, nil
 }
 
 func IsBackupHandle(handle string) (bool, error) {
@@ -183,14 +186,14 @@ func IsBackupHandle(handle string) (bool, error) {
 
 func IsSnapshotTypeSupported(params map[string]string) (bool, error) {
 	if params == nil {
-		return false, fmt.Errorf("Empty parameters in VolumeSnapshot")
+		return false, fmt.Errorf("empty parameters in VolumeSnapshot")
 	}
 	snapType, ok := params[VolumeSnapshotTypeKey]
 	if !ok {
-		return false, fmt.Errorf("Volume snapshot type is missing")
+		return false, fmt.Errorf("volume snapshot type is missing")
 	}
 	if snapType != VolumeSnapshotTypeBackup {
-		return false, fmt.Errorf("Volume snapshot type %q not supported", snapType)
+		return false, fmt.Errorf("volume snapshot type %q not supported", snapType)
 	}
 	return true, nil
 }
@@ -209,11 +212,11 @@ func BackupVolumeSourceToCSIVolumeHandle(mode, sourceInstance, sourceShare strin
 	splitId := strings.Split(sourceInstance, "/")
 	if mode == "modeInstance" {
 		if len(splitId) != singleShareVolumeTotalElements {
-			return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", sourceInstance)
+			return "", fmt.Errorf("failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}'. Got: %s", sourceInstance)
 		}
 	} else {
 		if len(splitId) != multiShareVolumeTotalElements {
-			return "", fmt.Errorf("Failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}/shares/{share}'. Got: %s", sourceInstance)
+			return "", fmt.Errorf("failed to get id components. Expected 'projects/{project}/location/{zone}/instances/{name}/shares/{share}'. Got: %s", sourceInstance)
 		}
 	}
 	return fmt.Sprintf("%s/%s/%s/%s", mode, splitId[3], splitId[5], sourceShare), nil
@@ -241,14 +244,14 @@ func ParseInstanceURI(instanceURI string) (string, string, string, error) {
 	// Expected instance URI projects/<project-name>/locations/<location-name>/instances/<instance-name>
 	splitStr := strings.Split(instanceURI, "/")
 	if len(splitStr) != InstanceURISplitLen {
-		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
+		return "", "", "", fmt.Errorf("unknown instance URI format %q", instanceURI)
 	}
 
 	project := splitStr[1]
 	location := splitStr[3]
 	instanceName := splitStr[5]
 	if project == "" || location == "" || instanceName == "" {
-		return "", "", "", fmt.Errorf("Unknown instance URI format %q", instanceURI)
+		return "", "", "", fmt.Errorf("unknown instance URI format %q", instanceURI)
 	}
 
 	return project, location, instanceName, nil
@@ -258,7 +261,7 @@ func ParseShareURI(shareURI string) (string, string, string, string, error) {
 	// Expected share URI projects/<project-name>/locations/<location-name>/instances/<instance-name>/shares/<share-name>
 	splitStr := strings.Split(shareURI, "/")
 	if len(splitStr) != ShareURISplitLen {
-		return "", "", "", "", fmt.Errorf("Unknown share URI format %q", shareURI)
+		return "", "", "", "", fmt.Errorf("unknown share URI format %q", shareURI)
 	}
 
 	project := splitStr[1]
@@ -266,7 +269,7 @@ func ParseShareURI(shareURI string) (string, string, string, string, error) {
 	instanceName := splitStr[5]
 	shareName := splitStr[7]
 	if project == "" || location == "" || instanceName == "" || shareName == "" {
-		return "", "", "", "", fmt.Errorf("Unknown share URI format %q", shareURI)
+		return "", "", "", "", fmt.Errorf("unknown share URI format %q", shareURI)
 	}
 
 	return project, location, instanceName, shareName, nil
@@ -313,7 +316,7 @@ func ShareStateToCRDStatus(state string) (v1.FilestoreStatus, error) {
 	case "DELETING", "STATE_UNSPECIFIED":
 		return v1.UPDATING, nil
 	default:
-		return "", fmt.Errorf("Unknown share state: %q", state)
+		return "", fmt.Errorf("unknown share state: %q", state)
 	}
 }
 
@@ -326,7 +329,7 @@ func InstanceStateToCRDStatus(state string) (v1.FilestoreStatus, error) {
 	case "DELETING", "STATE_UNSPECIFIED", "REPAIRING", "ERROR", "RESTORING", "SUSPENDED", "REVERTING", "RESUMING":
 		return v1.UPDATING, nil
 	default:
-		return "", fmt.Errorf("Unknown share state: %q", state)
+		return "", fmt.Errorf("unknown share state: %q", state)
 	}
 }
 
