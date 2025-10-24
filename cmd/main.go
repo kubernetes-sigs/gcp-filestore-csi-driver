@@ -64,7 +64,7 @@ var (
 	coreInformerResyncPeriod   = flag.Duration("core-informer-resync-repriod", 15*time.Minute, "Core informer resync period.")
 
 	// Feature Filestore NFSv4, only take effect when feature-nfs-v4 is set to true.
-	featureNFSv4Support = flag.Bool("feature-nfs-v4", false, "if set to true, the Filestore CSI driver will support NFSv4 support for Filestore.")
+	featureNFSv4Support = flag.Bool("feature-nfs-v4", false, "if set to true, the Filestore CSI driver will support using the NFSv4 protocol for mounting Filestore instances.")
 
 	// Feature multishare backups enabled
 	featureMultishareBackups        = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
