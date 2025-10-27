@@ -87,6 +87,11 @@ type resourceType string
 // resourceTags is the custom type for holding tags.
 type resourceTags map[string]struct{}
 
+// withoutAuthentication is for indicating to set WithoutAuthentication client
+// option when creating GCP tag client. Setting this will result in no other
+// authentication options being used.
+type withoutAuthentication struct{}
+
 // tagServiceManager handles resource tagging.
 type tagServiceManager struct {
 	*Cloud
@@ -97,6 +102,9 @@ type tagServiceManager struct {
 	// httpEndpoint is the endpoint used for tests and can be used
 	// with httpClient only.
 	httpEndpoint string
+	// withoutAuthentication is currently used only for tests. It can
+	// also be utilized for accessing public resources.
+	withoutAuthentication bool
 }
 
 // TagService is the interface that wraps methods for resource tag operations.
@@ -146,11 +154,11 @@ func (src *resourceTags) removeDuplicateTags() {
 
 // mergeTags merges tags from src to dst and removes
 // duplicate tags in dst after merge.
-func (src resourceTags) mergeTags(dst *resourceTags) {
+func (src *resourceTags) mergeTags(dst *resourceTags) {
 	if *dst == nil {
 		*dst = make(resourceTags)
 	}
-	for k, v := range src {
+	for k, v := range *src {
 		(*dst)[k] = v
 	}
 	dst.removeDuplicateTags()
@@ -169,11 +177,13 @@ func NewTagManager(cloud *Cloud, opts ...TagServiceOptions) TagService {
 // TagService arguments.
 func (t *tagServiceManager) parseTagServiceOptions(opts []TagServiceOptions) {
 	for _, opt := range opts {
-		switch opt.(type) {
+		switch val := opt.(type) {
 		case resourceTags:
-			t.tags = opt.(resourceTags)
+			t.tags = val
 		case *http.Client:
-			t.httpClient = opt.(*http.Client)
+			t.httpClient = val
+		case withoutAuthentication:
+			t.withoutAuthentication = true
 		}
 	}
 	return
@@ -221,13 +231,16 @@ func getTagCreateCallOptions() []gax.CallOption {
 // getTagClientOptions returns the tag client options adding the credentials and
 // the endpoint which will be used by the client.
 func (t *tagServiceManager) getTagClientOptions(ctx context.Context, endpoint string) ([]option.ClientOption, error) {
-	tokenSource, err := generateTokenSource(ctx, t.Config)
-	if err != nil {
-		return nil, err
-	}
+	opts := make([]option.ClientOption, 0)
 
-	opts := []option.ClientOption{
-		option.WithTokenSource(tokenSource),
+	if !t.withoutAuthentication {
+		tokenSource, err := generateTokenSource(ctx, t.Config)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, option.WithTokenSource(tokenSource))
+	} else {
+		opts = append(opts, option.WithoutAuthentication())
 	}
 
 	if t.httpClient != nil {
