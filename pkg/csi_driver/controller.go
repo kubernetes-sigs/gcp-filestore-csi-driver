@@ -651,11 +651,6 @@ func isBasicTier(tier string) bool {
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
 func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
-	location, err := s.pickZone(topo)
-	if err != nil {
-		return nil, fmt.Errorf("invalid topology error %w", err)
-	}
-
 	// Set default parameters
 	tier := defaultTier
 	var nfsExportOptions []*file.NfsExportOptions
@@ -663,6 +658,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	connectMode := directPeering
 	kmsKeyName := ""
 	fileProtocol := ""
+	location := ""
 
 	// Validate parameters (case-insensitive).
 	for k, v := range params {
@@ -670,17 +666,13 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		// Cloud API will validate these
 		case paramTier:
 			tier = v
-			if tier == enterpriseTier || tier == regionalTier {
-				region, err := util.GetRegionFromZone(location)
-				if err != nil {
-					return nil, fmt.Errorf("failed to get region from zone %s: %w", location, err)
-				}
-				location = region
-			}
+		case paramLocation:
+			location = v
 		case ParamNfsExportOptions:
 			if s.config.features.FeatureNFSExportOptionsOnCreate == nil || !s.config.features.FeatureNFSExportOptionsOnCreate.Enabled {
 				return nil, fmt.Errorf("nfsExportOptions are disabled")
 			}
+			var err error
 			nfsExportOptions, err = parseNfsExportOptions(v)
 			if err != nil {
 				return nil, fmt.Errorf("failed to parse nfs-export-options-on-create %s: %v", v, err)
@@ -709,6 +701,24 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
+		}
+	}
+
+	// Fill in undeclared defaults from topology
+	if location == "" {
+		zone, err := s.pickZone(topo)
+		if err != nil {
+			return nil, fmt.Errorf("invalid topology error %w", err)
+		}
+
+		if tier == enterpriseTier || tier == regionalTier {
+			region, err := util.GetRegionFromZone(zone)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get region from zone %s: %w", zone, err)
+			}
+			location = region
+		} else {
+			location = zone
 		}
 	}
 

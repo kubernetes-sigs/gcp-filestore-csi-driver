@@ -1603,6 +1603,37 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Protocol: v3FileProtocol,
 			},
 		},
+		{
+			name: "regional tier with explicit location parameter",
+			params: map[string]string{
+				paramTier:     regionalTier,
+				paramLocation: testRegion, // Set the location
+			},
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: testZone,
+						},
+					},
+				},
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: testRegion, // Should be the region
+				Tier:     regionalTier,
+				Network: file.Network{
+					Name:        defaultNetwork,
+					ConnectMode: directPeering,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+				Protocol: v3FileProtocol,
+			},
+		},
 	}
 
 	for _, test := range cases {
