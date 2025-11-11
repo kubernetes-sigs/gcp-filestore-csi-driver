@@ -285,6 +285,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, file.StatusError(err)
 	}
 
+	// If tags are used, check if they exist
+	if tags, ok := req.GetParameters()[cloud.ParameterKeyResourceTags]; ok {
+		_, err = s.config.tagManager.ValidateResourceTags(ctx, "CreateVolumeRequest", tags)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+
 	if filer != nil {
 		klog.V(4).Infof("Found existing instance %+v, current instance %+v\n", filer, newFiler)
 		// Instance already exists, check if it meets the request
