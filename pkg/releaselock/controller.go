@@ -171,9 +171,13 @@ func NewLockReleaseController(
 	}
 	// Add a uniquifier so that two processes on the same host don't accidentally both become active.
 	id := hostname + "_" + string(uuid.NewUUID())
-	ratelimiter := workqueue.NewMaxOfRateLimiter(
+	createRatelimiter := workqueue.NewMaxOfRateLimiter(
 		workqueue.NewItemExponentialFailureRateLimiter(config.WorkQueueRateLimiterBaseDelay, config.WorkQueueRateLimiterMaxDelay),
 		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(50), 300)},
+	)
+	updateRateLimiter := workqueue.NewMaxOfRateLimiter(
+		workqueue.NewItemExponentialFailureRateLimiter(config.WorkQueueRateLimiterBaseDelay, config.WorkQueueRateLimiterMaxDelay),
+		&workqueue.BucketRateLimiter{Limiter: rate.NewLimiter(rate.Limit(20), 100)},
 	)
 
 	eventProcessor := &DefaultEventProcessor{}
@@ -185,8 +189,8 @@ func NewLockReleaseController(
 		client:           client,
 		config:           config,
 		nodeInformer:     nodeInformer,
-		updateEventQueue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		createEventQueue: workqueue.NewRateLimitingQueue(ratelimiter),
+		updateEventQueue: workqueue.NewRateLimitingQueue(updateRateLimiter),
+		createEventQueue: workqueue.NewRateLimitingQueue(createRatelimiter),
 		eventProcessor:   eventProcessor,
 		lockService:      lockService,
 	}
