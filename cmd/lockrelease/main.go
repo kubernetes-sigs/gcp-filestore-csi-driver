@@ -55,6 +55,9 @@ func main() {
 		klog.Fatalf("Failed to create an in cluster config: %v", err)
 	}
 	config.ContentType = runtime.ContentTypeProtobuf
+	// Increase QPS and Burst for large clusters to avoid throttling.
+	config.QPS = 20
+	config.Burst = 40
 	client, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		klog.Fatalf("Failed to create a new discovery client: %v", err)
