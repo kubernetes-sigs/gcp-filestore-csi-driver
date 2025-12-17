@@ -251,3 +251,26 @@ func TestDriverValidateVolumeCapabilities(t *testing.T) {
 		}
 	}
 }
+
+func TestModifyVolumeCapability(t *testing.T) {
+	c, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to init cloud")
+	}
+	config := &GCFSDriverConfig{
+		Name:           "test-driver",
+		Version:        "test-version",
+		RunController:  true,
+		Cloud:          c,
+		FeatureOptions: &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+	}
+	driver, err := NewGCFSDriver(config)
+	if err != nil {
+		t.Fatalf("failed to init driver: %v", err)
+	}
+
+	err = driver.ValidateControllerServiceRequest(csi.ControllerServiceCapability_RPC_MODIFY_VOLUME)
+	if err != nil {
+		t.Errorf("MODIFY_VOLUME capability should be supported, got error: %v", err)
+	}
+}

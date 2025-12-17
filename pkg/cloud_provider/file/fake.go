@@ -159,6 +159,16 @@ func (manager *fakeServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	return instance, nil
 }
 
+func (manager *fakeServiceManager) UpdateInstancePerformance(ctx context.Context, obj *ServiceInstance, perfConfig *PerformanceConfig) error {
+	if perfConfig == nil {
+		return fmt.Errorf("performance config cannot be nil")
+	}
+	if perfConfig.FixedIOPS <= 0 && perfConfig.IOPSPerTB <= 0 {
+		return fmt.Errorf("performance config must have either FixedIOPS or IOPSPerTB set")
+	}
+	return nil
+}
+
 func (manager *fakeServiceManager) CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
 	if backupInfo.SourceInstanceName == "" || backupInfo.SourceShare == "" || backupInfo.SourceVolumeId == "" || backupInfo.BackupURI == "" {
 		return nil, fmt.Errorf("BackupInfo fields are not set %+v", backupInfo)
@@ -254,6 +264,14 @@ func (m *fakeBlockingServiceManager) DeleteInstance(ctx context.Context, obj *Se
 
 func (m *fakeBlockingServiceManager) HasOperations(ctx context.Context, obj *ServiceInstance, operationType string, done bool) (bool, error) {
 	return false, nil
+}
+
+// UpdateInstancePerformance is a no-op in fake blocking service for testing.
+func (m *fakeBlockingServiceManager) UpdateInstancePerformance(ctx context.Context, obj *ServiceInstance, perfConfig *PerformanceConfig) error {
+	execute := make(chan struct{})
+	m.OperationUnblocker <- execute
+	<-execute
+	return m.fakeServiceManager.UpdateInstancePerformance(ctx, obj, perfConfig)
 }
 
 // Multishare fake functions defined here

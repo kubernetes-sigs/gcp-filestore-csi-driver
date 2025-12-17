@@ -19,12 +19,21 @@ package driver
 import (
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	pbSanitizer "github.com/kubernetes-csi/csi-lib-utils/protosanitizer"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
+
+	file "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+)
+
+const (
+	ParamMaxIOPS      = "max_iops"
+	ParamMaxIOPSPerTB = "max_iops_per_tb"
 )
 
 func NewVolumeCapabilityAccessMode(mode csi.VolumeCapability_AccessMode_Mode) *csi.VolumeCapability_AccessMode {
@@ -75,4 +84,69 @@ func IsIpWithinRange(ipAddress, ipRange string) (bool, error) {
 func IsCIDR(ipRange string) bool {
 	_, _, err := net.ParseCIDR(ipRange)
 	return err == nil
+}
+
+func validateAndBuildPerformanceConfig(params map[string]string, capacityBytes int64, tier string) (*file.PerformanceConfig, error) {
+	iopsStr, hasIOPS := params[ParamMaxIOPS]
+	densityStr, hasDensity := params[ParamMaxIOPSPerTB]
+
+	// If no performance parameters specified, return early
+	if !hasIOPS && !hasDensity {
+		return nil, nil
+	}
+
+	// Tier validation: performance config only supported for zonal and regional tiers
+	lowerTier := strings.ToLower(tier)
+	supportedTiers := map[string]bool{
+		zonalTier:    true,
+		regionalTier: true,
+	}
+	if !supportedTiers[lowerTier] {
+		return nil, fmt.Errorf("performance configuration is only supported for zonal and regional tier instances, got tier: %s", tier)
+	}
+
+	// Exclusivity Check
+	if hasIOPS && hasDensity {
+		return nil, fmt.Errorf("cannot specify both %s and %s", ParamMaxIOPS, ParamMaxIOPSPerTB)
+	}
+
+	// Fixed IOPS
+	if hasIOPS {
+		iops, err := strconv.ParseInt(iopsStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %v", ParamMaxIOPS, err)
+		}
+		if iops < 2000 {
+			return nil, fmt.Errorf("%s must be >= 2000", ParamMaxIOPS)
+		}
+		return &file.PerformanceConfig{FixedIOPS: iops}, nil
+	}
+
+	// IOPS per TiB
+	if hasDensity {
+		density, err := strconv.ParseInt(densityStr, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %v", ParamMaxIOPSPerTB, err)
+		}
+
+		// Convert Bytes to TiB (integer division)
+		capacityTiB := capacityBytes / (1024 * 1024 * 1024 * 1024)
+		if capacityTiB < 1 {
+			capacityTiB = 1
+		}
+
+		// Band logic
+		if capacityTiB < 10 {
+			if density < 4000 || density > 17000 {
+				return nil, fmt.Errorf("for instances < 10TiB, density must be 4000-17000")
+			}
+		} else {
+			if density < 3000 || density > 7500 {
+				return nil, fmt.Errorf("for instances >= 10TiB, density must be 3000-7500")
+			}
+		}
+		return &file.PerformanceConfig{IOPSPerTB: density}, nil
+	}
+
+	return nil, nil
 }

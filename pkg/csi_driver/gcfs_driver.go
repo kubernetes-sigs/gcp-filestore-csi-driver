@@ -193,6 +193,7 @@ func NewGCFSDriver(config *GCFSDriverConfig) (*GCFSDriver, error) {
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_VOLUME,
 			csi.ControllerServiceCapability_RPC_EXPAND_VOLUME,
 			csi.ControllerServiceCapability_RPC_CREATE_DELETE_SNAPSHOT,
+			csi.ControllerServiceCapability_RPC_MODIFY_VOLUME,
 		}
 		driver.addControllerServiceCapabilities(csc)
 

@@ -2,10 +2,15 @@ package file
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	filev1beta1 "google.golang.org/api/file/v1beta1"
+	"google.golang.org/api/option"
 
 	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
@@ -138,6 +143,153 @@ func TestCompareInstances(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestUpdateInstancePerformance(t *testing.T) {
+	ctx := context.Background()
+	mgr := &gcfsServiceManager{}
+
+	// nil perfConfig -> error
+	if err := mgr.UpdateInstancePerformance(ctx, &ServiceInstance{}, nil); err == nil {
+		t.Fatalf("expected error for nil perfConfig")
+	}
+
+	// zero values -> error
+	if err := mgr.UpdateInstancePerformance(ctx, &ServiceInstance{}, &PerformanceConfig{}); err == nil {
+		t.Fatalf("expected error for empty perfConfig")
+	}
+
+	// success path using httptest server to mock PATCH and operations GET
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// return an operation for PATCH and return done=true for GET on operations
+		if r.Method == "PATCH" && strings.Contains(r.URL.Path, "/instances/") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"name":"projects/proj/locations/loc/operations/op1","done":false}`)
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/operations/") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"name":"projects/proj/locations/loc/operations/op1","done":true}`)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	// create file service pointing to test server
+	svc, err := filev1beta1.NewService(ctx, option.WithEndpoint(ts.URL+"/"), option.WithHTTPClient(ts.Client()))
+	if err != nil {
+		t.Fatalf("failed to create file service: %v", err)
+	}
+
+	mgr.instancesService = filev1beta1.NewProjectsLocationsInstancesService(svc)
+	mgr.operationsService = filev1beta1.NewProjectsLocationsOperationsService(svc)
+
+	si := &ServiceInstance{Project: "proj", Location: "loc", Name: "name"}
+	perf := &PerformanceConfig{FixedIOPS: 100}
+
+	if err := mgr.UpdateInstancePerformance(ctx, si, perf); err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+}
+
+func TestCreateInstance_PerformanceConfig(t *testing.T) {
+	ctx := context.Background()
+	mgr := &gcfsServiceManager{}
+
+	// Mock server to capture Create request and return operation and instance
+	var captured filev1beta1.Instance
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && strings.Contains(r.URL.Path, "/instances") {
+			if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"name":"projects/proj/locations/loc/operations/op1","done":false}`)
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/operations/") {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"name":"projects/proj/locations/loc/operations/op1","done":true}`)
+			return
+		}
+		if r.Method == "GET" && strings.Contains(r.URL.Path, "/instances/") {
+			// return the instance including performance config (only FixedIops)
+			inst := filev1beta1.Instance{
+				Name:       "projects/proj/locations/loc/instances/name",
+				Tier:       "tier",
+				FileShares: []*filev1beta1.FileShareConfig{{Name: "vol", CapacityGb: 10}},
+				Networks:   []*filev1beta1.NetworkConfig{{Network: "net"}},
+				PerformanceConfig: &filev1beta1.PerformanceConfig{
+					FixedIops: &filev1beta1.FixedIOPS{MaxIops: 42},
+				},
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(&inst)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer ts.Close()
+
+	svc, err := filev1beta1.NewService(ctx, option.WithEndpoint(ts.URL+"/"), option.WithHTTPClient(ts.Client()))
+	if err != nil {
+		t.Fatalf("failed to create file service: %v", err)
+	}
+
+	mgr.instancesService = filev1beta1.NewProjectsLocationsInstancesService(svc)
+	mgr.operationsService = filev1beta1.NewProjectsLocationsOperationsService(svc)
+
+	si := &ServiceInstance{Project: "proj", Location: "loc", Name: "name", PerformanceConfig: &PerformanceConfig{FixedIOPS: 1000}, Volume: Volume{Name: "vol"}, Network: Network{Name: "net"}}
+
+	_, err = mgr.CreateInstance(ctx, si)
+	if err != nil {
+		t.Fatalf("CreateInstance failed: %v", err)
+	}
+
+	if captured.PerformanceConfig == nil {
+		t.Fatalf("expected PerformanceConfig to be sent in Create request")
+	}
+	if captured.PerformanceConfig.FixedIops == nil || captured.PerformanceConfig.FixedIops.MaxIops != 1000 {
+		t.Fatalf("unexpected FixedIops in request: %+v", captured.PerformanceConfig.FixedIops)
+	}
+	if captured.PerformanceConfig.IopsPerTb != nil {
+		t.Fatalf("did not expect IopsPerTb in request: %+v", captured.PerformanceConfig.IopsPerTb)
+	}
+
+	siBoth := &ServiceInstance{Project: "proj", Location: "loc", Name: "name", PerformanceConfig: &PerformanceConfig{FixedIOPS: 1, IOPSPerTB: 2}, Volume: Volume{Name: "vol"}, Network: Network{Name: "net"}}
+	_, err = mgr.CreateInstance(ctx, siBoth)
+	if err == nil {
+		t.Fatalf("expected CreateInstance to fail when both performance params set")
+	}
+}
+
+func TestCloudInstanceToServiceInstance_PerformanceConfig(t *testing.T) {
+	inst := &filev1beta1.Instance{
+		Name:       fmt.Sprintf("projects/%s/locations/%s/instances/%s", "proj", "loc", "name"),
+		Tier:       "tier",
+		FileShares: []*filev1beta1.FileShareConfig{{Name: "vol", CapacityGb: 10}},
+		Networks:   []*filev1beta1.NetworkConfig{{Network: "net", IpAddresses: []string{"1.2.3.4"}}},
+		PerformanceConfig: &filev1beta1.PerformanceConfig{
+			FixedIops: &filev1beta1.FixedIOPS{MaxIops: 1234},
+			IopsPerTb: &filev1beta1.IOPSPerTB{MaxIopsPerTb: 5678},
+		},
+	}
+
+	si, err := cloudInstanceToServiceInstance(inst)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if si.PerformanceConfig == nil {
+		t.Fatalf("expected PerformanceConfig to be populated")
+	}
+	if si.PerformanceConfig.FixedIOPS != 1234 {
+		t.Fatalf("expected FixedIOPS 1234, got %d", si.PerformanceConfig.FixedIOPS)
+	}
+	if si.PerformanceConfig.IOPSPerTB != 5678 {
+		t.Fatalf("expected IOPSPerTB 5678, got %d", si.PerformanceConfig.IOPSPerTB)
 	}
 }
 
