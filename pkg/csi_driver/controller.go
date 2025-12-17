@@ -245,7 +245,8 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 
 	klog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
 
-	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), req.GetAccessibilityRequirements())
+	mutableParams := req.GetMutableParameters()
+	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), mutableParams, req.GetAccessibilityRequirements())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -524,8 +525,68 @@ func (s *controllerServer) ControllerGetCapabilities(ctx context.Context, req *c
 	}, nil
 }
 
-func (d *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "ControllerModifyVolume is not implemented")
+func (s *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	klog.V(4).Infof("ControllerModifyVolume called with request %+v", req)
+
+	// Validation
+	volumeID := req.GetVolumeId()
+	if len(volumeID) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
+
+	params := req.GetMutableParameters()
+	// If no params (or empty), return success (no-op)
+	if len(params) == 0 {
+		klog.V(4).Infof("ControllerModifyVolume: no mutable parameters provided, returning success")
+		return &csi.ControllerModifyVolumeResponse{}, nil
+	}
+
+	// Lock the volume to prevent conflicts with ExpandVolume and other operations
+	if acquired := s.config.volumeLocks.TryAcquire(volumeID); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeID)
+	}
+	defer s.config.volumeLocks.Release(volumeID)
+
+	// Parse the volume ID to get the instance details
+	filer, _, err := getFileInstanceFromID(volumeID)
+	if err != nil {
+		klog.V(4).Infof("failed to parse volume ID %v: %v", volumeID, err)
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	// Get current instance state from the cloud provider
+	filer.Project = s.config.cloud.Project
+	filer, err = s.config.fileService.GetInstance(ctx, filer)
+	if err != nil {
+		if file.IsNotFoundErr(err) {
+			return nil, status.Errorf(codes.NotFound, "Volume %s not found", volumeID)
+		}
+		klog.Errorf("Failed to get instance for volume %s: %v", volumeID, err)
+		return nil, file.StatusError(err)
+	}
+
+	// Validate and build performance configuration from mutable parameters
+	perfConfig, err := validateAndBuildPerformanceConfig(params, filer.Volume.SizeBytes, filer.Tier)
+	if err != nil {
+		klog.Warningf("Performance config validation failed for volume %s: %v", volumeID, err)
+		return nil, status.Errorf(codes.InvalidArgument, "Validation failed: %v", err)
+	}
+
+	// If validation returned nil, it means no relevant performance keys were found
+	if perfConfig == nil {
+		klog.V(4).Infof("No performance parameters found in request for volume %s, returning success", volumeID)
+		return &csi.ControllerModifyVolumeResponse{}, nil
+	}
+
+	// Call cloud provider to update instance performance
+	err = s.config.fileService.UpdateInstancePerformance(ctx, filer, perfConfig)
+	if err != nil {
+		klog.Errorf("Update failed for volume %s: %v", volumeID, err)
+		return nil, file.StatusError(err)
+	}
+
+	klog.Infof("ControllerModifyVolume succeeded for volume %v", volumeID)
+	return &csi.ControllerModifyVolumeResponse{}, nil
 }
 
 // getTierFromParams returns the provided tier or default
@@ -650,7 +711,7 @@ func isBasicTier(tier string) bool {
 
 // generateNewFileInstance populates the GCFS Instance object using
 // CreateVolume parameters
-func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
+func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, params map[string]string, mutableParams map[string]string, topo *csi.TopologyRequirement) (*file.ServiceInstance, error) {
 	location, err := s.pickZone(topo)
 	if err != nil {
 		return nil, fmt.Errorf("invalid topology error %w", err)
@@ -722,6 +783,16 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		fileProtocol = v3FileProtocol
 	}
 
+	// Validate and set performance configuration if provided from mutable params.
+	perfConfig, err := validateAndBuildPerformanceConfig(mutableParams, capBytes, tier)
+	if err != nil {
+		klog.Warningf("Performance config validation failed for volume %s: %v", name, err)
+		return nil, status.Errorf(codes.InvalidArgument, "Validation failed: %v", err)
+	}
+	if perfConfig != nil {
+		klog.V(4).Infof("Setting performance configuration for new volume %s: %+v", name, perfConfig)
+	}
+
 	return &file.ServiceInstance{
 		Project:  s.config.cloud.Project,
 		Name:     name,
@@ -735,9 +806,10 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			Name:      newInstanceVolume,
 			SizeBytes: capBytes,
 		},
-		KmsKeyName:       kmsKeyName,
-		NfsExportOptions: nfsExportOptions,
-		Protocol:         fileProtocol,
+		KmsKeyName:        kmsKeyName,
+		NfsExportOptions:  nfsExportOptions,
+		Protocol:          fileProtocol,
+		PerformanceConfig: perfConfig,
 	}, nil
 }
 
