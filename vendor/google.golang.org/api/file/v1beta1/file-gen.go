@@ -138,7 +138,7 @@ func New(client *http.Client) (*Service, error) {
 	if client == nil {
 		return nil, errors.New("client is nil")
 	}
-	return NewService(context.Background(), option.WithHTTPClient(client))
+	return NewService(context.TODO(), option.WithHTTPClient(client))
 }
 
 type Service struct {
@@ -947,12 +947,12 @@ type Instance struct {
 	CapacityGb int64 `json:"capacityGb,omitempty,string"`
 	// CapacityStepSizeGb: Output only. The increase/decrease capacity step size.
 	CapacityStepSizeGb int64 `json:"capacityStepSizeGb,omitempty,string"`
-	// ConfigurablePerformanceEnabled: Output only. Indicates whether this
-	// instance's performance is configurable. If enabled, adjust it using the
-	// 'performance_config' field.
-	ConfigurablePerformanceEnabled bool `json:"configurablePerformanceEnabled,omitempty"`
 	// CreateTime: Output only. The time when the instance was created.
 	CreateTime string `json:"createTime,omitempty"`
+	// CustomPerformanceSupported: Output only. Indicates whether this instance
+	// supports configuring its performance. If true, the user can configure the
+	// instance's performance by using the 'performance_config' field.
+	CustomPerformanceSupported bool `json:"customPerformanceSupported,omitempty"`
 	// DeletionProtectionEnabled: Optional. Indicates whether the instance is
 	// protected against deletion.
 	DeletionProtectionEnabled bool `json:"deletionProtectionEnabled,omitempty"`
@@ -1649,10 +1649,10 @@ type PerformanceConfig struct {
 	// with an `InvalidArgument` error.
 	FixedIops *FixedIOPS `json:"fixedIops,omitempty"`
 	// IopsPerTb: Provision IOPS dynamically based on the capacity of the instance.
-	// Provisioned read IOPS will be calculated by multiplying the capacity of the
+	// Provisioned IOPS will be calculated by multiplying the capacity of the
 	// instance in TiB by the `iops_per_tb` value. For example, for a 2 TiB
-	// instance with an `iops_per_tb` value of 17000 the provisioned read IOPS will
-	// be 34000. If the calculated value is outside the supported range for the
+	// instance with an `iops_per_tb` value of 17000 the provisioned IOPS will be
+	// 34000. If the calculated value is outside the supported range for the
 	// instance's capacity during instance creation, instance creation will fail
 	// with an `InvalidArgument` error. Similarly, if an instance capacity update
 	// would result in a value outside the supported range, the update will fail
@@ -1679,6 +1679,8 @@ func (s PerformanceConfig) MarshalJSON() ([]byte, error) {
 // PerformanceLimits: The enforced performance limits, calculated from the
 // instance's performance configuration.
 type PerformanceLimits struct {
+	// MaxIops: Output only. The max IOPS.
+	MaxIops int64 `json:"maxIops,omitempty,string"`
 	// MaxReadIops: Output only. The max read IOPS.
 	MaxReadIops int64 `json:"maxReadIops,omitempty,string"`
 	// MaxReadThroughputBps: Output only. The max read throughput in bytes per
@@ -1689,13 +1691,13 @@ type PerformanceLimits struct {
 	// MaxWriteThroughputBps: Output only. The max write throughput in bytes per
 	// second.
 	MaxWriteThroughputBps int64 `json:"maxWriteThroughputBps,omitempty,string"`
-	// ForceSendFields is a list of field names (e.g. "MaxReadIops") to
-	// unconditionally include in API requests. By default, fields with empty or
-	// default values are omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "MaxIops") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "MaxReadIops") to include in API
+	// NullFields is a list of field names (e.g. "MaxIops") to include in API
 	// requests with the JSON null value. By default, fields with empty values are
 	// omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
@@ -1710,6 +1712,27 @@ func (s PerformanceLimits) MarshalJSON() ([]byte, error) {
 // PromoteReplicaRequest: PromoteReplicaRequest promotes a Filestore standby
 // instance (replica).
 type PromoteReplicaRequest struct {
+	// PeerInstance: Optional. The resource name of the peer instance to promote,
+	// in the format
+	// `projects/{project_id}/locations/{location_id}/instances/{instance_id}`. The
+	// peer instance is required if the operation is called on an active instance.
+	PeerInstance string `json:"peerInstance,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "PeerInstance") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PeerInstance") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s PromoteReplicaRequest) MarshalJSON() ([]byte, error) {
+	type NoMethod PromoteReplicaRequest
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
 // ReplicaConfig: Replica configuration for the instance.
@@ -1736,6 +1759,7 @@ type ReplicaConfig struct {
 	// Possible values:
 	//   "STATE_REASON_UNSPECIFIED" - Reason not specified.
 	//   "PEER_INSTANCE_UNREACHABLE" - The peer instance is unreachable.
+	//   "REMOVE_FAILED" - The remove replica peer instance operation failed.
 	StateReasons []string `json:"stateReasons,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "LastActiveSyncTime") to
 	// unconditionally include in API requests. By default, fields with empty or
