@@ -281,7 +281,7 @@ github.com/prometheus/procfs/internal/util
 # github.com/rasky/go-xdr v0.0.0-20170124162913-1a41d1a06c93
 ## explicit
 github.com/rasky/go-xdr/xdr2
-# github.com/sirupsen/logrus v1.9.0
+# github.com/sirupsen/logrus v1.9.3
 ## explicit; go 1.13
 github.com/sirupsen/logrus
 # github.com/spf13/cobra v1.9.1
