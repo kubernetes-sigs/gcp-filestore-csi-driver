@@ -801,6 +801,64 @@ func TestCreateVolume(t *testing.T) {
 			},
 			features: features,
 		},
+		{
+			name: "create volume with valid performance config",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": zonalTier,
+				},
+				MutableParameters: map[string]string{
+					ParamMaxIOPS: "3000",
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
+					},
+				},
+			},
+			features: features,
+		},
+		{
+			name: "create volume with invalid performance config",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier": zonalTier,
+				},
+				MutableParameters: map[string]string{
+					ParamMaxIOPS: "1999", // Below minimum of 2000
+				},
+			},
+			expectErr: true,
+			features:  features,
+		},
 	}
 
 	for _, test := range cases {
@@ -923,27 +981,136 @@ func TestControllerGetCapabilities(t *testing.T) {
 func TestControllerExpandVolume(t *testing.T) {
 }
 
-func TestControllerModifyVolume_Unimplemented(t *testing.T) {
-	ctrl := &controllerServer{}
+func TestControllerModifyVolume_EmptyVolumeID(t *testing.T) {
+	ctrl := initTestController(t)
 
-	req := &csi.ControllerModifyVolumeRequest{}
+	req := &csi.ControllerModifyVolumeRequest{VolumeId: ""}
 	resp, err := ctrl.ControllerModifyVolume(context.Background(), req)
 
 	if resp != nil {
-		t.Errorf("expected nil response, got: %v", resp)
+		t.Fatalf("expected nil response, got: %v", resp)
 	}
 	if err == nil {
-		t.Fatalf("expected error, got nil")
+		t.Fatalf("expected error for empty volume id, got nil")
 	}
 	st, ok := status.FromError(err)
-	if !ok {
-		t.Fatalf("expected gRPC status error, got: %v", err)
+	if !ok || st.Code() != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for empty volume id, got: %v", err)
 	}
-	if st.Code() != codes.Unimplemented {
-		t.Errorf("expected Unimplemented code, got: %v", st.Code())
+}
+
+func TestControllerModifyVolume_NoMutableParamsNoop(t *testing.T) {
+	// create fake service and instance
+	fs, err := file.NewFakeService()
+	if err != nil {
+		t.Fatalf("failed to init fake file service: %v", err)
 	}
-	if st.Message() != "ControllerModifyVolume is not implemented" {
-		t.Errorf("unexpected error message: %v", st.Message())
+	// create an instance matching testVolumeID's instance name ("test-csi")
+	_, err = fs.CreateInstance(context.Background(), &file.ServiceInstance{Name: "test-csi", Location: testZone, Tier: zonalTier, Volume: file.Volume{Name: "vol1", SizeBytes: testBytes}})
+	if err != nil {
+		t.Fatalf("failed to create fake instance: %v", err)
+	}
+
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
+
+	ctrl := newControllerServer(&controllerServerConfig{
+		driver:      initTestDriver(t),
+		fileService: fs,
+		cloud:       cloudProvider,
+		volumeLocks: util.NewVolumeLocks(),
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		tagManager:  cloud.NewFakeTagManager(),
+	})
+
+	req := &csi.ControllerModifyVolumeRequest{VolumeId: testVolumeID}
+	resp, err := ctrl.ControllerModifyVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected success for no-op modify, got error: %v", err)
+	}
+	if resp == nil {
+		t.Fatalf("expected non-nil response for no-op modify")
+	}
+}
+
+func TestControllerModifyVolume_InvalidPerformanceParams(t *testing.T) {
+	fs, err := file.NewFakeService()
+	if err != nil {
+		t.Fatalf("failed to init fake file service: %v", err)
+	}
+	// create an instance with zonal tier so performance params are supported
+	_, err = fs.CreateInstance(context.Background(), &file.ServiceInstance{Name: "test-csi", Location: testZone, Tier: zonalTier, Volume: file.Volume{Name: "vol1", SizeBytes: testBytes}})
+	if err != nil {
+		t.Fatalf("failed to create fake instance: %v", err)
+	}
+
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
+
+	ctrl := newControllerServer(&controllerServerConfig{
+		driver:      initTestDriver(t),
+		fileService: fs,
+		cloud:       cloudProvider,
+		volumeLocks: util.NewVolumeLocks(),
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		tagManager:  cloud.NewFakeTagManager(),
+	})
+
+	// set fixed iops below minimum (1999)
+	req := &csi.ControllerModifyVolumeRequest{
+		VolumeId:          testVolumeID,
+		MutableParameters: map[string]string{ParamMaxIOPS: "1999"},
+	}
+	_, err = ctrl.ControllerModifyVolume(context.Background(), req)
+	if err == nil {
+		t.Fatalf("expected error for invalid performance params, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument for invalid performance params, got: %v", err)
+	}
+}
+
+func TestControllerModifyVolume_UpdateSuccess(t *testing.T) {
+	fs, err := file.NewFakeService()
+	if err != nil {
+		t.Fatalf("failed to init fake file service: %v", err)
+	}
+	// create an instance with zonal tier so performance params are supported
+	_, err = fs.CreateInstance(context.Background(), &file.ServiceInstance{Name: "test-csi", Location: testZone, Tier: zonalTier, Volume: file.Volume{Name: "vol1", SizeBytes: testBytes}})
+	if err != nil {
+		t.Fatalf("failed to create fake instance: %v", err)
+	}
+
+	cloudProvider, err := cloud.NewFakeCloud()
+	if err != nil {
+		t.Fatalf("Failed to get cloud provider: %v", err)
+	}
+
+	ctrl := newControllerServer(&controllerServerConfig{
+		driver:      initTestDriver(t),
+		fileService: fs,
+		cloud:       cloudProvider,
+		volumeLocks: util.NewVolumeLocks(),
+		features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+		tagManager:  cloud.NewFakeTagManager(),
+	})
+
+	// set valid fixed iops
+	req := &csi.ControllerModifyVolumeRequest{
+		VolumeId:          testVolumeID,
+		MutableParameters: map[string]string{ParamMaxIOPS: "3000"},
+	}
+	resp, err := ctrl.ControllerModifyVolume(context.Background(), req)
+	if err != nil {
+		t.Fatalf("expected success for valid update, got error: %v", err)
+	}
+	if resp == nil {
+		t.Fatalf("expected non-nil response for successful update")
 	}
 }
 
@@ -1658,7 +1825,7 @@ func TestGenerateNewFileInstance(t *testing.T) {
 			t.Fatalf("couldn't get internal controller")
 		}
 
-		filer, err := internalServer.generateNewFileInstance(testCSIVolume, testBytes, test.params, test.toporeq)
+		filer, err := internalServer.generateNewFileInstance(testCSIVolume, testBytes, test.params, nil, test.toporeq)
 		if !test.expectErr && err != nil {
 			t.Errorf("test %q failed: %v", test.name, err)
 		}

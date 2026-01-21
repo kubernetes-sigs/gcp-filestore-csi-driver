@@ -42,6 +42,12 @@ import (
 	filev1beta1multishare "google.golang.org/api/file/v1beta1"
 )
 
+// PerformanceConfig holds performance parameters for a Filestore instance.
+type PerformanceConfig struct {
+	FixedIOPS int64 // Fixed IOPS (input/output operations per second).
+	IOPSPerTB int64 // IOPS per TiB for density-based provisioning.
+}
+
 const (
 	testEndpoint    = "test-file.sandbox.googleapis.com"
 	stagingEndpoint = "staging-file.sandbox.googleapis.com"
@@ -99,18 +105,19 @@ type ListFilter struct {
 }
 
 type ServiceInstance struct {
-	Project          string
-	Name             string
-	Location         string
-	Tier             string
-	Network          Network
-	Volume           Volume
-	Labels           map[string]string
-	State            string
-	KmsKeyName       string
-	BackupSource     string
-	NfsExportOptions []*NfsExportOptions
-	Protocol         string
+	Project           string
+	Name              string
+	Location          string
+	Tier              string
+	Network           Network
+	Volume            Volume
+	Labels            map[string]string
+	State             string
+	KmsKeyName        string
+	BackupSource      string
+	NfsExportOptions  []*NfsExportOptions
+	Protocol          string
+	PerformanceConfig *PerformanceConfig
 }
 
 type Volume struct {
@@ -166,6 +173,7 @@ type Service interface {
 	GetInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
 	ListInstances(ctx context.Context, obj *ServiceInstance) ([]*ServiceInstance, error)
 	ResizeInstance(ctx context.Context, obj *ServiceInstance) (*ServiceInstance, error)
+	UpdateInstancePerformance(ctx context.Context, obj *ServiceInstance, perfConfig *PerformanceConfig) error
 	GetBackup(ctx context.Context, backupUri string) (*Backup, error)
 	CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error)
 	DeleteBackup(ctx context.Context, backupId string) error
@@ -297,7 +305,26 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		Protocol:   obj.Protocol,
 	}
 
-	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, backup source %q, protocol %v",
+	// Add performance config if provided. Only one of FixedIOPS or IOPSPerTB
+	// may be set at a time.
+	if obj.PerformanceConfig != nil {
+		if obj.PerformanceConfig.FixedIOPS > 0 && obj.PerformanceConfig.IOPSPerTB > 0 {
+			return nil, fmt.Errorf("performance config must have only one of FixedIOPS or IOPSPerTB set")
+		}
+		instance.PerformanceConfig = &filev1beta1.PerformanceConfig{}
+		if obj.PerformanceConfig.FixedIOPS > 0 {
+			instance.PerformanceConfig.FixedIops = &filev1beta1.FixedIOPS{
+				MaxIops: obj.PerformanceConfig.FixedIOPS,
+			}
+		}
+		if obj.PerformanceConfig.IOPSPerTB > 0 {
+			instance.PerformanceConfig.IopsPerTb = &filev1beta1.IOPSPerTB{
+				MaxIopsPerTb: obj.PerformanceConfig.IOPSPerTB,
+			}
+		}
+	}
+
+	klog.V(4).Infof("Creating instance %q: location %v, tier %q, capacity %v, network %q, ipRange %q, connectMode %q, KmsKeyName %q, labels %v, backup source %q, protocol %v, performance config %+v",
 		obj.Name,
 		obj.Location,
 		instance.Tier,
@@ -308,7 +335,8 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 		instance.KmsKeyName,
 		instance.Labels,
 		instance.FileShares[0].SourceBackup,
-		obj.Protocol)
+		obj.Protocol,
+		obj.PerformanceConfig)
 	op, err := manager.instancesService.Create(locationURI(obj.Project, obj.Location), instance).InstanceId(obj.Name).Context(ctx).Do()
 	if err != nil {
 		klog.Errorf("CreateInstance operation failed for instance %v: %v", obj.Name, err)
@@ -356,6 +384,19 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 	if len(instance.Networks[0].IpAddresses) > 0 {
 		ip = instance.Networks[0].IpAddresses[0]
 	}
+	// Map performance config if present
+	var perfCfg *PerformanceConfig
+	if instance.PerformanceConfig != nil {
+		perf := &PerformanceConfig{}
+		if instance.PerformanceConfig.FixedIops != nil {
+			perf.FixedIOPS = instance.PerformanceConfig.FixedIops.MaxIops
+		}
+		if instance.PerformanceConfig.IopsPerTb != nil {
+			perf.IOPSPerTB = instance.PerformanceConfig.IopsPerTb.MaxIopsPerTb
+		}
+		perfCfg = perf
+	}
+
 	return &ServiceInstance{
 		Project:  project,
 		Location: location,
@@ -371,11 +412,12 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 			ReservedIpRange: instance.Networks[0].ReservedIpRange,
 			ConnectMode:     instance.Networks[0].ConnectMode,
 		},
-		KmsKeyName:   instance.KmsKeyName,
-		Labels:       instance.Labels,
-		State:        instance.State,
-		BackupSource: instance.FileShares[0].SourceBackup,
-		Protocol:     instance.Protocol,
+		KmsKeyName:        instance.KmsKeyName,
+		Labels:            instance.Labels,
+		State:             instance.State,
+		BackupSource:      instance.FileShares[0].SourceBackup,
+		Protocol:          instance.Protocol,
+		PerformanceConfig: perfCfg,
 	}, nil
 }
 
@@ -511,6 +553,56 @@ func (manager *gcfsServiceManager) ResizeInstance(ctx context.Context, obj *Serv
 	}
 	klog.V(4).Infof("After resize got instance %#v", instance)
 	return instance, nil
+}
+
+// UpdateInstancePerformance updates the performance configuration of a Filestore instance.
+func (manager *gcfsServiceManager) UpdateInstancePerformance(ctx context.Context, obj *ServiceInstance, perfConfig *PerformanceConfig) error {
+	if perfConfig == nil {
+		return fmt.Errorf("performance config cannot be nil")
+	}
+
+	instanceuri := instanceURI(obj.Project, obj.Location, obj.Name)
+
+	// Validate config and log the intended change
+	if perfConfig.FixedIOPS <= 0 && perfConfig.IOPSPerTB <= 0 {
+		return fmt.Errorf("performance config must have either FixedIOPS or IOPSPerTB set")
+	}
+	if perfConfig.FixedIOPS > 0 && perfConfig.IOPSPerTB > 0 {
+		return fmt.Errorf("performance config must have only one of FixedIOPS or IOPSPerTB set")
+	}
+
+	// Create a file instance for the Patch request with performance config
+	betaObj := &filev1beta1.Instance{
+		PerformanceConfig: &filev1beta1.PerformanceConfig{},
+	}
+
+	if perfConfig.FixedIOPS > 0 {
+		klog.V(4).Infof("Updating instance %q with FixedIOPS: %d", obj.Name, perfConfig.FixedIOPS)
+		betaObj.PerformanceConfig.FixedIops = &filev1beta1.FixedIOPS{
+			MaxIops: perfConfig.FixedIOPS,
+		}
+	}
+	if perfConfig.IOPSPerTB > 0 {
+		klog.V(4).Infof("Updating instance %q with IOPSPerTB: %d", obj.Name, perfConfig.IOPSPerTB)
+		betaObj.PerformanceConfig.IopsPerTb = &filev1beta1.IOPSPerTB{
+			MaxIopsPerTb: perfConfig.IOPSPerTB,
+		}
+	}
+
+	klog.V(4).Infof("Patching instance %q with performance configuration: %+v", obj.Name, perfConfig)
+	op, err := manager.instancesService.Patch(instanceuri, betaObj).UpdateMask("performanceConfig").Context(ctx).Do()
+	if err != nil {
+		return fmt.Errorf("patch operation failed for performance update: %w", err)
+	}
+
+	klog.V(4).Infof("For instance %s, waiting for performance update op %v to complete", instanceuri, op.Name)
+	err = manager.waitForOp(ctx, op)
+	if err != nil {
+		return fmt.Errorf("WaitFor performance update op %s failed: %w", op.Name, err)
+	}
+
+	klog.Infof("Successfully updated performance configuration for instance %q", obj.Name)
+	return nil
 }
 
 func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri string) (*Backup, error) {
