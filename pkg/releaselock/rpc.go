@@ -83,7 +83,7 @@ func ReleaseLock(hostIP, clientIP string) error {
 	}
 
 	// Connect to RPC server.
-	serverAddress := fmt.Sprintf("%s:%s", hostIP, strconv.Itoa(int(port)))
+	serverAddress := net.JoinHostPort(hostIP, strconv.Itoa(int(port)))
 	klog.Infof("Connecting to RPC server at address %s", serverAddress)
 	conn, err := net.DialTimeout(protocol, serverAddress, connectionTimeout)
 	if err != nil {
