@@ -60,7 +60,7 @@ const (
 	zonalSmallTierMaxSize    = 9984 * util.Gb
 	zonalLargeTierMinSize    = 10 * util.Tb
 	zonalLargeTierMaxSize    = 100 * util.Tb
-	regionalSmallTierMinSize = 1 * util.Tb
+	regionalSmallTierMinSize = 100 * util.Gb
 	regionalSmallTierMaxSize = 9984 * util.Gb
 	regionalLargeTierMinSize = 10 * util.Tb
 	regionalLargeTierMaxSize = 100 * util.Tb

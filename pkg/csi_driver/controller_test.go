@@ -766,7 +766,7 @@ func TestCreateVolume(t *testing.T) {
 			},
 			resp: &csi.CreateVolumeResponse{
 				Volume: &csi.Volume{
-					CapacityBytes: 1 * util.Tb,
+					CapacityBytes: 100 * util.Gb,
 					VolumeId:      testVolumeID,
 					VolumeContext: map[string]string{
 						attrIP:           testIP,
@@ -931,8 +931,153 @@ func TestValidateVolumeCapabilities(t *testing.T) {
 func TestControllerGetCapabilities(t *testing.T) {
 }
 
-// TODO:
 func TestControllerExpandVolume(t *testing.T) {
+	type testCase struct {
+		name        string
+		currentSize int64
+		requiredCap int64
+		tier        string
+		shouldError bool
+	}
+
+	cases := []testCase{
+		{
+			name:        "expand zonal small tier within bounds",
+			currentSize: 2 * util.Tb,
+			requiredCap: 5 * util.Tb,
+			tier:        zonalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand zonal from small to large tier",
+			currentSize: zonalSmallTierMaxSize,
+			requiredCap: 11 * util.Tb,
+			tier:        zonalTier,
+			shouldError: true,
+		},
+		{
+			name:        "expand zonal within large tier bounds",
+			currentSize: 11 * util.Tb,
+			requiredCap: 50 * util.Tb,
+			tier:        zonalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional small tier within bounds",
+			currentSize: 500 * util.Gb,
+			requiredCap: 2 * util.Tb,
+			tier:        regionalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional from 100 GB (new minimum) within bounds",
+			currentSize: regionalSmallTierMinSize,
+			requiredCap: 500 * util.Gb,
+			tier:        regionalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional from small to large tier",
+			currentSize: regionalSmallTierMaxSize,
+			requiredCap: 11 * util.Tb,
+			tier:        regionalTier,
+			shouldError: true,
+		},
+		{
+			name:        "expand regional within large tier bounds",
+			currentSize: 11 * util.Tb,
+			requiredCap: 50 * util.Tb,
+			tier:        regionalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional small tier at new minimum boundary",
+			currentSize: regionalSmallTierMinSize,
+			requiredCap: 3 * util.Tb,
+			tier:        regionalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional just below max small tier",
+			currentSize: 9 * util.Tb,
+			requiredCap: 9500 * util.Gb,
+			tier:        regionalTier,
+			shouldError: false,
+		},
+		{
+			name:        "expand regional at max small tier to large tier",
+			currentSize: regionalSmallTierMaxSize,
+			requiredCap: regionalSmallTierMaxSize + 1,
+			tier:        regionalTier,
+			shouldError: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create fake file service with an instance
+			fs, err := file.NewFakeService()
+			if err != nil {
+				t.Fatalf("failed to init fake file service: %v", err)
+			}
+
+			instanceName := "test-expand-instance"
+			_, err = fs.CreateInstance(context.Background(), &file.ServiceInstance{
+				Name:     instanceName,
+				Location: testZone,
+				Tier:     tc.tier,
+				Volume:   file.Volume{Name: newInstanceVolume, SizeBytes: tc.currentSize},
+			})
+			if err != nil {
+				t.Fatalf("failed to create instance: %v", err)
+			}
+
+			// Create controller
+			cloudProvider, err := cloud.NewFakeCloud()
+			if err != nil {
+				t.Fatalf("failed to create cloud provider: %v", err)
+			}
+
+			ctrl := newControllerServer(&controllerServerConfig{
+				driver:      initTestDriver(t),
+				fileService: fs,
+				cloud:       cloudProvider,
+				volumeLocks: util.NewVolumeLocks(),
+				features:    &GCFSDriverFeatureOptions{FeatureLockRelease: &FeatureLockRelease{}},
+				tagManager:  cloud.NewFakeTagManager(),
+			})
+
+			// Create volumeID from instance
+			volumeID := getVolumeIDFromFileInstance(&file.ServiceInstance{
+				Name:     instanceName,
+				Location: testZone,
+				Volume:   file.Volume{Name: newInstanceVolume},
+			}, modeInstance)
+
+			// Call ControllerExpandVolume
+			req := &csi.ControllerExpandVolumeRequest{
+				VolumeId: volumeID,
+				CapacityRange: &csi.CapacityRange{
+					RequiredBytes: tc.requiredCap,
+				},
+			}
+
+			resp, err := ctrl.ControllerExpandVolume(context.Background(), req)
+
+			if tc.shouldError {
+				if err == nil {
+					t.Errorf("Test %q failed: expected error but got success", tc.name)
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Test %q failed: expected success but got error: %v", tc.name, err)
+				}
+				if resp == nil {
+					t.Errorf("Test %q failed: expected non-nil response", tc.name)
+				}
+			}
+		})
+	}
 }
 
 func TestControllerModifyVolume_EmptyVolumeID(t *testing.T) {
@@ -1422,9 +1567,50 @@ func TestGetRequestCapacity(t *testing.T) {
 			bytes: 10 * util.Tb,
 		},
 		{
-			name: "required less than small REGIONAL minimum capacity",
+			name: "required equals small REGIONAL minimum capacity",
 			capRange: &csi.CapacityRange{
-				RequiredBytes: 100 * util.Gb,
+				RequiredBytes: regionalSmallTierMinSize,
+			},
+			tier:  regionalTier,
+			bytes: regionalSmallTierMinSize,
+		},
+		{
+			name: "required 50 GB below small REGIONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 50 * util.Gb,
+			},
+			tier:  regionalTier,
+			bytes: regionalSmallTierMinSize,
+		},
+		{
+			name: "required 1 GB above small REGIONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 101 * util.Gb,
+			},
+			tier:  regionalTier,
+			bytes: 101 * util.Gb,
+		},
+		{
+			name: "limit equals small REGIONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				LimitBytes: regionalSmallTierMinSize,
+			},
+			tier:  regionalTier,
+			bytes: regionalSmallTierMinSize,
+		},
+		{
+			name: "limit below small REGIONAL minimum capacity",
+			capRange: &csi.CapacityRange{
+				LimitBytes: 50 * util.Gb,
+			},
+			tier:          regionalTier,
+			errorExpected: true,
+		},
+		{
+			name: "required below min, limit equals min REGIONAL",
+			capRange: &csi.CapacityRange{
+				RequiredBytes: 50 * util.Gb,
+				LimitBytes:    regionalSmallTierMinSize,
 			},
 			tier:  regionalTier,
 			bytes: regionalSmallTierMinSize,
