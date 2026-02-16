@@ -1507,11 +1507,13 @@ type NetworkConfig struct {
 	// `{block1}:{block2}:{block3}:{block4}:{block5}:{block6}:{block7}:{block8}`.
 	IpAddresses []string `json:"ipAddresses,omitempty"`
 	// Modes: Internet protocol versions for which the instance has IP addresses
-	// assigned. For this version, only MODE_IPV4 is supported.
+	// assigned.
 	//
 	// Possible values:
 	//   "ADDRESS_MODE_UNSPECIFIED" - Internet protocol not set.
 	//   "MODE_IPV4" - Use the IPv4 internet protocol.
+	//   "MODE_IPV6" - Use the IPv6 internet protocol. Only supported when using
+	// Private Service Connect.
 	Modes []string `json:"modes,omitempty"`
 	// Network: The name of the Google Compute Engine VPC network
 	// (https://cloud.google.com/vpc/docs/vpc) to which the instance is connected.
@@ -2396,7 +2398,11 @@ type ProjectsLocationsListCall struct {
 	header_      http.Header
 }
 
-// List: Lists information about the supported locations for this service.
+// List: Lists information about the supported locations for this service. This
+// method can be called in two ways: * **List all public locations:** Use the
+// path `GET /v1/locations`. * **List project-visible locations:** Use the path
+// `GET /v1/projects/{project_id}/locations`. This may include public locations
+// as well as private or other locations specifically visible to the project.
 //
 // - name: The resource that owns the locations collection, if applicable.
 func (r *ProjectsLocationsService) List(name string) *ProjectsLocationsListCall {
