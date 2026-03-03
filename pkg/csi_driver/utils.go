@@ -37,8 +37,7 @@ const (
 	MaxIOPSZonal            = int64(166000)
 	MaxIOPSRegional         = int64(750000)
 	CapacityThresholdTiB    = 10.0
-	SmallCapacityStep       = int64(100)
-	LargeCapacityStep       = int64(1000)
+	CapacityStep            = int64(100)
 	MinDensitySmallCapacity = int64(4000)
 	MaxDensitySmallCapacity = int64(17000)
 	MinDensityLargeCapacity = int64(3000)
@@ -101,14 +100,6 @@ func bytesToTiB(bytes int64) float64 {
 	return float64(bytes) / (1024.0 * 1024.0 * 1024.0 * 1024.0)
 }
 
-// getStepSize returns the required step size based on capacity
-func getStepSize(capacityTiB float64) int64 {
-	if capacityTiB < CapacityThresholdTiB {
-		return SmallCapacityStep
-	}
-	return LargeCapacityStep
-}
-
 // validateDensityBand validates density against tier-specific bands
 func validateDensityBand(capacityTiB float64, density int64) error {
 	if capacityTiB < CapacityThresholdTiB {
@@ -168,11 +159,9 @@ func validateAndBuildPerformanceConfig(params map[string]string, capacityBytes i
 		if iops > maxIOPS {
 			return nil, fmt.Errorf("%s must be <= %d for tier %s", ParamMaxIOPS, maxIOPS, tier)
 		}
-		// Determine step size based on capacity (small < 10TiB, large >= 10TiB)
-		capacityTiB := bytesToTiB(capacityBytes)
-		stepSize := getStepSize(capacityTiB)
-		if iops%stepSize != 0 {
-			return nil, fmt.Errorf("%s must be a multiple of %d", ParamMaxIOPS, stepSize)
+
+		if iops%CapacityStep != 0 {
+			return nil, fmt.Errorf("%s must be a multiple of %d", ParamMaxIOPS, CapacityStep)
 		}
 		return &file.PerformanceConfig{FixedIOPS: iops}, nil
 	}
@@ -187,10 +176,8 @@ func validateAndBuildPerformanceConfig(params map[string]string, capacityBytes i
 		// Convert Bytes to TiB (float division for precision)
 		capacityTiB := bytesToTiB(capacityBytes)
 
-		// Check step size
-		stepSize := getStepSize(capacityTiB)
-		if density%stepSize != 0 {
-			return nil, fmt.Errorf("%s must be a multiple of %d", ParamMaxIOPSPerTB, stepSize)
+		if density%CapacityStep != 0 {
+			return nil, fmt.Errorf("%s must be a multiple of %d", ParamMaxIOPSPerTB, CapacityStep)
 		}
 
 		// Validate density band

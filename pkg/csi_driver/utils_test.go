@@ -172,7 +172,7 @@ func TestValidateAndBuildPerformanceConfig_FixedIOPS(t *testing.T) {
 			expectIOPS:   750000,
 		},
 		{
-			name: "fixed IOPS not multiple of step size for small instance",
+			name: "fixed IOPS not multiple of 100",
 			params: map[string]string{
 				ParamMaxIOPS: "2050",
 			},
@@ -181,7 +181,7 @@ func TestValidateAndBuildPerformanceConfig_FixedIOPS(t *testing.T) {
 			expectError:  true,
 		},
 		{
-			name: "fixed IOPS multiple of 100 for small instance (< 10TiB)",
+			name: "fixed IOPS multiple of 100",
 			params: map[string]string{
 				ParamMaxIOPS: "2100",
 			},
@@ -189,25 +189,6 @@ func TestValidateAndBuildPerformanceConfig_FixedIOPS(t *testing.T) {
 			tier:         zonalTier,
 			expectError:  false,
 			expectIOPS:   2100,
-		},
-		{
-			name: "fixed IOPS not multiple of 1000 for large instance",
-			params: map[string]string{
-				ParamMaxIOPS: "5500",
-			},
-			capacityByte: 10 * 1024 * 1024 * 1024 * 1024, // 10 TiB
-			tier:         zonalTier,
-			expectError:  true,
-		},
-		{
-			name: "fixed IOPS multiple of 1000 for large instance (>= 10TiB)",
-			params: map[string]string{
-				ParamMaxIOPS: "5000",
-			},
-			capacityByte: 10 * 1024 * 1024 * 1024 * 1024, // 10 TiB
-			tier:         zonalTier,
-			expectError:  false,
-			expectIOPS:   5000,
 		},
 	}
 
@@ -346,7 +327,7 @@ func TestValidateAndBuildPerformanceConfig_IOPSPerTB(t *testing.T) {
 			expectError:  true,
 		},
 		{
-			name: "IOPSPerTB not multiple of 100 for small instance",
+			name: "IOPSPerTB not multiple of 100",
 			params: map[string]string{
 				ParamMaxIOPSPerTB: "4050",
 			},
@@ -356,7 +337,7 @@ func TestValidateAndBuildPerformanceConfig_IOPSPerTB(t *testing.T) {
 			expectDensity: 0,
 		},
 		{
-			name: "IOPSPerTB multiple of 100 for small instance (< 10TiB)",
+			name: "IOPSPerTB multiple of 100",
 			params: map[string]string{
 				ParamMaxIOPSPerTB: "4100",
 			},
@@ -364,26 +345,6 @@ func TestValidateAndBuildPerformanceConfig_IOPSPerTB(t *testing.T) {
 			tier:          zonalTier,
 			expectError:   false,
 			expectDensity: 4100,
-		},
-		{
-			name: "IOPSPerTB not multiple of 1000 for large instance",
-			params: map[string]string{
-				ParamMaxIOPSPerTB: "3500",
-			},
-			capacityByte:  10 * tiBByte,
-			tier:          zonalTier,
-			expectError:   true,
-			expectDensity: 0,
-		},
-		{
-			name: "IOPSPerTB multiple of 1000 for large instance (>= 10TiB)",
-			params: map[string]string{
-				ParamMaxIOPSPerTB: "4000",
-			},
-			capacityByte:  10 * tiBByte,
-			tier:          zonalTier,
-			expectError:   false,
-			expectDensity: 4000,
 		},
 		{
 			name: "total IOPS exceeds zonal tier limit (166000)",
