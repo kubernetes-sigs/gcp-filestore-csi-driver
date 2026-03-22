@@ -32,8 +32,8 @@ import (
 )
 
 const (
-	ParamMaxIOPS            = "max_iops"
-	ParamMaxIOPSPerTB       = "max_iops_per_tb"
+	ParamMaxIOPS            = "max-iops"
+	ParamMaxIOPSPerTB       = "max-iops-per-tb"
 	MaxIOPSZonal            = int64(166000)
 	MaxIOPSRegional         = int64(750000)
 	CapacityThresholdTiB    = 10.0
