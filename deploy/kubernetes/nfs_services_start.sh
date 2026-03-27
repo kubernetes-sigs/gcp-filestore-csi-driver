@@ -2,7 +2,7 @@
 
 set -o errexit
 
-trap "{ exit 0 }" TERM
+trap "{ exit 0; }" TERM
 
 service rpcbind start
 
