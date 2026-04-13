@@ -27,10 +27,10 @@ cloud.google.com/go/auth/oauth2adapt
 # cloud.google.com/go/compute/metadata v0.9.0
 ## explicit; go 1.24.0
 cloud.google.com/go/compute/metadata
-# cloud.google.com/go/iam v1.7.0
+# cloud.google.com/go/iam v1.8.0
 ## explicit; go 1.25.0
 cloud.google.com/go/iam/apiv1/iampb
-# cloud.google.com/go/longrunning v0.9.0
+# cloud.google.com/go/longrunning v0.10.0
 ## explicit; go 1.25.0
 cloud.google.com/go/longrunning
 cloud.google.com/go/longrunning/autogen
