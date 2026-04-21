@@ -30,7 +30,7 @@ require (
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v11.0.1-0.20190805182717-6502b5e7b1b5+incompatible
 	k8s.io/component-base v0.26.0
-	k8s.io/klog/v2 v2.130.1
+	k8s.io/klog/v2 v2.140.0
 	k8s.io/mount-utils v0.32.3
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
 	sigs.k8s.io/boskos v0.0.0-20201002225104-ae3497d24cd7

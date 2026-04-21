@@ -106,6 +106,8 @@ func init() {
 func main() {
 	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
+	flag.Set("legacy_stderr_threshold_behavior", "false")
+	flag.Set("stderrthreshold", "INFO")
 	flag.Parse()
 
 	if !*inProw && *doDriverBuild {
