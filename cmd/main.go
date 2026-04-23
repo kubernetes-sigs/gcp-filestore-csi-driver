@@ -92,6 +92,8 @@ const driverName = "filestore.csi.storage.gke.io"
 func main() {
 	klog.InitFlags(nil)
 	flag.Set("logtostderr", "true")
+	flag.Set("legacy_stderr_threshold_behavior", "false")
+	flag.Set("stderrthreshold", "INFO")
 	flag.Parse()
 
 	var provider *cloud.Cloud
