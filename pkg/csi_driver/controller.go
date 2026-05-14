@@ -375,10 +375,10 @@ func (s *controllerServer) reserveIPRange(ctx context.Context, filer *file.Servi
 		return "", err
 	}
 	ipRangeSize := util.IpRangeSize
-	if filer.Tier == enterpriseTier {
+	if filer.Tier == enterpriseTier || filer.Tier == zonalTier || filer.Tier == regionalTier {
 		ipRangeSize = util.IpRangeSizeEnterprise
 	}
-	if filer.Tier == highScaleTier || filer.Tier == zonalTier || filer.Tier == regionalTier {
+	if filer.Tier == highScaleTier {
 		ipRangeSize = util.IpRangeSizeHighScale
 	}
 	unreservedIPBlock, err := s.config.ipAllocator.GetUnreservedIPRange(cidr, ipRangeSize, cloudInstancesReservedIPRanges)
