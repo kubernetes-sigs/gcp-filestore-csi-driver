@@ -476,14 +476,26 @@ func TestGetRegionFromZone(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "valid location",
+			name:       "valid standard location",
 			location:   "us-central1-c",
 			wantRegion: "us-central1",
 			wantErr:    false,
 		},
 		{
-			name:       "invalid location",
-			location:   "us-central1-1-2",
+			name:       "valid 4-token location",
+			location:   "foo-bar-baz-a",
+			wantRegion: "foo-bar-baz",
+			wantErr:    false,
+		},
+		{
+			name:       "invalid location - too many hyphens",
+			location:   "us-central1-1-2-3",
+			wantRegion: "",
+			wantErr:    true,
+		},
+		{
+			name:       "invalid location - already a region",
+			location:   "us-central1",
 			wantRegion: "",
 			wantErr:    true,
 		},
