@@ -802,6 +802,38 @@ func TestCreateVolume(t *testing.T) {
 			features: features,
 		},
 		{
+			name: "create volume with zonal tier",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					"tier":               zonalTier,
+					"reserved-ipv4-cidr": testReservedIPV4CIDR,
+				},
+			},
+			resp: &csi.CreateVolumeResponse{
+				Volume: &csi.Volume{
+					CapacityBytes: 1 * util.Tb,
+					VolumeId:      testVolumeID,
+					VolumeContext: map[string]string{
+						attrIP:           testIP,
+						attrVolume:       newInstanceVolume,
+						attrFileProtocol: v3FileProtocol,
+					},
+				},
+			},
+			features: features,
+		},
+		{
 			name: "create volume with valid performance config",
 			req: &csi.CreateVolumeRequest{
 				Name: testCSIVolume,
@@ -918,7 +950,7 @@ func TestCreateVolume(t *testing.T) {
 			}
 		}
 		if !test.expectErr && test.req.Parameters[ParamReservedIPV4CIDR] != "" {
-			expectedReservedIpRange := "10.0.0.0/24"
+			expectedReservedIpRange := "10.0.0.0/26"
 			instance, err := cs.config.fileService.GetInstance(context.TODO(), &file.ServiceInstance{Name: test.req.Name})
 			if err != nil {
 				t.Errorf("test %q failed: couldn't get instance %v: %v", test.name, test.req.Name, err)
