@@ -27,16 +27,16 @@ cloud.google.com/go/auth/oauth2adapt
 # cloud.google.com/go/compute/metadata v0.9.0
 ## explicit; go 1.24.0
 cloud.google.com/go/compute/metadata
-# cloud.google.com/go/iam v1.9.0
+# cloud.google.com/go/iam v1.11.0
 ## explicit; go 1.25.0
 cloud.google.com/go/iam/apiv1/iampb
-# cloud.google.com/go/longrunning v0.11.0
+# cloud.google.com/go/longrunning v1.0.0
 ## explicit; go 1.25.0
 cloud.google.com/go/longrunning
 cloud.google.com/go/longrunning/autogen
 cloud.google.com/go/longrunning/autogen/longrunningpb
 cloud.google.com/go/longrunning/internal
-# cloud.google.com/go/resourcemanager v1.13.0
+# cloud.google.com/go/resourcemanager v1.15.0
 ## explicit; go 1.25.0
 cloud.google.com/go/resourcemanager/apiv3
 cloud.google.com/go/resourcemanager/apiv3/resourcemanagerpb
@@ -66,11 +66,11 @@ github.com/evanphx/json-patch
 # github.com/felixge/httpsnoop v1.0.4
 ## explicit; go 1.13
 github.com/felixge/httpsnoop
-# github.com/fsnotify/fsnotify v1.9.0
-## explicit; go 1.17
+# github.com/fsnotify/fsnotify v1.10.1
+## explicit; go 1.23
 github.com/fsnotify/fsnotify
 github.com/fsnotify/fsnotify/internal
-# github.com/fxamacker/cbor/v2 v2.9.1
+# github.com/fxamacker/cbor/v2 v2.9.2
 ## explicit; go 1.20
 github.com/fxamacker/cbor/v2
 # github.com/go-logr/logr v1.4.3
