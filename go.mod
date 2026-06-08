@@ -126,3 +126,5 @@ require (
 )
 
 replace k8s.io/client-go => k8s.io/client-go v0.26.0
+
+replace google.golang.org/api => ./third_party/google.golang.org/api

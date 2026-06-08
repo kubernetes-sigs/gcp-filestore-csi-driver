@@ -77,6 +77,11 @@ type Share struct {
 	NfsExportOptions []*NfsExportOptions
 }
 
+type PoolShare struct {
+	IpAddress string
+	ShareName string
+}
+
 type MultishareInstance struct {
 	Project            string
 	Name               string
@@ -193,6 +198,9 @@ type Service interface {
 	GetOp(ctx context.Context, op string) (*filev1beta1multishare.Operation, error)
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
+	// Share pool ops
+	AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error)
+	ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error
 }
 
 type gcfsServiceManager struct {
@@ -206,6 +214,7 @@ type gcfsServiceManager struct {
 	multishareInstancesService       *filev1beta1multishare.ProjectsLocationsInstancesService
 	multishareInstancesSharesService *filev1beta1multishare.ProjectsLocationsInstancesSharesService
 	multishareOperationsServices     *filev1beta1multishare.ProjectsLocationsOperationsService
+	sharePoolsService                *filev1beta1.ProjectsLocationsSharePoolsService
 }
 
 const (
@@ -273,6 +282,7 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 		instancesService:                 filev1beta1.NewProjectsLocationsInstancesService(fileService),
 		operationsService:                filev1beta1.NewProjectsLocationsOperationsService(fileService),
 		backupService:                    filev1beta1.NewProjectsLocationsBackupsService(fileService),
+		sharePoolsService:                filev1beta1.NewProjectsLocationsSharePoolsService(fileService),
 		fileMultishareService:            fileMultishareService,
 		multishareInstancesService:       filev1beta1multishare.NewProjectsLocationsInstancesService(fileMultishareService),
 		multishareInstancesSharesService: filev1beta1multishare.NewProjectsLocationsInstancesSharesService(fileMultishareService),
@@ -1468,4 +1478,29 @@ func extractNfsShareExportOptions(options []*NfsExportOptions) []*filev1beta1mul
 			})
 	}
 	return filerOpts
+}
+
+func (manager *gcfsServiceManager) AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error) {
+	req := &filev1beta1.AcquireShareRequest{
+		CapacityGb: capacityGb,
+		RequestId:  requestID,
+	}
+	resp, err := manager.sharePoolsService.AcquireShare(parentPool, req).Context(ctx).Do()
+	if err != nil {
+		return nil, err
+	}
+
+	return &PoolShare{
+		IpAddress: resp.IpAddress,
+		ShareName: resp.ShareId,
+	}, nil
+}
+
+func (manager *gcfsServiceManager) ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error {
+	req := &filev1beta1.ReleaseShareRequest{
+		IpAddress: ipAddress,
+		ShareId:   shareID,
+	}
+	_, err := manager.sharePoolsService.ReleaseShare(poolName, req).Context(ctx).Do()
+	return err
 }

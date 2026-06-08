@@ -455,7 +455,7 @@ golang.org/x/text/unicode/norm
 # golang.org/x/time v0.15.0
 ## explicit; go 1.25.0
 golang.org/x/time/rate
-# google.golang.org/api v0.276.0
+# google.golang.org/api v0.276.0 => ./third_party/google.golang.org/api
 ## explicit; go 1.25.0
 google.golang.org/api/cloudresourcemanager/v1
 google.golang.org/api/compute/v1
@@ -1112,3 +1112,4 @@ sigs.k8s.io/structured-merge-diff/v4/value
 sigs.k8s.io/yaml
 sigs.k8s.io/yaml/goyaml.v2
 # k8s.io/client-go => k8s.io/client-go v0.26.0
+# google.golang.org/api => ./third_party/google.golang.org/api
