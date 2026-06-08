@@ -357,11 +357,14 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.Unavailable, err.Error())
 	}
 	resp := &csi.CreateVolumeResponse{Volume: s.fileInstanceToCSIVolume(filer, modeInstance)}
+	if resp.Volume.VolumeContext == nil {
+		resp.Volume.VolumeContext = make(map[string]string)
+	}
 	if mountOptions, ok := req.GetParameters()[paramMountOptions]; ok && mountOptions != "" {
-		if resp.Volume.VolumeContext == nil {
-			resp.Volume.VolumeContext = make(map[string]string)
-		}
 		resp.Volume.VolumeContext[attrMountOptions] = mountOptions
+	}
+	if lateBindSubdir, ok := req.GetParameters()[util.AttrLateBindSubdir]; ok && lateBindSubdir != "" {
+		resp.Volume.VolumeContext[util.AttrLateBindSubdir] = lateBindSubdir
 	}
 
 	klog.Infof("CreateVolume succeeded: %+v", resp)
@@ -770,12 +773,16 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
+		// TODO(amacaskill): Validate the param here to make sure its a valid subdir text.
+		case util.AttrLateBindSubdir:
+			continue
 		case paramFileProtocol:
 			if s.config.features.FeatureNFSv4Support.Enabled {
 				fileProtocol = v
 			}
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMountOptions:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
+
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}

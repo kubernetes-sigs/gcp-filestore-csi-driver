@@ -840,7 +840,7 @@ func TestGenerateCSICreateVolumeResponse(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			//m := initTestMultishareController(t)
 			m := initTestMultishareControllerWithFeatureOpts(t, tc.features)
-			resp, err := m.generateCSICreateVolumeResponse(tc.prefix, tc.share, tc.maxShareSizeBytes)
+			resp, err := m.generateCSICreateVolumeResponse(tc.prefix, tc.share, tc.maxShareSizeBytes, nil)
 			if tc.expectError && err == nil {
 				t.Error("expected error, got none")
 			}

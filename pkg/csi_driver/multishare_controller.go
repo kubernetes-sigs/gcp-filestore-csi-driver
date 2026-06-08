@@ -195,7 +195,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	}
 
 	if share != nil {
-		resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, share, maxShareSizeSizeBytes)
+		resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, share, maxShareSizeSizeBytes, req.GetParameters())
 		return resp, file.StatusError(err)
 	}
 
@@ -207,7 +207,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 
 	klog.Infof("Poll for operation %s (type %s) completed", workflow.opName, workflow.opType.String())
 	if workflow.opType == util.ShareCreate {
-		resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, workflow.share, maxShareSizeSizeBytes)
+		resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, workflow.share, maxShareSizeSizeBytes, req.GetParameters())
 		return resp, file.StatusError(err)
 	}
 
@@ -232,7 +232,7 @@ func (m *MultishareController) CreateVolume(ctx context.Context, req *csi.Create
 	if err != nil {
 		return nil, common.NewTemporaryError(codes.Unavailable, fmt.Errorf("%v operation %q poll error: %w", shareCreateWorkflow.opType, shareCreateWorkflow.opName, err))
 	}
-	resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes)
+	resp, err := m.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceScPrefix, newShare, maxShareSizeSizeBytes, req.GetParameters())
 	return resp, file.StatusError(err)
 }
 
@@ -341,7 +341,7 @@ func (m *MultishareController) createNewBackup(ctx context.Context, backupInfo *
 	return snapshot, nil
 }
 
-func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx context.Context, instancePrefix string, s *file.Share, maxShareSizeSizeBytes int64) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx context.Context, instancePrefix string, s *file.Share, maxShareSizeSizeBytes int64, params map[string]string) (*csi.CreateVolumeResponse, error) {
 	share, err := m.cloud.File.GetShare(ctx, s)
 	if err != nil {
 		return nil, common.NewTemporaryError(codes.Unavailable, err)
@@ -350,7 +350,7 @@ func (m *MultishareController) getShareAndGenerateCSICreateVolumeResponse(ctx co
 	if share.State != "READY" {
 		return nil, status.Errorf(codes.Aborted, "share %s not ready, state %s", share.Name, share.State)
 	}
-	return m.generateCSICreateVolumeResponse(instancePrefix, s, maxShareSizeSizeBytes)
+	return m.generateCSICreateVolumeResponse(instancePrefix, s, maxShareSizeSizeBytes, params)
 }
 
 func (m *MultishareController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
@@ -606,6 +606,9 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
+		// TODO(amacaskill): Validate the param here to make sure its a valid subdir text.
+		case util.AttrLateBindSubdir:
+			continue
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMultishare:
 		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
@@ -822,7 +825,7 @@ func getShareRequestCapacity(capRange *csi.CapacityRange, minShareSizeBytes, max
 	return rCap, nil
 }
 
-func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share, maxShareSizeBytes int64) (*csi.CreateVolumeResponse, error) {
+func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix string, s *file.Share, maxShareSizeBytes int64, params map[string]string) (*csi.CreateVolumeResponse, error) {
 	volId, err := generateMultishareVolumeIdFromShare(instancePrefix, s)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
@@ -859,6 +862,11 @@ func (m *MultishareController) generateCSICreateVolumeResponse(instancePrefix st
 	} else {
 		resp.Volume.VolumeContext[attrFileProtocol] = v3FileProtocol
 	}
+
+	if lateBindSubdir, ok := params[util.AttrLateBindSubdir]; ok && lateBindSubdir != "" {
+		resp.Volume.VolumeContext[util.AttrLateBindSubdir] = lateBindSubdir
+	}
+
 	klog.Infof("CreateVolume resp: %+v", resp)
 	return resp, nil
 }
