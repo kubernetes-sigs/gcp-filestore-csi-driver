@@ -1,6 +1,6 @@
 module sigs.k8s.io/gcp-filestore-csi-driver
 
-go 1.25.0
+go 1.25.8
 
 require (
 	cloud.google.com/go/compute/metadata v0.9.0
@@ -17,12 +17,12 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/net v0.54.0
+	golang.org/x/net v0.55.0
 	golang.org/x/oauth2 v0.36.0
-	golang.org/x/sys v0.44.0
+	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.15.0
-	google.golang.org/api v0.280.0
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20260511170946-3700d4141b60
+	google.golang.org/api v0.283.0
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260523011958-0a33c5d7ca68
 	google.golang.org/grpc v1.81.1
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/gcfg.v1 v1.2.3
@@ -75,7 +75,7 @@ require (
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
-	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
+	github.com/googleapis/enterprise-certificate-proxy v0.3.16 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
