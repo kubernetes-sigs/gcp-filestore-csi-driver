@@ -118,6 +118,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	fstype := "nfs"
 	// Mount options
 	options := []string{"bind"}
+	sensitiveOptions := []string{}
 	// Windows specific values (TODO: Revisit windows specific logic for bind mount)
 	if goOs == "windows" {
 		fstype = "cifs"
@@ -129,7 +130,7 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		}
 
 		options = append(options, secrets[optionSmbUser])
-		options = append(options, secrets[optionSmbPassword])
+		sensitiveOptions = append(sensitiveOptions, secrets[optionSmbPassword])
 
 		//TODO: Remove this workaround after https://github.com/kubernetes/kubernetes/issues/75535
 		if err := os.Remove(targetPath); err != nil && !os.IsNotExist(err) {
@@ -164,7 +165,11 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 		options = append(options, mountOptions)
 	}
 
-	err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
+	if len(sensitiveOptions) > 0 {
+		err = s.mounter.MountSensitive(stagingTargetPath, targetPath, fstype, options, sensitiveOptions)
+	} else {
+		err = s.mounter.Mount(stagingTargetPath, targetPath, fstype, options)
+	}
 	if err != nil {
 		klog.Errorf("Mount %q failed on node %s, cleaning up", targetPath, s.driver.config.NodeName)
 		if unmntErr := mount.CleanupMountPoint(stagingTargetPath, s.mounter, false /* extensiveMountPointCheck */); unmntErr != nil {
