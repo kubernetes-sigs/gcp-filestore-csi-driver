@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gcp-filestore-csi-node
+  namespace: gcp-filestore-csi-driver
+spec:
+  template:
+    spec:
+      tolerations:
+      - key: "sandbox.gke.io/runtime"
+        operator: "Equal"
+        value: "gvisor"
+        effect: "NoSchedule"
