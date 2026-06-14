@@ -17,6 +17,7 @@ limitations under the License.
 package file
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -75,6 +76,11 @@ type Share struct {
 	CapacityBytes    int64
 	BackupId         string
 	NfsExportOptions []*NfsExportOptions
+}
+
+type PoolShare struct {
+	IpAddress string
+	ShareId   string
 }
 
 type MultishareInstance struct {
@@ -193,9 +199,13 @@ type Service interface {
 	GetOp(ctx context.Context, op string) (*filev1beta1multishare.Operation, error)
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
+	// Share pool ops
+	AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error)
+	ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error
 }
 
 type gcfsServiceManager struct {
+	httpClient        *http.Client
 	fileService       *filev1beta1.Service
 	instancesService  *filev1beta1.ProjectsLocationsInstancesService
 	operationsService *filev1beta1.ProjectsLocationsOperationsService
@@ -269,6 +279,7 @@ func NewGCFSService(version string, client *http.Client, primaryFilestoreService
 	klog.Infof("Using endpoint %q for multishare filestore", fileMultishareService.BasePath)
 
 	return &gcfsServiceManager{
+		httpClient:                       client,
 		fileService:                      fileService,
 		instancesService:                 filev1beta1.NewProjectsLocationsInstancesService(fileService),
 		operationsService:                filev1beta1.NewProjectsLocationsOperationsService(fileService),
@@ -1468,4 +1479,86 @@ func extractNfsShareExportOptions(options []*NfsExportOptions) []*filev1beta1mul
 			})
 	}
 	return filerOpts
+}
+
+const (
+	betaBasePath = "v1beta1"
+)
+
+type AcquireShareRequest struct {
+	CapacityGb int64  `json:"capacityGb,string,omitempty"`
+	RequestId  string `json:"requestId,omitempty"`
+}
+
+type AcquireShareResponse struct {
+	IpAddress string `json:"ipAddress,omitempty"`
+	ShareId   string `json:"shareId,omitempty"`
+}
+
+type ReleaseShareRequest struct {
+	IpAddress string `json:"ipAddress,omitempty"`
+	ShareId   string `json:"shareId,omitempty"`
+}
+
+func (manager *gcfsServiceManager) doSharePoolRequest(ctx context.Context, apiMethod string, parentPool string, reqBody interface{}, respBody interface{}) error {
+	basePath := manager.fileService.BasePath
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	url := fmt.Sprintf("%s%s/%s:%s", basePath, betaBasePath, parentPool, apiMethod)
+
+	jsonBytes, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request body for %s: %w", apiMethod, err)
+	}
+
+	// TODO: Update this to use the standard google-api-go-client library once Share Pools API client functions are officially supported.
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		return fmt.Errorf("failed to create http request for %s: %w", apiMethod, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := manager.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request for %s: %w", apiMethod, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return googleapi.CheckResponse(resp)
+	}
+
+	if respBody != nil {
+		if err := json.NewDecoder(resp.Body).Decode(respBody); err != nil {
+			return fmt.Errorf("failed to decode response for %s: %w", apiMethod, err)
+		}
+	}
+	return nil
+}
+
+func (manager *gcfsServiceManager) AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error) {
+	reqBody := &AcquireShareRequest{
+		CapacityGb: capacityGb,
+		RequestId:  requestID,
+	}
+
+	var respBody AcquireShareResponse
+	if err := manager.doSharePoolRequest(ctx, "acquireShare", parentPool, reqBody, &respBody); err != nil {
+		return nil, err
+	}
+
+	return &PoolShare{
+		IpAddress: respBody.IpAddress,
+		ShareId:   respBody.ShareId,
+	}, nil
+}
+
+func (manager *gcfsServiceManager) ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error {
+	reqBody := &ReleaseShareRequest{
+		IpAddress: ipAddress,
+		ShareId:   shareID,
+	}
+
+	return manager.doSharePoolRequest(ctx, "releaseShare", poolName, reqBody, nil)
 }
