@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
+	"strings"
 )
 
 const (
@@ -44,6 +45,7 @@ type fakeServiceManager struct {
 	createdMultishareInstance map[string]*MultishareInstance
 	createdMultishares        map[string]*Share
 	multishareops             []*filev1beta1multishare.Operation
+	allocatedShares           map[string]*PoolShare // key: requestId
 }
 
 var _ Service = &fakeServiceManager{}
@@ -54,6 +56,7 @@ func NewFakeService() (Service, error) {
 		backups:                   map[string]*Backup{},
 		createdMultishareInstance: make(map[string]*MultishareInstance),
 		createdMultishares:        make(map[string]*Share),
+		allocatedShares:           make(map[string]*PoolShare),
 	}, nil
 }
 
@@ -64,6 +67,7 @@ func NewFakeServiceForMultishare(instances []*MultishareInstance, shares []*Shar
 		createdMultishareInstance: make(map[string]*MultishareInstance),
 		createdMultishares:        make(map[string]*Share),
 		multishareops:             make([]*filev1beta1multishare.Operation, 0),
+		allocatedShares:           make(map[string]*PoolShare),
 	}
 
 	for _, instance := range instances {
@@ -528,4 +532,51 @@ func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Opera
 	}
 
 	return !val.ReportRunning, nil
+}
+
+func (manager *fakeServiceManager) AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error) {
+	if manager.allocatedShares == nil {
+		manager.allocatedShares = make(map[string]*PoolShare)
+	}
+	if share, exists := manager.allocatedShares[requestID]; exists {
+		return share, nil
+	}
+
+	if strings.Contains(parentPool, "exhausted") {
+		return nil, &googleapi.Error{
+			Code:    429,
+			Message: "no available shares in the pool",
+		}
+	}
+
+	uuidStr := uuid.New().String()
+	share := &PoolShare{
+		IpAddress: "10.1.1.1",
+		ShareId:   fmt.Sprintf("share-%s", uuidStr),
+	}
+	manager.allocatedShares[requestID] = share
+	return share, nil
+}
+
+func (manager *fakeServiceManager) ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error {
+	if manager.allocatedShares == nil {
+		manager.allocatedShares = make(map[string]*PoolShare)
+	}
+
+	for token, share := range manager.allocatedShares {
+		if share.ShareId == shareID {
+			if share.IpAddress != ipAddress {
+				return fmt.Errorf("IP address mismatch: expected %q, got %q", share.IpAddress, ipAddress)
+			}
+			delete(manager.allocatedShares, token)
+			return nil
+		}
+	}
+	return &googleapi.Error{
+		Errors: []googleapi.ErrorItem{
+			{
+				Reason: "notFound",
+			},
+		},
+	}
 }

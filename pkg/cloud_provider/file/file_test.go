@@ -891,3 +891,158 @@ func TestIsUserError(t *testing.T) {
 		})
 	}
 }
+
+func TestAcquireShare(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/sharePools/test-pool"
+	reqID := "request-123"
+	capacityGb := int64(10)
+
+	tests := []struct {
+		name         string
+		responseCode int
+		responseBody interface{}
+		expectErr    bool
+		expected     *PoolShare
+	}{
+		{
+			name:         "successful acquire",
+			responseCode: http.StatusOK,
+			responseBody: &PoolShare{
+				IpAddress: "10.0.0.1",
+				ShareId:   "share-123",
+			},
+			expected: &PoolShare{
+				IpAddress: "10.0.0.1",
+				ShareId:   "share-123",
+			},
+		},
+		{
+			name:         "api error response",
+			responseCode: http.StatusBadRequest,
+			responseBody: map[string]string{"error": "invalid parent pool"},
+			expectErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := fmt.Sprintf("/v1beta1/%s:acquireShare", parentPool)
+				if r.URL.Path != expectedPath {
+					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
+				}
+
+				var reqBody AcquireShareRequest
+				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+					t.Errorf("failed to decode request body: %v", err)
+				}
+				if reqBody.RequestId != reqID || reqBody.CapacityGb != capacityGb {
+					t.Errorf("unexpected request body fields: %+v", reqBody)
+				}
+
+				w.WriteHeader(tc.responseCode)
+				json.NewEncoder(w).Encode(tc.responseBody)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			resp, err := manager.AcquireShare(ctx, parentPool, reqID, capacityGb)
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if resp.IpAddress != tc.expected.IpAddress || resp.ShareId != tc.expected.ShareId {
+				t.Errorf("expected parsed response %+v, got %+v", tc.expected, resp)
+			}
+		})
+	}
+}
+
+func TestReleaseShare(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/sharePools/test-pool"
+	shareID := "share-123"
+	ipAddr := "10.0.0.1"
+
+	tests := []struct {
+		name         string
+		responseCode int
+		expectErr    bool
+	}{
+		{
+			name:         "successful release",
+			responseCode: http.StatusOK,
+		},
+		{
+			name:         "api error response",
+			responseCode: http.StatusNotFound,
+			expectErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := fmt.Sprintf("/v1beta1/%s:releaseShare", parentPool)
+				if r.URL.Path != expectedPath {
+					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
+				}
+				if r.Method != http.MethodPost {
+					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
+				}
+
+				var reqBody ReleaseShareRequest
+				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+					t.Errorf("failed to decode request body: %v", err)
+				}
+				if reqBody.ShareId != shareID || reqBody.IpAddress != ipAddr {
+					t.Errorf("unexpected request body fields: %+v", reqBody)
+				}
+
+				w.WriteHeader(tc.responseCode)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			err = manager.ReleaseShare(ctx, parentPool, ipAddr, shareID)
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
