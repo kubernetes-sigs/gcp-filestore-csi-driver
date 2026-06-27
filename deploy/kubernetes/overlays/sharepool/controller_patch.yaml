@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-filestore-csi-controller
+  namespace: gcp-filestore-csi-driver
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+      - name: gcr-json-key
+      containers:
+      - name: gcp-filestore-driver
+        args:
+        - "--v=4"
+        - "--endpoint=unix:/csi/csi.sock"
+        - "--nodeid=$(KUBE_NODE_NAME)"
+        - "--controller=true"
+        - "--feature-share-pools=true"
