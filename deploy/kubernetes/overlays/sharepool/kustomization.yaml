@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../stable-master
+patchesStrategicMerge:
+- controller_patch.yaml
+- node_patch.yaml
+namespace: gcp-filestore-csi-driver
+
+images:
+- name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
+  newName: gcr.io/gke-release/gcp-filestore-csi-driver
+  digest: sha256:9bde4b2e81e914c10681298442fbe39bb5be597d82fb91d1f11589ecc2284af0
+
+patches:
+- target:
+    group: apps
+    version: v1
+    kind: Deployment
+    name: gcp-filestore-csi-controller
+    namespace: gcp-filestore-csi-driver
+  patch: |
+    - op: remove
+      path: /spec/template/spec/volumes/1
+    - op: remove
+      path: /spec/template/spec/containers/0/volumeMounts/1
+    - op: remove
+      path: /spec/template/spec/containers/0/env
+
