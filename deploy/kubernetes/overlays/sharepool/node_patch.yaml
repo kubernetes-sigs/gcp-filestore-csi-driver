@@ -8,3 +8,9 @@ spec:
     spec:
       imagePullSecrets:
       - name: gcr-json-key
+      # Add gVisor runtime toleration so the CSI Node DaemonSet schedules on sandboxed nodes
+      tolerations:
+      - key: "sandbox.gke.io/runtime"
+        operator: "Equal"
+        value: "gvisor"
+        effect: "NoSchedule"
