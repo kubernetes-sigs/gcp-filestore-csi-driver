@@ -462,8 +462,8 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 			network = v
 		case ParamConnectMode:
 			connectMode = v
-			if connectMode != directPeering && connectMode != privateServiceAccess {
-				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
+			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
+				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q , %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
 			}
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
@@ -511,7 +511,12 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 
 	// reserve ip range
 	var reservedIPRange string
-	if connectMode == privateServiceAccess {
+	if connectMode == privateServiceConnect {
+		if params[ParamReservedIPRange] != "" ||
+			params[ParamReservedIPV4CIDR] != "" {
+			return nil, status.Error(codes.InvalidArgument, "Reserved IP Range Parameters cannot be used with PRIVATE_SERVICE_CONNECT")
+		}
+	} else if connectMode == privateServiceAccess {
 		if reservedIPRange, ok := params[ParamReservedIPRange]; ok {
 			if IsCIDR(reservedIPRange) {
 				return nil, status.Error(codes.InvalidArgument, "When using connect mode PRIVATE_SERVICE_ACCESS, if reserved IP range is specified, it must be a named address range instead of direct CIDR value")
