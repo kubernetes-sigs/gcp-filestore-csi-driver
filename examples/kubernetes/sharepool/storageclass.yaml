@@ -1,0 +1,7 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: staging-share-pool-sc
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  share-pool: "projects/demo-project/locations/us-central1/sharePools/demo-pool-1"
