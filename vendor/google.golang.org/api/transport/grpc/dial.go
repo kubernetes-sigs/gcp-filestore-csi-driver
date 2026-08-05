@@ -230,7 +230,7 @@ func dialPoolNewAuth(ctx context.Context, secure bool, poolSize int, ds *interna
 			SkipValidation:                  skipValidation,
 			TelemetryAttributes:             ds.TelemetryAttributes,
 		},
-		UniverseDomain: ds.GetUniverseDomain(),
+		UniverseDomain: ds.UniverseDomain,
 		Logger:         ds.Logger,
 	})
 	return pool, err

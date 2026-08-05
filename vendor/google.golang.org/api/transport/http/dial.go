@@ -135,7 +135,7 @@ func newClientNewAuth(ctx context.Context, base http.RoundTripper, ds *internal.
 			SkipValidation:          skipValidation,
 			TelemetryAttributes:     ds.TelemetryAttributes,
 		},
-		UniverseDomain: ds.GetUniverseDomain(),
+		UniverseDomain: ds.UniverseDomain,
 		Logger:         ds.Logger,
 	})
 	if err != nil {
