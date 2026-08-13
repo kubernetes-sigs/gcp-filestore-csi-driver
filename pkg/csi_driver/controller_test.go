@@ -574,6 +574,48 @@ func TestCreateVolume(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name: "private service connect with reserved IP range",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					ParamConnectMode:     privateServiceConnect,
+					ParamReservedIPRange: "test-range",
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name: "private service connect with reserved IPv4 CIDR",
+			req: &csi.CreateVolumeRequest{
+				Name: testCSIVolume,
+				VolumeCapabilities: []*csi.VolumeCapability{
+					{
+						AccessType: &csi.VolumeCapability_Mount{
+							Mount: &csi.VolumeCapability_MountVolume{},
+						},
+						AccessMode: &csi.VolumeCapability_AccessMode{
+							Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						},
+					},
+				},
+				Parameters: map[string]string{
+					ParamConnectMode:      privateServiceConnect,
+					ParamReservedIPV4CIDR: testReservedIPV4CIDR,
+				},
+			},
+			expectErr: true,
+		},
+		{
 			name: "adding tags to filestore instance fails(failure scenario mocked)",
 			req: &csi.CreateVolumeRequest{
 				Name: testCSIVolume2,
@@ -1931,6 +1973,47 @@ func TestGenerateNewFileInstance(t *testing.T) {
 				Network: file.Network{
 					Name:        "foo-network",
 					ConnectMode: privateServiceAccess,
+				},
+				Volume: file.Volume{
+					Name:      newInstanceVolume,
+					SizeBytes: testBytes,
+				},
+				Protocol: v3FileProtocol,
+			},
+		},
+		{
+			name: "custom params, private service connect mode",
+			toporeq: &csi.TopologyRequirement{
+				Requisite: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+				Preferred: []*csi.Topology{
+					{
+						Segments: map[string]string{
+							TopologyKeyZone: "foo-location",
+						},
+					},
+				},
+			},
+			params: map[string]string{
+				paramTier:                       "foo-tier",
+				paramNetwork:                    "foo-network",
+				ParamConnectMode:                privateServiceConnect,
+				"csiProvisionerSecretName":      "foo-secret",
+				"csiProvisionerSecretNamespace": "foo-namespace",
+			},
+			instance: &file.ServiceInstance{
+				Project:  testProject,
+				Name:     testCSIVolume,
+				Location: "foo-location",
+				Tier:     "foo-tier",
+				Network: file.Network{
+					Name:        "foo-network",
+					ConnectMode: privateServiceConnect,
 				},
 				Volume: file.Volume{
 					Name:      newInstanceVolume,
