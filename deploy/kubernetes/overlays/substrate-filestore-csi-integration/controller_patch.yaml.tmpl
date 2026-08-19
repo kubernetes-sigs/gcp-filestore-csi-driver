@@ -1,0 +1,78 @@
+# Controller Deployment patch for GKE Substrate Agent integration with GCP Filestore CSI Driver.
+#
+# Key Features & Rationale:
+# 1. hostNetwork: false
+#    - Disables host networking on the controller pod so GKE Workload Identity metadata server
+#      interception (169.254.169.254) works properly, allowing the pod to authenticate as its
+#      annotated GCP Service Account (substrate-filestore-csi@<PROJECT>.iam.gserviceaccount.com).
+#
+# 2. role: controller-plugin label
+#    - Differentiates controller pods from node daemonset pods so the csi-filestore-controller
+#      Kubernetes Service only routes gRPC control-plane traffic to this controller.
+#
+# 3. socat sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
+#    - Substrate's ate-controller communicates with CSI drivers over gRPC network sockets.
+#      Because the CSI driver natively listens on a local Unix domain socket, this lightweight
+#      socat proxy exposes the Unix socket over TCP port 10000 inside the pod.
+#
+# 4. --feature-share-pools=true
+#    - Enables multi-share SharePool capacity management and AcquireShare/CreateShare logic.
+#
+# 5. --filestore-service-endpoint=${FILESTORE_ENDPOINT}
+#    - Configurable endpoint (defaults to file.googleapis.com for Prod, or staging-file.sandbox.googleapis.com for Staging).
+#
+# 6. Workload Identity Cleanup ($patch: delete)
+#    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
+#      env variables in favor of dynamic, short-lived OAuth tokens via GKE Workload Identity.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-filestore-csi-controller
+  namespace: gcp-filestore-csi-driver
+  labels:
+    role: controller-plugin
+spec:
+  template:
+    metadata:
+      labels:
+        role: controller-plugin
+    spec:
+      hostNetwork: false
+      imagePullSecrets:
+      - name: gcr-json-key
+      # Remove static Service Account key secret volume; authentication is handled via GKE Workload Identity
+      volumes:
+      - name: cloud-sa-volume
+        $patch: delete
+      containers:
+      # socat sidecar bridges TCP port 10000 to the local Unix CSI domain socket for Substrate gRPC control plane
+      - name: socat
+        image: docker.io/alpine/socat:1.7.4.3-r0
+        args:
+        - "tcp-listen:10000,fork,reuseaddr"
+        - "unix-connect:/var/lib/csi/sockets/pluginproxy/csi.sock"
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: socket-dir
+          mountPath: /var/lib/csi/sockets/pluginproxy
+      - name: gcp-filestore-driver
+        volumeMounts:
+        # Explicitly retain socket-dir mount for CSI operations
+        - name: socket-dir
+          mountPath: /csi
+        # Remove static SA key secret mount
+        - name: cloud-sa-volume
+          $patch: delete
+        env:
+        # Remove GOOGLE_APPLICATION_CREDENTIALS for dynamic Workload Identity token discovery
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          $patch: delete
+        args:
+        - "--v=4"
+        - "--endpoint=unix:/csi/csi.sock"
+        - "--nodeid=$(KUBE_NODE_NAME)"
+        - "--controller=true"
+        - "--feature-share-pools=true"
+        - "--filestore-service-endpoint=${FILESTORE_ENDPOINT}"

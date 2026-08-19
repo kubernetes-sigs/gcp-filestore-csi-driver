@@ -1,0 +1,31 @@
+# Kustomization manifest for GKE Substrate Agent integration with GCP Filestore CSI Driver.
+#
+# Usage:
+#   1. Set your GCP project ID and Service Account in serviceaccount_patch.yaml.
+#   2. Deploy all components, patches, services, and Substrate registration with a single command:
+#        kubectl apply -k deploy/kubernetes/overlays/substrate-filestore-csi-integration/
+#
+# Components Included:
+# - Base upstream CSI Driver deployment (../stable-master)
+# - gRPC ClusterIP Service for Substrate control-plane connectivity (service.yaml)
+# - Substrate CSIDriverConfig registration CR (csi_driver_config.yaml)
+# - Controller Workload Identity, role label, and socat proxy patch (controller_patch.yaml)
+# - Node DaemonSet role label and bidirectional mount propagation patch (node_patch.yaml)
+# - ServiceAccount Workload Identity annotation patch (serviceaccount_patch.yaml)
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../stable-master
+- service.yaml
+- csi_driver_config.yaml
+patches:
+- path: controller_patch.yaml
+- path: node_patch.yaml
+- path: serviceaccount_patch.yaml
+namespace: gcp-filestore-csi-driver
+
+images:
+- name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
+  newName: gcr.io/gke-release/gcp-filestore-csi-driver
+  digest: sha256:9bde4b2e81e914c10681298442fbe39bb5be597d82fb91d1f11589ecc2284af0
