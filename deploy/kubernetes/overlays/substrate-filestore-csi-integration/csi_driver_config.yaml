@@ -1,0 +1,22 @@
+# Substrate CSIDriverConfig Custom Resource (ate.dev/v1alpha1).
+#
+# Key Features & Rationale:
+# 1. driverName: filestore.csi.storage.gke.io
+#    - Matches the provisioner and CSI driver name used by GCP Filestore CSI Driver.
+#
+# 2. controllerEndpoint: dns:///csi-filestore-controller.gcp-filestore-csi-driver.svc.cluster.local:50053
+#    - Informs Substrate ate-controller how to reach the Filestore CSI controller gRPC endpoint
+#      via internal cluster DNS.
+#
+# 3. nodeSocketOverride: unix:///var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock
+#    - Points Substrate node worker processes (ateom-gvisor) to the local node CSI socket for
+#      performing NodePublishVolume / NodeUnpublishVolume operations on worker nodes.
+
+apiVersion: ate.dev/v1alpha1
+kind: CSIDriverConfig
+metadata:
+  name: filestore.csi.storage.gke.io
+spec:
+  driverName: filestore.csi.storage.gke.io
+  controllerEndpoint: dns:///csi-filestore-controller.gcp-filestore-csi-driver.svc.cluster.local:50053
+  nodeSocketOverride: unix:///var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock

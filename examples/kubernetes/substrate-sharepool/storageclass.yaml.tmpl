@@ -1,0 +1,13 @@
+# Template for Substrate multi-share StorageClass.
+# Populated automatically using $PROJECT_ID, $GCE_REGION, and $SHARE_POOL_NAME.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: csi-filestore-sc
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  share-pool: "projects/${PROJECT_ID}/locations/${GCE_REGION}/sharePools/${SHARE_POOL_NAME}"
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
