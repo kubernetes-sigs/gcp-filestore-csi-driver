@@ -78,9 +78,22 @@ type Share struct {
 	NfsExportOptions []*NfsExportOptions
 }
 
-type PoolShare struct {
+type PoolVolume struct {
+	Name      string
 	IpAddress string
-	ShareId   string
+	MountName string
+}
+
+type VolumePoolMountPoint struct {
+	MountName string `json:"mountName,omitempty"`
+	IpAddress string `json:"ipAddress,omitempty"`
+}
+
+type VolumePoolVolume struct {
+	Name        string                `json:"name,omitempty"`
+	Description string                `json:"description,omitempty"`
+	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
+	State       string                `json:"state,omitempty"`
 }
 
 type MultishareInstance struct {
@@ -199,9 +212,10 @@ type Service interface {
 	GetOp(ctx context.Context, op string) (*filev1beta1multishare.Operation, error)
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
-	// Share pool ops
-	AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error)
-	ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error
+	// Volume pool ops
+	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, description string) (*PoolVolume, error)
+	DeleteVolumePoolVolume(ctx context.Context, volumeURI string) error
+	GetVolumePoolVolume(ctx context.Context, volumeURI string) (*PoolVolume, error)
 }
 
 type gcfsServiceManager struct {
@@ -1486,80 +1500,112 @@ const (
 	betaBasePath = "v1beta1"
 )
 
-type AcquireShareRequest struct {
-	CapacityGb int64  `json:"capacityGb,string,omitempty"`
-	RequestId  string `json:"requestId,omitempty"`
-}
+func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, description string) (*PoolVolume, error) {
 
-type AcquireShareResponse struct {
-	IpAddress string `json:"ipAddress,omitempty"`
-	ShareId   string `json:"shareId,omitempty"`
-}
-
-type ReleaseShareRequest struct {
-	IpAddress string `json:"ipAddress,omitempty"`
-	ShareId   string `json:"shareId,omitempty"`
-}
-
-func (manager *gcfsServiceManager) doSharePoolRequest(ctx context.Context, apiMethod string, parentPool string, reqBody interface{}, respBody interface{}) error {
 	basePath := manager.fileService.BasePath
 	if !strings.HasSuffix(basePath, "/") {
 		basePath += "/"
 	}
-	url := fmt.Sprintf("%s%s/%s:%s", basePath, betaBasePath, parentPool, apiMethod)
+	url := fmt.Sprintf("%s%s/%s/volumes?volumeId=%s", basePath, betaBasePath, parentPool, volumeID)
 
+	reqBody := &VolumePoolVolume{
+		Description: description,
+	}
 	jsonBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request body for %s: %w", apiMethod, err)
+		return nil, fmt.Errorf("failed to marshal create volume request: %w", err)
 	}
 
-	// TODO: Update this to use the standard google-api-go-client library once Share Pools API client functions are officially supported.
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		return fmt.Errorf("failed to create http request for %s: %w", apiMethod, err)
+		return nil, fmt.Errorf("failed to create http request for CreateVolume: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := manager.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send request for %s: %w", apiMethod, err)
+		return nil, fmt.Errorf("failed to send CreateVolume request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		return googleapi.CheckResponse(resp)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, googleapi.CheckResponse(resp)
 	}
 
-	if respBody != nil {
-		if err := json.NewDecoder(resp.Body).Decode(respBody); err != nil {
-			return fmt.Errorf("failed to decode response for %s: %w", apiMethod, err)
-		}
+	var vol VolumePoolVolume
+	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
+		return nil, fmt.Errorf("failed to decode CreateVolume response: %w", err)
+	}
+
+	if vol.MountPoint == nil {
+		return nil, fmt.Errorf("volume %q created without mount point information", vol.Name)
+	}
+
+	return &PoolVolume{
+		Name:      vol.Name,
+		IpAddress: vol.MountPoint.IpAddress,
+		MountName: vol.MountPoint.MountName,
+	}, nil
+}
+
+func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, volumeURI string) error {
+	basePath := manager.fileService.BasePath
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, volumeURI)
+
+	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create http request for DeleteVolume: %w", err)
+	}
+
+	resp, err := manager.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send DeleteVolume request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+		return googleapi.CheckResponse(resp)
 	}
 	return nil
 }
 
-func (manager *gcfsServiceManager) AcquireShare(ctx context.Context, parentPool string, requestID string, capacityGb int64) (*PoolShare, error) {
-	reqBody := &AcquireShareRequest{
-		CapacityGb: capacityGb,
-		RequestId:  requestID,
+func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, volumeURI string) (*PoolVolume, error) {
+	basePath := manager.fileService.BasePath
+	if !strings.HasSuffix(basePath, "/") {
+		basePath += "/"
+	}
+	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, volumeURI)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request for GetVolume: %w", err)
 	}
 
-	var respBody AcquireShareResponse
-	if err := manager.doSharePoolRequest(ctx, "acquireShare", parentPool, reqBody, &respBody); err != nil {
-		return nil, err
+	resp, err := manager.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send GetVolume request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, googleapi.CheckResponse(resp)
 	}
 
-	return &PoolShare{
-		IpAddress: respBody.IpAddress,
-		ShareId:   respBody.ShareId,
+	var vol VolumePoolVolume
+	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
+		return nil, fmt.Errorf("failed to decode GetVolume response: %w", err)
+	}
+
+	if vol.MountPoint == nil {
+		return nil, fmt.Errorf("volume %q has no mount point information", vol.Name)
+	}
+
+	return &PoolVolume{
+		Name:      vol.Name,
+		IpAddress: vol.MountPoint.IpAddress,
+		MountName: vol.MountPoint.MountName,
 	}, nil
-}
-
-func (manager *gcfsServiceManager) ReleaseShare(ctx context.Context, poolName string, ipAddress string, shareID string) error {
-	reqBody := &ReleaseShareRequest{
-		IpAddress: ipAddress,
-		ShareId:   shareID,
-	}
-
-	return manager.doSharePoolRequest(ctx, "releaseShare", poolName, reqBody, nil)
 }

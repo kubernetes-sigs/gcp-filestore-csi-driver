@@ -892,28 +892,33 @@ func TestIsUserError(t *testing.T) {
 	}
 }
 
-func TestAcquireShare(t *testing.T) {
-	parentPool := "projects/test-project/locations/us-central1/sharePools/test-pool"
-	reqID := "request-123"
-	capacityGb := int64(10)
+func TestCreateVolumePoolVolume(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
+	volID := "vol-123"
+	description := "CSI volume"
 
 	tests := []struct {
 		name         string
 		responseCode int
 		responseBody interface{}
 		expectErr    bool
-		expected     *PoolShare
+		expected     *PoolVolume
 	}{
 		{
-			name:         "successful acquire",
+			name:         "successful create volume",
 			responseCode: http.StatusOK,
-			responseBody: &PoolShare{
-				IpAddress: "10.0.0.1",
-				ShareId:   "share-123",
+			responseBody: &VolumePoolVolume{
+				Name:        fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				Description: description,
+				MountPoint: &VolumePoolMountPoint{
+					IpAddress: "10.0.0.1",
+					MountName: "vol_123",
+				},
 			},
-			expected: &PoolShare{
+			expected: &PoolVolume{
+				Name:      fmt.Sprintf("%s/volumes/%s", parentPool, volID),
 				IpAddress: "10.0.0.1",
-				ShareId:   "share-123",
+				MountName: "vol_123",
 			},
 		},
 		{
@@ -927,20 +932,23 @@ func TestAcquireShare(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := fmt.Sprintf("/v1beta1/%s:acquireShare", parentPool)
+				expectedPath := fmt.Sprintf("/v1beta1/%s/volumes", parentPool)
 				if r.URL.Path != expectedPath {
 					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
 				}
 				if r.Method != http.MethodPost {
 					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
 				}
+				if r.URL.Query().Get("volumeId") != volID {
+					t.Errorf("expected volumeId query param %q, got %q", volID, r.URL.Query().Get("volumeId"))
+				}
 
-				var reqBody AcquireShareRequest
+				var reqBody VolumePoolVolume
 				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 					t.Errorf("failed to decode request body: %v", err)
 				}
-				if reqBody.RequestId != reqID || reqBody.CapacityGb != capacityGb {
-					t.Errorf("unexpected request body fields: %+v", reqBody)
+				if reqBody.Description != description {
+					t.Errorf("unexpected description: %s", reqBody.Description)
 				}
 
 				w.WriteHeader(tc.responseCode)
@@ -960,7 +968,7 @@ func TestAcquireShare(t *testing.T) {
 				httpClient:  server.Client(),
 			}
 
-			resp, err := manager.AcquireShare(ctx, parentPool, reqID, capacityGb)
+			resp, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID, description)
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -970,17 +978,15 @@ func TestAcquireShare(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if resp.IpAddress != tc.expected.IpAddress || resp.ShareId != tc.expected.ShareId {
+			if resp.IpAddress != tc.expected.IpAddress || resp.MountName != tc.expected.MountName || resp.Name != tc.expected.Name {
 				t.Errorf("expected parsed response %+v, got %+v", tc.expected, resp)
 			}
 		})
 	}
 }
 
-func TestReleaseShare(t *testing.T) {
-	parentPool := "projects/test-project/locations/us-central1/sharePools/test-pool"
-	shareID := "share-123"
-	ipAddr := "10.0.0.1"
+func TestDeleteVolumePoolVolume(t *testing.T) {
+	volumeURI := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
 
 	tests := []struct {
 		name         string
@@ -988,12 +994,12 @@ func TestReleaseShare(t *testing.T) {
 		expectErr    bool
 	}{
 		{
-			name:         "successful release",
+			name:         "successful delete",
 			responseCode: http.StatusOK,
 		},
 		{
 			name:         "api error response",
-			responseCode: http.StatusNotFound,
+			responseCode: http.StatusBadRequest,
 			expectErr:    true,
 		},
 	}
@@ -1001,20 +1007,12 @@ func TestReleaseShare(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				expectedPath := fmt.Sprintf("/v1beta1/%s:releaseShare", parentPool)
+				expectedPath := fmt.Sprintf("/v1beta1/%s", volumeURI)
 				if r.URL.Path != expectedPath {
 					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
 				}
-				if r.Method != http.MethodPost {
-					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
-				}
-
-				var reqBody ReleaseShareRequest
-				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-					t.Errorf("failed to decode request body: %v", err)
-				}
-				if reqBody.ShareId != shareID || reqBody.IpAddress != ipAddr {
-					t.Errorf("unexpected request body fields: %+v", reqBody)
+				if r.Method != http.MethodDelete {
+					t.Errorf("expected method %s, got %s", http.MethodDelete, r.Method)
 				}
 
 				w.WriteHeader(tc.responseCode)
@@ -1033,7 +1031,7 @@ func TestReleaseShare(t *testing.T) {
 				httpClient:  server.Client(),
 			}
 
-			err = manager.ReleaseShare(ctx, parentPool, ipAddr, shareID)
+			err = manager.DeleteVolumePoolVolume(ctx, volumeURI)
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -1044,6 +1042,52 @@ func TestReleaseShare(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 		})
+	}
+}
+
+func TestGetVolumePoolVolume(t *testing.T) {
+	volumeURI := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		expectedPath := fmt.Sprintf("/v1beta1/%s", volumeURI)
+		if r.URL.Path != expectedPath {
+			t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("expected method %s, got %s", http.MethodGet, r.Method)
+		}
+
+		vol := &VolumePoolVolume{
+			Name:        volumeURI,
+			Description: "desc",
+			MountPoint: &VolumePoolMountPoint{
+				IpAddress: "10.0.0.1",
+				MountName: "vol_123",
+			},
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(vol)
+	}))
+	defer server.Close()
+
+	ctx := context.Background()
+	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("failed to create service client: %v", err)
+	}
+	fileService.BasePath = server.URL + "/"
+
+	manager := &gcfsServiceManager{
+		fileService: fileService,
+		httpClient:  server.Client(),
+	}
+
+	resp, err := manager.GetVolumePoolVolume(ctx, volumeURI)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if resp.IpAddress != "10.0.0.1" || resp.MountName != "vol_123" {
+		t.Errorf("unexpected response: %+v", resp)
 	}
 }
 

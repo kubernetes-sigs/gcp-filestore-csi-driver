@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: volumepool-test-pod
+spec:
+  containers:
+  - name: test-container
+    image: busybox
+    command: ["/bin/sh", "-c"]
+    args: ["echo 'Hello from VolumePool!' > /mnt/test.txt && sleep 3600"]
+    volumeMounts:
+    - mountPath: /mnt
+      name: volumepool-vol
+  volumes:
+  - name: volumepool-vol
+    persistentVolumeClaim:
+      claimName: volumepool-pvc
