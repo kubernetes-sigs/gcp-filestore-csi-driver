@@ -6,6 +6,7 @@ metadata:
 spec:
   template:
     spec:
+      hostNetwork: false
       imagePullSecrets:
       - name: gcr-json-key
       # On GKE / Workload Identity deployments, remove the static SA key secret volume
@@ -31,4 +32,5 @@ spec:
         - "--endpoint=unix:/csi/csi.sock"
         - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
-        - "--feature-share-pools=true"
+        - "--feature-volume-pools=true"
+        - "--filestore-service-endpoint=staging-file.sandbox.googleapis.com"

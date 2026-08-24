@@ -205,12 +205,12 @@ func (m *controllerServer) Run(stopCh <-chan struct{}) {
 
 // CreateVolume creates a GCFS instance
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	sharePoolPath := req.GetParameters()[paramKeySharePool]
-	if sharePoolPath != "" {
-		if s.config.features.FeatureSharePools == nil || !s.config.features.FeatureSharePools.Enabled {
-			return nil, status.Error(codes.FailedPrecondition, "cannot create share pool volume: Share Pools feature is disabled")
+	volumePoolPath := req.GetParameters()[paramKeyVolumePool]
+	if volumePoolPath != "" {
+		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
+			return nil, status.Error(codes.FailedPrecondition, "cannot create volume pool volume: Volume Pools feature is disabled")
 		}
-		return s.handleCreateSharePoolVolume(ctx, req, sharePoolPath)
+		return s.handleCreateVolumePoolVolume(ctx, req, volumePoolPath)
 	}
 
 	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {
@@ -436,11 +436,11 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		return nil, status.Error(codes.InvalidArgument, "volume id is empty")
 	}
 
-	if isSharePoolVolumeID(volumeID) {
-		if s.config.features.FeatureSharePools == nil || !s.config.features.FeatureSharePools.Enabled {
-			return nil, status.Errorf(codes.FailedPrecondition, "cannot delete share pool volume %q: Share Pools feature is disabled", volumeID)
+	if isVolumePoolVolumeID(volumeID) {
+		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
+			return nil, status.Errorf(codes.FailedPrecondition, "cannot delete volume pool volume %q: Volume Pools feature is disabled", volumeID)
 		}
-		return s.handleDeleteSharePoolVolume(ctx, req, volumeID)
+		return s.handleDeleteVolumePoolVolume(ctx, req, volumeID)
 	}
 
 	if isMultishareVolId(volumeID) {
@@ -556,6 +556,10 @@ func (s *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.
 	volumeID := req.GetVolumeId()
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
+	}
+
+	if isVolumePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "ControllerModifyVolume is not supported for volumepool volumes")
 	}
 
 	params := req.GetMutableParameters()
@@ -792,7 +796,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 				fileProtocol = v
 			}
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMountOptions:
-		case "csiprovisionersecretname", "csiprovisionersecretnamespace", paramKeySharePool:
+		case "csiprovisionersecretname", "csiprovisionersecretnamespace", paramKeyVolumePool:
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
@@ -887,6 +891,10 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 	volumeID := req.GetVolumeId()
 	if volumeID == "" {
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
+	}
+
+	if isVolumePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume is not supported for volumepool volumes")
 	}
 
 	if isMultishareVolId(volumeID) {
@@ -1107,6 +1115,10 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	volumeID := req.GetSourceVolumeId()
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
+	}
+
+	if isVolumePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for volumepool volumes")
 	}
 	if isMultishareVolId(volumeID) {
 		if s.config.multiShareController == nil {
