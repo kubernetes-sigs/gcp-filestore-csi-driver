@@ -9,7 +9,7 @@
 #
 # Usage:
 #   1. Replace <PROJECT_ID>, <GCE_LOCATION>, and <VOLUMEPOOL_NAME> with your values.
-#   2. Apply: kubectl apply -f examples/kubernetes/substrate-volumepool/storageclass.yaml
+#   2. Apply: kubectl apply -f examples/kubernetes/substrate/storageclass.yaml
 
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
