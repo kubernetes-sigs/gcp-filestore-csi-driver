@@ -3,7 +3,7 @@
 # Usage:
 #   1. Set your GCP project ID and Service Account in serviceaccount_patch.yaml.
 #   2. Deploy all components, patches, services, and Substrate registration with a single command:
-#        kubectl apply -k deploy/kubernetes/overlays/substrate-filestore-csi-integration/
+#        kubectl apply -k deploy/kubernetes/overlays/substrate/
 #
 # Components Included:
 # - Base upstream CSI Driver deployment (../stable-master)
