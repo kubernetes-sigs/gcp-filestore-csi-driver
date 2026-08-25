@@ -14,8 +14,8 @@
 #      Because the CSI driver natively listens on a local Unix domain socket, this lightweight
 #      socat proxy exposes the Unix socket over TCP port 10000 inside the pod.
 #
-# 4. --feature-share-pools=true
-#    - Enables multi-share SharePool capacity management and AcquireShare/CreateShare logic.
+# 4. --feature-volume-pools=true
+#    - Enables VolumePool capacity management and volume claim/provisioning logic.
 #
 # 5. Workload Identity Cleanup ($patch: delete)
 #    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
@@ -70,4 +70,4 @@ spec:
         - "--endpoint=unix:/csi/csi.sock"
         - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
-        - "--feature-share-pools=true"
+        - "--feature-volume-pools=true"
