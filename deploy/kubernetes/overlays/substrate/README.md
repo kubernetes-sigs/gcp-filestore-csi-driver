@@ -66,19 +66,19 @@ The included `deploy.sh` script validates required environment variables, render
 export PROJECT_ID="my-gcp-project"
 # Optional: override only if using a custom GSA
 # export GCP_SERVICE_ACCOUNT="my-custom-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-./deploy/kubernetes/overlays/substrate-filestore-csi-integration/deploy.sh
+./deploy/kubernetes/overlays/substrate/deploy.sh
 ```
 
 ### Option B: Manual Deployment via Kustomize
 1. Render `serviceaccount_patch.yaml` from template:
    ```bash
    sed "s|\${GCP_SERVICE_ACCOUNT}|substrate-filestore-csi@${PROJECT_ID}.iam.gserviceaccount.com|g" \
-       deploy/kubernetes/overlays/substrate-filestore-csi-integration/serviceaccount_patch.yaml.tmpl \
-       > deploy/kubernetes/overlays/substrate-filestore-csi-integration/serviceaccount_patch.yaml
+       deploy/kubernetes/overlays/substrate/serviceaccount_patch.yaml.tmpl \
+       > deploy/kubernetes/overlays/substrate/serviceaccount_patch.yaml
    ```
 2. Apply the overlay:
    ```bash
-   kubectl apply -k deploy/kubernetes/overlays/substrate-filestore-csi-integration/
+   kubectl apply -k deploy/kubernetes/overlays/substrate/
    ```
 
 ---
