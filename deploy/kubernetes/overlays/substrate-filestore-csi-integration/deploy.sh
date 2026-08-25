@@ -4,7 +4,8 @@
 #
 # Environment Variables:
 #   PROJECT_ID          (Required) GCP project ID where Filestore and GKE are hosted.
-#   GCP_SERVICE_ACCOUNT (Required) Google Service Account (GSA) email with roles/file.editor role.
+#   GCP_SERVICE_ACCOUNT (Optional) Google Service Account (GSA) email with roles/file.editor role.
+#                                  Defaults to: substrate-filestore-csi@${PROJECT_ID}.iam.gserviceaccount.com
 
 set -euo pipefail
 
@@ -23,21 +24,12 @@ if [[ -z "${PROJECT_ID:-}" ]]; then
   echo "     export PROJECT_ID=\"<your-gcp-project-id>\"" >&2
   echo "   Example:" >&2
   echo "     export PROJECT_ID=\"my-gcp-project\"" >&2
-  echo "     export GCP_SERVICE_ACCOUNT=\"my-sa@my-gcp-project.iam.gserviceaccount.com\"" >&2
   echo "     ${0}" >&2
   echo "" >&2
   exit 1
 fi
 
-if [[ -z "${GCP_SERVICE_ACCOUNT:-}" ]]; then
-  echo "" >&2
-  echo "❌ [ERROR] GCP_SERVICE_ACCOUNT environment variable is required but not set." >&2
-  echo "   Please set your Google Service Account email with roles/file.editor permission:" >&2
-  echo "     export GCP_SERVICE_ACCOUNT=\"<your-sa>@${PROJECT_ID}.iam.gserviceaccount.com\"" >&2
-  echo "     ${0}" >&2
-  echo "" >&2
-  exit 1
-fi
+GCP_SERVICE_ACCOUNT="${GCP_SERVICE_ACCOUNT:-substrate-filestore-csi@${PROJECT_ID}.iam.gserviceaccount.com}"
 
 echo "📋 Configuration:"
 echo "   - GCP Project ID     : ${PROJECT_ID}"
