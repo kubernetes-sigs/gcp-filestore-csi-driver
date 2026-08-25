@@ -87,7 +87,7 @@ export PROJECT_ID="my-gcp-project"
 
 To dynamically provision micro-volumes from a pre-warmed FiFA VolumePool, create a `StorageClass` referencing your VolumePool resource path via `parameters.volume-pool`.
 
-See [`examples/kubernetes/substrate-volumepool/storageclass.yaml`](../../../../examples/kubernetes/substrate-volumepool/storageclass.yaml) for reference:
+See [`examples/kubernetes/substrate/storageclass.yaml`](../../../../examples/kubernetes/substrate/storageclass.yaml) for reference:
 
 ```yaml
 apiVersion: storage.k8s.io/v1
@@ -104,5 +104,5 @@ volumeBindingMode: Immediate
 
 Apply the StorageClass:
 ```bash
-kubectl apply -f examples/kubernetes/substrate-volumepool/storageclass.yaml
+kubectl apply -f examples/kubernetes/substrate/storageclass.yaml
 ```
