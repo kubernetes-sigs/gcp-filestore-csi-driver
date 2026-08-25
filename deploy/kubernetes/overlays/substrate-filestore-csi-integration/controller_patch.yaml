@@ -3,8 +3,7 @@
 # Key Features & Rationale:
 # 1. hostNetwork: false
 #    - Disables host networking on the controller pod so GKE Workload Identity metadata server
-#      interception (169.254.169.254) works properly, allowing the pod to authenticate as its
-#      annotated GCP Service Account (substrate-filestore-csi@<PROJECT>.iam.gserviceaccount.com).
+#      interception works properly, allowing the pod to authenticate as its annotated GCP Service Account.
 #
 # 2. role: controller-plugin label
 #    - Differentiates controller pods from node daemonset pods so the csi-filestore-controller
@@ -18,10 +17,7 @@
 # 4. --feature-share-pools=true
 #    - Enables multi-share SharePool capacity management and AcquireShare/CreateShare logic.
 #
-# 5. --filestore-service-endpoint=${FILESTORE_ENDPOINT}
-#    - Configurable endpoint (defaults to file.googleapis.com for Prod, or staging-file.sandbox.googleapis.com for Staging).
-#
-# 6. Workload Identity Cleanup ($patch: delete)
+# 5. Workload Identity Cleanup ($patch: delete)
 #    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
 #      env variables in favor of dynamic, short-lived OAuth tokens via GKE Workload Identity.
 
@@ -75,4 +71,3 @@ spec:
         - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
         - "--feature-share-pools=true"
-        - "--filestore-service-endpoint=${FILESTORE_ENDPOINT}"

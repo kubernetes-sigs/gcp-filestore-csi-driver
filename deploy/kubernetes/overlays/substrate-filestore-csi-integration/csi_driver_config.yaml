@@ -12,6 +12,7 @@
 #    - Points Substrate node worker processes (ateom-gvisor) to the local node CSI socket for
 #      performing NodePublishVolume / NodeUnpublishVolume operations on worker nodes.
 
+# TODO: Update apiVersion from alpha (ate.dev/v1alpha1) based on future Substrate releases.
 apiVersion: ate.dev/v1alpha1
 kind: CSIDriverConfig
 metadata:
