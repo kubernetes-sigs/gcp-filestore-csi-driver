@@ -210,7 +210,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
 			return nil, status.Error(codes.FailedPrecondition, "cannot create volume pool volume: Volume Pools feature is disabled")
 		}
-		return s.handleCreateVolumePoolVolume(ctx, req, volumePoolPath)
+		return s.handleAcquireVolumePoolShare(ctx, req, volumePoolPath)
 	}
 
 	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {
@@ -440,7 +440,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
 			return nil, status.Errorf(codes.FailedPrecondition, "cannot delete volume pool volume %q: Volume Pools feature is disabled", volumeID)
 		}
-		return s.handleDeleteVolumePoolVolume(ctx, req, volumeID)
+		return s.handleReleaseVolumePoolShare(ctx, req, volumeID)
 	}
 
 	if isMultishareVolId(volumeID) {
@@ -796,7 +796,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 				fileProtocol = v
 			}
 		case ParameterKeyLabels, ParameterKeyPVCName, ParameterKeyPVCNamespace, ParameterKeyPVName, paramMountOptions:
-		case "csiprovisionersecretname", "csiprovisionersecretnamespace", paramKeyVolumePool:
+		case "csiprovisionersecretname", "csiprovisionersecretnamespace":
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
