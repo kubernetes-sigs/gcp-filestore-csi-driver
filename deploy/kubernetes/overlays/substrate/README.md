@@ -1,6 +1,6 @@
 # GKE Substrate Integration Overlay for GCP Filestore CSI Driver
 
-This overlay enables the **GCP Filestore CSI Driver** to integrate natively with **GKE Substrate Agent microVM runtime** and **Filestore VolumePool (FiFA Fast Availability)** architecture.
+This overlay enables the **GCP Filestore CSI Driver** to integrate natively with **GKE Substrate** and **Filestore VolumePool (FiFA Fast Availability)** architecture.
 
 ---
 
@@ -18,56 +18,56 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
 
 ## 📋 Prerequisites & IAM Setup
 
+1. **Disable Existing Driver**: The managed GKE Filestore CSI driver addon must be disabled before installing this driver via the Substrate overlay to prevent deployment conflicts. You can disable it on your cluster using:
+   ```bash
+   gcloud container clusters update <CLUSTER_NAME> \
+       --location=<CLUSTER_LOCATION> \
+       --update-addons=GcpFilestoreCsiDriver=DISABLED
+   ```
+2. **VolumePool Setup**: Ensure your GCP Project is allowlisted for Filestore VolumePools and that you have precreated a VolumePool instance in your target location before continuing. On the backend, a reconciler provisions pre-warmed shares on this VolumePool which are then instantly claimed by the GCP Filestore CSI driver for your Substrate workloads. You can reach out to the Filestore Control Plane team for allowlisting and creation.
+
+3. **IAM Permissions Requirement**: The user or automation executing the deployment script *must* have the permissions to create Service Accounts and assign IAM bindings in the target GCP Project (e.g. `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`, or broadly `roles/owner`).
+
 This integration utilizes **GKE Workload Identity** to securely authenticate against Google Cloud Filestore APIs without storing static JSON credentials in Kubernetes secrets.
 
-The Google Service Account (GSA) used by the CSI driver must have the **`roles/file.editor`** role (which grants full permissions across Filestore instances, VolumePools, shares, and operations).
-
-* **Default GSA (`substrate-filestore-csi@<PROJECT_ID>.iam.gserviceaccount.com`)**: If you don't have an existing GSA, create and configure the default GSA using the steps below.
-* **Custom / Existing GSA**: If your organization already has a GSA with the `roles/file.editor` permission, you can reuse it by passing `GCP_SERVICE_ACCOUNT="<custom-sa>@<PROJECT_ID>.iam.gserviceaccount.com"`.
-
-```bash
-export PROJECT_ID="my-gcp-project"
-export GCP_SERVICE_ACCOUNT="substrate-filestore-csi@${PROJECT_ID}.iam.gserviceaccount.com"
-
-# 1. (Optional) Create the default Google Service Account if it does not exist
-gcloud iam service-accounts create substrate-filestore-csi \
-    --project=${PROJECT_ID} \
-    --display-name="GCP Filestore CSI Driver Substrate Service Account"
-
-# 2. Grant the required Filestore Editor role to the GSA
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-    --member="serviceAccount:${GCP_SERVICE_ACCOUNT}" \
-    --role="roles/file.editor"
-
-# 3. Bind the GSA to the Kubernetes ServiceAccount for GKE Workload Identity
-gcloud iam service-accounts add-iam-policy-binding ${GCP_SERVICE_ACCOUNT} \
-    --project=${PROJECT_ID} \
-    --role="roles/iam.workloadIdentityUser" \
-    --member="serviceAccount:${PROJECT_ID}.svc.id.goog[gcp-filestore-csi-driver/gcp-filestore-csi-controller-sa]"
-```
+> [!NOTE]
+> 💡 **Automated IAM Setup via `deploy.sh`**
+> The included `deploy.sh` script completely automates the IAM setup. It intelligently checks for the existence of the Service Account, skips creation if explicitly provided (and validates permissions), and automatically enforces both the `roles/file.editor` and `roles/iam.workloadIdentityUser` bindings idempotently. You do not need to run manual `gcloud` IAM commands!
 
 ---
 
 ## 🚀 Deployment
 
-### Environment Variables
+### Configuration Parameters
 
-| Variable | Required | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `PROJECT_ID` | **Yes** | — | GCP Project ID hosting GKE and Filestore. |
-| `GCP_SERVICE_ACCOUNT` | No | `substrate-filestore-csi@${PROJECT_ID}.iam.gserviceaccount.com` | Google Service Account (GSA) email with `roles/file.editor` role for Workload Identity. Allows reusing any existing GSA. |
+You can pass these as command-line flags or environment variables. Command-line flags take precedence.
+
+| Flag | Env Var | Required | Default | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `-h`, `--help`| — | No | — | Print the usage menu for deploy.sh. |
+| `-p`, `--project-id` | `PROJECT_ID` | **Yes** | — | GCP Project ID hosting GKE and Filestore. |
+| `-s`, `--service-account` | `GCP_SERVICE_ACCOUNT` | No | `substrate-filestore-csi@...` | Optional. Provide an existing Google Service Account (GSA) email that already possesses the `roles/file.editor` role to bypass default SA creation. |
+| `-l`, `--location` | `LOCATION` | No | — | Optional. GCE location (e.g. `us-central1`) for automated StorageClass generation. |
+| `-v`, `--volumepool-name`| `VOLUMEPOOL_NAME` | No | — | Optional. VolumePool name for automated StorageClass generation. |
+| `-c`, `--storageclass-name`| `STORAGECLASS_NAME`| No | `substrate-volumepool-sc` | Optional. Custom StorageClass name. If omitted but location and pool are provided, you will be prompted interactively. |
 
 ---
 
-### Option A: Automated Deployment with Validation (`deploy.sh`)
-The included `deploy.sh` script validates required environment variables, renders templates for Workload Identity with your specified `GCP_SERVICE_ACCOUNT` (or default), and applies the full overlay:
+### Option A: Automated Deployment (`deploy.sh`)
+The included `deploy.sh` script completely automates the installation, validates parameters, and configures IAM Workload Identity flawlessly. 
 
 ```bash
-export PROJECT_ID="my-gcp-project"
-# Optional: override only if using a custom GSA
-# export GCP_SERVICE_ACCOUNT="my-custom-sa@${PROJECT_ID}.iam.gserviceaccount.com"
-./deploy/kubernetes/overlays/substrate/deploy.sh
+# Minimal required deployment:
+./deploy/kubernetes/overlays/substrate/deploy.sh --project-id "my-gcp-project"
+
+# Full deployment with turnkey StorageClass creation:
+./deploy/kubernetes/overlays/substrate/deploy.sh \
+    --project-id "my-gcp-project" \
+    --location "us-central1" \
+    --volumepool-name "my-fast-pool"
 ```
+
+*Note: If you provide `--location` and `--volumepool-name`, the deployment script will finish by interactively asking if you want to use the default StorageClass name or a custom name, and then automatically apply it for you!*
 
 ### Option B: Manual Deployment via Kustomize
 1. Render `serviceaccount_patch.yaml` from template:
@@ -81,28 +81,4 @@ export PROJECT_ID="my-gcp-project"
    kubectl apply -k deploy/kubernetes/overlays/substrate/
    ```
 
----
-
-## 📦 Creating a StorageClass for VolumePool
-
-To dynamically provision micro-volumes from a pre-warmed FiFA VolumePool, create a `StorageClass` referencing your VolumePool resource path via `parameters.volume-pool`.
-
-See [`examples/kubernetes/substrate/storageclass.yaml`](../../../../examples/kubernetes/substrate/storageclass.yaml) for reference:
-
-```yaml
-apiVersion: storage.k8s.io/v1
-kind: StorageClass
-metadata:
-  name: csi-filestore-volumepool-sc
-provisioner: filestore.csi.storage.gke.io
-parameters:
-  volume-pool: "projects/<PROJECT_ID>/locations/<GCE_LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
-allowVolumeExpansion: false
-reclaimPolicy: Delete
-volumeBindingMode: Immediate
-```
-
-Apply the StorageClass:
-```bash
-kubectl apply -f examples/kubernetes/substrate/storageclass.yaml
-```
+*(Note: If you skip `deploy.sh`, you will need to manually render and apply `examples/kubernetes/substrate/storageclass.yaml.tmpl` to provision micro-volumes from a VolumePool).*
