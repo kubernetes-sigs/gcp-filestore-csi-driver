@@ -17,13 +17,12 @@
 #                             default Service Account creation if you manage IAM externally.
 #                             Otherwise, the script will automatically create a default GSA 
 #                             and bind the proper IAM roles for you.
-#
 # Optional StorageClass Automation:
-#   Provide both location and volumepool-name to automatically generate and apply a ready-to-use StorageClass.
-#   -l, --location            GCP region or zone (e.g., 'us-central1') where your VolumePool resides.
+#   Provide both volumepool-location and volumepool-name to automatically generate and apply a ready-to-use StorageClass.
+#   -l, --volumepool-location GCP region or zone (e.g., 'us-central1') where your VolumePool resides.
 #   -v, --volumepool-name     The actual name of the FiFA VolumePool to bind the StorageClass to.
 #   -c, --storageclass-name   Custom name for the generated StorageClass. If you omit this 
-#                             but provide location and volumepool, you will be prompted 
+#                             but provide volumepool-location and volumepool-name, you will be prompted 
 #                             interactively for a name (or given a smart default).
 
 set -euo pipefail
@@ -36,7 +35,7 @@ print_usage() {
 Usage: ./deploy.sh [OPTIONS]
 
 Note: All options can alternatively be provided as environment variables 
-      (PROJECT_ID, GCP_SERVICE_ACCOUNT, LOCATION, VOLUMEPOOL_NAME, STORAGECLASS_NAME).
+      (PROJECT_ID, GCP_SERVICE_ACCOUNT, VOLUMEPOOL_LOCATION, VOLUMEPOOL_NAME, STORAGECLASS_NAME).
       Command-line arguments will always take precedence over environment variables.
 
 Required Options:
@@ -50,11 +49,11 @@ Optional IAM Overrides:
                             and bind the proper IAM roles for you.
 
 Optional StorageClass Automation:
-  Provide both location and volumepool-name to automatically generate and apply a ready-to-use StorageClass.
-  -l, --location            GCP region or zone (e.g., 'us-central1') where your VolumePool resides.
+  Provide both volumepool-location and volumepool-name to automatically generate and apply a ready-to-use StorageClass.
+  -l, --volumepool-location GCP region or zone (e.g., 'us-central1') where your VolumePool resides.
   -v, --volumepool-name     The actual name of the FiFA VolumePool to bind the StorageClass to.
   -c, --storageclass-name   Custom name for the generated StorageClass. If you omit this 
-                            but provide location and volumepool, you will be prompted 
+                            but provide volumepool-location and volumepool-name, you will be prompted 
                             interactively for a name (or given a smart default).
 EOF
 }
@@ -69,12 +68,12 @@ SC=""
 # Parse arguments
 while [[ $# -gt 0 ]]; do
   case $1 in
-    -h|--help)              print_usage; exit 0 ;;
-    -p|--project-id)        PROJ="$2"; shift 2 ;;
-    -s|--service-account)   SA="$2"; shift 2 ;;
-    -l|--location)          LOC="$2"; shift 2 ;;
-    -v|--volumepool-name)   VP="$2"; shift 2 ;;
-    -c|--storageclass-name) SC="$2"; shift 2 ;;
+    -h|--help)                print_usage; exit 0 ;;
+    -p|--project-id)          PROJ="$2"; shift 2 ;;
+    -s|--service-account)     SA="$2"; shift 2 ;;
+    -l|--volumepool-location) LOC="$2"; shift 2 ;;
+    -v|--volumepool-name)     VP="$2"; shift 2 ;;
+    -c|--storageclass-name)   SC="$2"; shift 2 ;;
     *) echo "Unknown option: $1"; echo "Run ./deploy.sh --help for usage details."; exit 1 ;;
   esac
 done
@@ -82,7 +81,7 @@ done
 # Fallback to Environment Variables
 PROJECT_ID="${PROJ:-${PROJECT_ID:-}}"
 GCP_SERVICE_ACCOUNT="${SA:-${GCP_SERVICE_ACCOUNT:-}}"
-LOCATION="${LOC:-${LOCATION:-}}"
+VOLUMEPOOL_LOCATION="${LOC:-${VOLUMEPOOL_LOCATION:-}}"
 VOLUMEPOOL_NAME="${VP:-${VOLUMEPOOL_NAME:-}}"
 STORAGECLASS_NAME="${SC:-${STORAGECLASS_NAME:-}}"
 
@@ -108,7 +107,7 @@ GCP_SERVICE_ACCOUNT="${GCP_SERVICE_ACCOUNT:-substrate-filestore-csi@${PROJECT_ID
 echo "📋 Configuration:"
 echo "   - GCP Project ID     : ${PROJECT_ID}"
 echo "   - GCP Service Account: ${GCP_SERVICE_ACCOUNT}"
-[[ -n "$LOCATION" ]] && echo "   - Location           : ${LOCATION}"
+[[ -n "$VOLUMEPOOL_LOCATION" ]] && echo "   - VolumePool Location: ${VOLUMEPOOL_LOCATION}"
 [[ -n "$VOLUMEPOOL_NAME" ]] && echo "   - VolumePool Name    : ${VOLUMEPOOL_NAME}"
 [[ -n "$STORAGECLASS_NAME" ]] && echo "   - StorageClass Name  : ${STORAGECLASS_NAME}"
 echo "================================================================="
@@ -175,7 +174,7 @@ echo "================================================================="
 echo ""
 
 # 5. Optional StorageClass Generation
-if [[ -n "${LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
+if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
   if [[ -z "${STORAGECLASS_NAME:-}" ]]; then
     # Open /dev/tty if possible, else standard input
     if [ -t 0 ]; then
@@ -187,7 +186,7 @@ if [[ -n "${LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
   fi
   echo "📦 Creating StorageClass '${STORAGECLASS_NAME}'..."
   sed -e "s|<PROJECT_ID>|${PROJECT_ID}|g" \
-      -e "s|<LOCATION>|${LOCATION}|g" \
+      -e "s|<LOCATION>|${VOLUMEPOOL_LOCATION}|g" \
       -e "s|<VOLUMEPOOL_NAME>|${VOLUMEPOOL_NAME}|g" \
       -e "s|<STORAGECLASS_NAME>|${STORAGECLASS_NAME}|g" \
       "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl" | kubectl apply -f -
