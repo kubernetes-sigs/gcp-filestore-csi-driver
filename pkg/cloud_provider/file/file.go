@@ -85,15 +85,14 @@ type PoolVolume struct {
 }
 
 type VolumePoolMountPoint struct {
-	MountName string `json:"mountName,omitempty"`
 	IpAddress string `json:"ipAddress,omitempty"`
+	MountName string `json:"mountName,omitempty"`
 }
 
 type VolumePoolVolume struct {
 	Name        string                `json:"name,omitempty"`
 	Description string                `json:"description,omitempty"`
 	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
-	State       string                `json:"state,omitempty"`
 }
 
 type MultishareInstance struct {
@@ -213,9 +212,8 @@ type Service interface {
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	// Volume pool ops
-	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, description string) (*PoolVolume, error)
-	DeleteVolumePoolVolume(ctx context.Context, volumeURI string) error
-	GetVolumePoolVolume(ctx context.Context, volumeURI string) (*PoolVolume, error)
+	AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
+	ReleaseVolumePoolShare(ctx context.Context, name string) error
 }
 
 type gcfsServiceManager struct {
@@ -1500,7 +1498,7 @@ const (
 	betaBasePath = "v1beta1"
 )
 
-func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, description string) (*PoolVolume, error) {
+func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
 
 	basePath := manager.fileService.BasePath
 	if !strings.HasSuffix(basePath, "/") {
@@ -1508,8 +1506,15 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}
 	url := fmt.Sprintf("%s%s/%s/volumes?volumeId=%s", basePath, betaBasePath, parentPool, volumeID)
 
+	// We purposefully populate the Description field to bypass a Google API Gateway
+	// REST-to-gRPC transcoding bug. The backend CreateVolumeRequest protobuf marks
+	// the `Volume` field as REQUIRED. If we send an empty Go struct `&VolumePoolVolume{}`,
+	// the JSON marshaler emits `{}`. The GCP API Gateway drops empty JSON brackets
+	// entirely, leading to a gRPC `nil` pointer for the Volume, which triggers:
+	// "INVALID_ARGUMENT: missing volume specification".
+	// Providing this description guarantees the gRPC `Volume` object is instantiated.
 	reqBody := &VolumePoolVolume{
-		Description: description,
+		Description: "Provisioned by GCP Filestore CSI driver",
 	}
 	jsonBytes, err := json.Marshal(reqBody)
 	if err != nil {
@@ -1538,7 +1543,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}
 
 	if vol.MountPoint == nil {
-		return nil, fmt.Errorf("volume %q created without mount point information", vol.Name)
+		return nil, fmt.Errorf("volume %q created without mount details information", vol.Name)
 	}
 
 	return &PoolVolume{
@@ -1548,12 +1553,12 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}, nil
 }
 
-func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, volumeURI string) error {
+func (manager *gcfsServiceManager) ReleaseVolumePoolShare(ctx context.Context, name string) error {
 	basePath := manager.fileService.BasePath
 	if !strings.HasSuffix(basePath, "/") {
 		basePath += "/"
 	}
-	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, volumeURI)
+	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, name)
 
 	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
 	if err != nil {
@@ -1570,42 +1575,4 @@ func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, v
 		return googleapi.CheckResponse(resp)
 	}
 	return nil
-}
-
-func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, volumeURI string) (*PoolVolume, error) {
-	basePath := manager.fileService.BasePath
-	if !strings.HasSuffix(basePath, "/") {
-		basePath += "/"
-	}
-	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, volumeURI)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create http request for GetVolume: %w", err)
-	}
-
-	resp, err := manager.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send GetVolume request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, googleapi.CheckResponse(resp)
-	}
-
-	var vol VolumePoolVolume
-	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
-		return nil, fmt.Errorf("failed to decode GetVolume response: %w", err)
-	}
-
-	if vol.MountPoint == nil {
-		return nil, fmt.Errorf("volume %q has no mount point information", vol.Name)
-	}
-
-	return &PoolVolume{
-		Name:      vol.Name,
-		IpAddress: vol.MountPoint.IpAddress,
-		MountName: vol.MountPoint.MountName,
-	}, nil
 }

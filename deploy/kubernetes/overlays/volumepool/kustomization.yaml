@@ -10,5 +10,5 @@ namespace: gcp-filestore-csi-driver
 images:
 - name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
   newName: gcr.io/arokade-consumer/gcp-filestore-csi-driver
-  newTag: volumepool-dev
+  newTag: v1.0.0-dev
 
