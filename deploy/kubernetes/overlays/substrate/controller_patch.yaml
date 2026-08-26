@@ -35,8 +35,6 @@ spec:
         role: controller-plugin
     spec:
       hostNetwork: false
-      imagePullSecrets:
-      - name: gcr-json-key
       # Remove static Service Account key secret volume; authentication is handled via GKE Workload Identity
       volumes:
       - name: cloud-sa-volume
@@ -68,6 +66,5 @@ spec:
         args:
         - "--v=4"
         - "--endpoint=unix:/csi/csi.sock"
-        - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
         - "--feature-volume-pools=true"

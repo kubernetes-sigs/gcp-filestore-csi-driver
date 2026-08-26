@@ -1,0 +1,24 @@
+# Sample StorageClass for GKE Substrate integration with GCP Filestore VolumePools.
+#
+# VolumePools (FiFA Fast Availability) provide sub-second dynamic volume claims from
+# pre-warmed Filestore multi-share instances.
+#
+# Usage (Automated):
+#   Use the deployment script to dynamically render and apply this template:
+#   deploy.sh --location <LOCATION> --volumepool-name <VOLUMEPOOL_NAME>
+#
+# Usage (Manual):
+#   1. Copy this template to a new file (e.g., storageclass.yaml).
+#   2. Replace <PROJECT_ID>, <LOCATION>, <VOLUMEPOOL_NAME>, and <STORAGECLASS_NAME>.
+#   3. Apply: kubectl apply -f storageclass.yaml
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: <STORAGECLASS_NAME>
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  volume-pool: "projects/<PROJECT_ID>/locations/<LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
+allowVolumeExpansion: false
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
