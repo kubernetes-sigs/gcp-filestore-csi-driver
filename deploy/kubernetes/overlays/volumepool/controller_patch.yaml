@@ -33,4 +33,3 @@ spec:
         - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
         - "--feature-volume-pools=true"
-        - "--filestore-service-endpoint=staging-file.sandbox.googleapis.com"

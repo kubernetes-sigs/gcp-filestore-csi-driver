@@ -1498,13 +1498,35 @@ const (
 	betaBasePath = "v1beta1"
 )
 
-func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
-
+func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, method, endpointURI string, reqBody interface{}) (*http.Response, error) {
 	basePath := manager.fileService.BasePath
 	if !strings.HasSuffix(basePath, "/") {
 		basePath += "/"
 	}
-	url := fmt.Sprintf("%s%s/%s/volumes?volumeId=%s", basePath, betaBasePath, parentPool, volumeID)
+	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, endpointURI)
+
+	if reqBody != nil {
+		jsonBytes, err := json.Marshal(reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal request body: %w", err)
+		}
+		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewBuffer(jsonBytes))
+		if err != nil {
+			return nil, fmt.Errorf("failed to create http request: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		return manager.httpClient.Do(req)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create http request: %w", err)
+	}
+	return manager.httpClient.Do(req)
+}
+
+func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
 
 	// We purposefully populate the Description field to bypass a Google API Gateway
 	// REST-to-gRPC transcoding bug. The backend CreateVolumeRequest protobuf marks
@@ -1516,20 +1538,10 @@ func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, p
 	reqBody := &VolumePoolVolume{
 		Description: "Provisioned by GCP Filestore CSI driver",
 	}
-	jsonBytes, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal create volume request: %w", err)
-	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonBytes))
+	resp, err := manager.executeRESTRequest(ctx, http.MethodPost, endpointURI, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create http request for CreateVolume: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := manager.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send CreateVolume request: %w", err)
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -1554,20 +1566,9 @@ func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, p
 }
 
 func (manager *gcfsServiceManager) ReleaseVolumePoolShare(ctx context.Context, name string) error {
-	basePath := manager.fileService.BasePath
-	if !strings.HasSuffix(basePath, "/") {
-		basePath += "/"
-	}
-	url := fmt.Sprintf("%s%s/%s", basePath, betaBasePath, name)
-
-	req, err := http.NewRequestWithContext(ctx, "DELETE", url, nil)
+	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, name, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create http request for DeleteVolume: %w", err)
-	}
-
-	resp, err := manager.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send DeleteVolume request: %w", err)
+		return err
 	}
 	defer resp.Body.Close()
 
