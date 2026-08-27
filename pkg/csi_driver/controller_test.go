@@ -1057,6 +1057,7 @@ func TestControllerExpandVolume(t *testing.T) {
 		currentSize int64
 		requiredCap int64
 		tier        string
+		volumeID    string
 		shouldError bool
 	}
 
@@ -1131,6 +1132,11 @@ func TestControllerExpandVolume(t *testing.T) {
 			tier:        regionalTier,
 			shouldError: true,
 		},
+		{
+			name:        "expand sharepool volume is not supported",
+			volumeID:    "sharepool://demo-project/us-central1/demo-pool-1/shares/share1",
+			shouldError: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -1167,12 +1173,15 @@ func TestControllerExpandVolume(t *testing.T) {
 				tagManager:  cloud.NewFakeTagManager(),
 			})
 
-			// Create volumeID from instance
-			volumeID := getVolumeIDFromFileInstance(&file.ServiceInstance{
-				Name:     instanceName,
-				Location: testZone,
-				Volume:   file.Volume{Name: newInstanceVolume},
-			}, modeInstance)
+			// Create volumeID from instance if not explicitly provided
+			volumeID := tc.volumeID
+			if volumeID == "" {
+				volumeID = getVolumeIDFromFileInstance(&file.ServiceInstance{
+					Name:     instanceName,
+					Location: testZone,
+					Volume:   file.Volume{Name: newInstanceVolume},
+				}, modeInstance)
+			}
 
 			// Call ControllerExpandVolume
 			req := &csi.ControllerExpandVolumeRequest{
@@ -2471,6 +2480,14 @@ func TestCreateSnapshot(t *testing.T) {
 	}{
 		// Failure test cases
 		{
+			name: "Share pool volume is not supported",
+			req: &csi.CreateSnapshotRequest{
+				SourceVolumeId: "sharepool://demo-project/us-central1/demo-pool-1/shares/share1",
+				Name:           backupName,
+			},
+			expectErr: true,
+		},
+		{
 			name: "Existing backup found, with different volume Id (source zonal filestore instance), error expected",
 			req: &csi.CreateSnapshotRequest{
 				SourceVolumeId: modeInstance + "/" + zone + "/" + "myinstance1" + "/" + shareName,
@@ -3419,5 +3436,23 @@ func TestExtractBackupLabels(t *testing.T) {
 		if !reflect.DeepEqual(test.expectLabels, labels) {
 			t.Errorf("extractBackupLabels(): %s: got: %v, want: %v", test.name, labels, test.expectLabels)
 		}
+	}
+}
+
+func TestControllerModifyVolume_SharePoolNotSupported(t *testing.T) {
+	ctrl := initTestController(t)
+	req := &csi.ControllerModifyVolumeRequest{
+		VolumeId: "sharepool://demo-project/us-central1/demo-pool-1/shares/share1",
+	}
+	resp, err := ctrl.ControllerModifyVolume(context.Background(), req)
+	if resp != nil {
+		t.Fatalf("expected nil response, got: %v", resp)
+	}
+	if err == nil {
+		t.Fatalf("expected error for sharepool volume id, got nil")
+	}
+	st, ok := status.FromError(err)
+	if !ok || st.Code() != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument, got: %v", err)
 	}
 }

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sharepool-pvc
+spec:
+  accessModes:
+  - ReadWriteMany
+  storageClassName: staging-share-pool-sc
+  resources:
+    requests:
+      storage: 10Gi

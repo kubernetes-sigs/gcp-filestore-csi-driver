@@ -558,6 +558,10 @@ func (s *controllerServer) ControllerModifyVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.InvalidArgument, "Volume ID cannot be empty")
 	}
 
+	if isSharePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "ControllerModifyVolume is not supported for sharepool volumes")
+	}
+
 	params := req.GetMutableParameters()
 	// If no params (or empty), return success (no-op)
 	if len(params) == 0 {
@@ -889,6 +893,10 @@ func (s *controllerServer) ControllerExpandVolume(ctx context.Context, req *csi.
 		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume volume ID must be provided")
 	}
 
+	if isSharePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "ControllerExpandVolume is not supported for sharepool volumes")
+	}
+
 	if isMultishareVolId(volumeID) {
 		if s.config.multiShareController == nil {
 			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")
@@ -1108,6 +1116,11 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	if len(volumeID) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot source volume ID must be provided")
 	}
+
+	if isSharePoolVolumeID(volumeID) {
+		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for sharepool volumes")
+	}
+
 	if isMultishareVolId(volumeID) {
 		if s.config.multiShareController == nil {
 			return nil, status.Error(codes.InvalidArgument, "multishare controller not enabled")

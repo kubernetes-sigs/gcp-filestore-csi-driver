@@ -935,7 +935,7 @@ func TestAcquireShare(t *testing.T) {
 					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
 				}
 
-				var reqBody AcquireShareRequest
+				var reqBody filev1beta1.AcquireShareRequest
 				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 					t.Errorf("failed to decode request body: %v", err)
 				}
@@ -1009,7 +1009,7 @@ func TestReleaseShare(t *testing.T) {
 					t.Errorf("expected method %s, got %s", http.MethodPost, r.Method)
 				}
 
-				var reqBody ReleaseShareRequest
+				var reqBody filev1beta1.ReleaseShareRequest
 				if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 					t.Errorf("failed to decode request body: %v", err)
 				}
@@ -1018,6 +1018,7 @@ func TestReleaseShare(t *testing.T) {
 				}
 
 				w.WriteHeader(tc.responseCode)
+				w.Write([]byte("{}"))
 			}))
 			defer server.Close()
 
