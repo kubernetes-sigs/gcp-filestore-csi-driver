@@ -9,6 +9,7 @@ namespace: gcp-filestore-csi-driver
 
 images:
 - name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
+  # TODO: replace it with gke-release repo
   newName: gcr.io/arokade-consumer/gcp-filestore-csi-driver
   newTag: v1.0.0-dev
 

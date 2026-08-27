@@ -909,9 +909,9 @@ func TestAcquireVolumePoolShare(t *testing.T) {
 			responseCode: http.StatusOK,
 			responseBody: &VolumePoolVolume{
 				Name: fmt.Sprintf("%s/volumes/%s", parentPool, volID),
-				MountDetails: &VolumePoolMountDetails{
-					Ip:               "10.0.0.1",
-					InternalVolumeId: "vol_123",
+				MountPoint: &VolumePoolMountPoint{
+					IpAddress: "10.0.0.1",
+					MountName: "vol_123",
 				},
 			},
 			expected: &PoolVolume{
