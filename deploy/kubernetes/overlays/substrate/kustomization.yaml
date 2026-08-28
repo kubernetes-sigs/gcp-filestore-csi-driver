@@ -13,7 +13,8 @@
 # - Base upstream CSI Driver deployment (../stable-master)
 # - gRPC ClusterIP Service for Substrate control-plane connectivity (service.yaml)
 # - Substrate CSIDriverConfig registration CR (csi_driver_config.yaml)
-# - Controller Workload Identity, role label, and socat proxy patch (controller_patch.yaml)
+# - Envoy configuration map (envoy_configmap.yaml)
+# - Controller Workload Identity, role label, and envoy mTLS proxy patch (controller_patch.yaml)
 # - Node DaemonSet role label and bidirectional mount propagation patch (node_patch.yaml)
 # - ServiceAccount Workload Identity annotation patch (serviceaccount_patch.yaml)
 
@@ -23,6 +24,7 @@ resources:
 - ../stable-master
 - service.yaml
 - csi_driver_config.yaml
+- envoy_configmap.yaml
 patches:
 - path: controller_patch.yaml
 - path: node_patch.yaml
@@ -31,5 +33,5 @@ namespace: gcp-filestore-csi-driver
 
 images:
 - name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
-  newName: gcr.io/gke-release/gcp-filestore-csi-driver
-  digest: sha256:9bde4b2e81e914c10681298442fbe39bb5be597d82fb91d1f11589ecc2284af0
+  newName: gcr.io/arokade-consumer/gcp-filestore-csi-driver
+  newTag: v2.0.0-dev
