@@ -534,7 +534,7 @@ func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Opera
 	return !val.ReportRunning, nil
 }
 
-func (manager *fakeServiceManager) AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
@@ -560,7 +560,7 @@ func (manager *fakeServiceManager) AcquireVolumePoolShare(ctx context.Context, p
 	return vol, nil
 }
 
-func (manager *fakeServiceManager) ReleaseVolumePoolShare(ctx context.Context, name string) error {
+func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}

@@ -210,7 +210,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
 			return nil, status.Error(codes.FailedPrecondition, "cannot create volume pool volume: Volume Pools feature is disabled")
 		}
-		return s.handleAcquireVolumePoolShare(ctx, req, volumePoolPath)
+		return s.handleCreateVolumePoolVolume(ctx, req, volumePoolPath)
 	}
 
 	if strings.ToLower(req.GetParameters()[paramMultishare]) == "true" {
@@ -440,7 +440,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
 			return nil, status.Errorf(codes.FailedPrecondition, "cannot delete volume pool volume %q: Volume Pools feature is disabled", volumeID)
 		}
-		return s.handleReleaseVolumePoolShare(ctx, req, volumeID)
+		return s.handleDeleteVolumePoolVolume(ctx, req, volumeID)
 	}
 
 	if isMultishareVolId(volumeID) {
