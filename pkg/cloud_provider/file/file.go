@@ -212,8 +212,8 @@ type Service interface {
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	// Volume pool ops
-	AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
-	ReleaseVolumePoolShare(ctx context.Context, name string) error
+	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
+	DeleteVolumePoolVolume(ctx context.Context, name string) error
 }
 
 type gcfsServiceManager struct {
@@ -1525,7 +1525,7 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
-func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
 	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
 
 	// We purposefully populate the Description field to bypass a Google API Gateway
@@ -1565,7 +1565,7 @@ func (manager *gcfsServiceManager) AcquireVolumePoolShare(ctx context.Context, p
 	}, nil
 }
 
-func (manager *gcfsServiceManager) ReleaseVolumePoolShare(ctx context.Context, name string) error {
+func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
 	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, name, nil)
 	if err != nil {
 		return err

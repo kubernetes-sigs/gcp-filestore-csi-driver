@@ -246,7 +246,7 @@ func TestDeleteVolume_VolumePool(t *testing.T) {
 			cs.config.features.FeatureVolumePools = &FeatureVolumePools{Enabled: tc.featureEnabled}
 
 			if tc.preAllocate {
-				_, err := cs.config.fileService.AcquireVolumePoolShare(ctx, "projects/test-project/locations/us-central1/volumePools/my-pool", "test-vol")
+				_, err := cs.config.fileService.CreateVolumePoolVolume(ctx, "projects/test-project/locations/us-central1/volumePools/my-pool", "test-vol")
 				if err != nil {
 					t.Fatalf("failed to pre-allocate volume: %v", err)
 				}

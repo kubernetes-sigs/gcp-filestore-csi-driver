@@ -893,7 +893,7 @@ func TestIsUserError(t *testing.T) {
 	}
 }
 
-func TestAcquireVolumePoolShare(t *testing.T) {
+func TestCreateVolumePoolVolume(t *testing.T) {
 	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
 	volID := "vol-123"
 
@@ -905,7 +905,7 @@ func TestAcquireVolumePoolShare(t *testing.T) {
 		expected     *PoolVolume
 	}{
 		{
-			name:         "successful acquire share",
+			name:         "successful create VolumePool volume",
 			responseCode: http.StatusOK,
 			responseBody: &VolumePoolVolume{
 				Name: fmt.Sprintf("%s/volumes/%s", parentPool, volID),
@@ -965,7 +965,7 @@ func TestAcquireVolumePoolShare(t *testing.T) {
 				httpClient:  server.Client(),
 			}
 
-			resp, err := manager.AcquireVolumePoolShare(ctx, parentPool, volID)
+			resp, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID)
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
@@ -982,7 +982,7 @@ func TestAcquireVolumePoolShare(t *testing.T) {
 	}
 }
 
-func TestReleaseVolumePoolShare(t *testing.T) {
+func TestDeleteVolumePoolVolume(t *testing.T) {
 	name := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
 
 	tests := []struct {
@@ -1028,7 +1028,7 @@ func TestReleaseVolumePoolShare(t *testing.T) {
 				httpClient:  server.Client(),
 			}
 
-			err = manager.ReleaseVolumePoolShare(ctx, name)
+			err = manager.DeleteVolumePoolVolume(ctx, name)
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")

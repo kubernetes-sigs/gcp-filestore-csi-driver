@@ -77,22 +77,22 @@ func isVolumePoolVolumeID(volumeID string) bool {
 	return strings.HasPrefix(volumeID, volumePoolURLPrefix)
 }
 
-func (s *controllerServer) handleAcquireVolumePoolShare(ctx context.Context, req *csi.CreateVolumeRequest, poolPath string) (*csi.CreateVolumeResponse, error) {
+func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req *csi.CreateVolumeRequest, poolPath string) (*csi.CreateVolumeResponse, error) {
 	name := req.GetName()
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
 	}
 
 	klog.V(4).Infof("Creating Volume Pool volume: pool %q, requestID %q", poolPath, name)
-	poolVol, err := s.config.fileService.AcquireVolumePoolShare(ctx, poolPath, name)
+	poolVol, err := s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
 	if err != nil {
-		klog.Errorf("Failed to acquire share in pool %s: %v", poolPath, err)
+		klog.Errorf("Failed to create Volume Pool volume in pool %s: %v", poolPath, err)
 		return nil, file.StatusError(err)
 	}
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
-	klog.Infof("Successfully acquired Volume Pool share: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	klog.Infof("Successfully created Volume Pool volume: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
 
 	fileProtocol := v3FileProtocol
 	if protocol, ok := req.GetParameters()[paramFileProtocol]; ok {
@@ -120,8 +120,8 @@ func (s *controllerServer) handleAcquireVolumePoolShare(ctx context.Context, req
 	return resp, nil
 }
 
-func (s *controllerServer) handleReleaseVolumePoolShare(ctx context.Context, req *csi.DeleteVolumeRequest, volumeID string) (*csi.DeleteVolumeResponse, error) {
-	klog.V(4).Infof("Releasing Volume Pool share from composite ID: %q", volumeID)
+func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req *csi.DeleteVolumeRequest, volumeID string) (*csi.DeleteVolumeResponse, error) {
+	klog.V(4).Infof("Deleting Volume Pool volume from composite ID: %q", volumeID)
 
 	parent, volID, ipAddress, err := parseVolumePoolVolumeID(volumeID)
 	if err != nil {
@@ -132,16 +132,16 @@ func (s *controllerServer) handleReleaseVolumePoolShare(ctx context.Context, req
 	klog.V(4).Infof("Parsed release parameters: parent=%q, volID=%q, ipAddress=%q", parent, volID, ipAddress)
 
 	name := fmt.Sprintf("%s/volumes/%s", parent, volID)
-	err = s.config.fileService.ReleaseVolumePoolShare(ctx, name)
+	err = s.config.fileService.DeleteVolumePoolVolume(ctx, name)
 	if err != nil {
 		if file.IsNotFoundErr(err) {
-			klog.Warningf("Volume Pool share %q not found, returning success", volumeID)
+			klog.Warningf("Volume Pool volume %q not found, returning success", volumeID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
-		klog.Errorf("Failed to release Volume Pool share %q: %v", volumeID, err)
+		klog.Errorf("Failed to delete Volume Pool volume %q: %v", volumeID, err)
 		return nil, file.StatusError(err)
 	}
 
-	klog.Infof("Successfully released Volume Pool share: %q", volumeID)
+	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
 }
