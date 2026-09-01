@@ -4,8 +4,8 @@
 # 1. driverName: filestore.csi.storage.gke.io
 #    - Matches the provisioner and CSI driver name used by GCP Filestore CSI Driver.
 #
-# 2. controllerEndpoint: dns:///csi-filestore-controller.gcp-filestore-csi-driver.svc.cluster.local:50053
-#    - Informs Substrate ate-controller how to reach the Filestore CSI controller gRPC endpoint
+# 2. controllerEndpoint: tcp://csi-filestore-controller.gcp-filestore-csi-driver.svc:10000
+#    - Informs Substrate ate-api-server how to reach the Filestore CSI controller mTLS endpoint
 #      via internal cluster DNS.
 #
 # 3. nodeSocketOverride: unix:///var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock
@@ -19,5 +19,9 @@ metadata:
   name: filestore.csi.storage.gke.io
 spec:
   driverName: filestore.csi.storage.gke.io
-  controllerEndpoint: dns:///csi-filestore-controller.gcp-filestore-csi-driver.svc.cluster.local:50053
+  controllerEndpoint: tcp://csi-filestore-controller.gcp-filestore-csi-driver.svc:10000
   nodeSocketOverride: unix:///var/lib/kubelet/plugins/filestore.csi.storage.gke.io/csi.sock
+  tls:
+    enabled: true
+    usePodIdentity: true
+    serverName: csi-filestore-controller.gcp-filestore-csi-driver.svc
