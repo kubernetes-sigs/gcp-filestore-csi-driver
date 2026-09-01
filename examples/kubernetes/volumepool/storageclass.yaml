@@ -1,7 +1,7 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: staging-volume-pool-sc
+  name: volume-pool-sc
 provisioner: filestore.csi.storage.gke.io
 reclaimPolicy: Delete
 volumeBindingMode: Immediate
