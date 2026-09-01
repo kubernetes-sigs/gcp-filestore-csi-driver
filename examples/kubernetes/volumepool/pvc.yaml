@@ -5,7 +5,7 @@ metadata:
 spec:
   accessModes:
   - ReadWriteMany
-  storageClassName: staging-volume-pool-sc
+  storageClassName: volume-pool-sc
   resources:
     requests:
       storage: 10Gi
