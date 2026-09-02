@@ -3,7 +3,11 @@
 set -o errexit
 trap "exit 0" TERM
 
-# 1. Start rpcbind safely (don't fail errexit if port 111 is already bound)
+# 1. Recreate paths shadowed by the Kubernetes emptyDir mount over /run
+mkdir -p /run/sendsigs.omit.d
+mkdir -p /run/rpc_pipefs
+
+# 2. Start rpcbind safely (don't fail errexit if port 111 is already bound)
 if ! rpcinfo -p 127.0.0.1 >/dev/null 2>&1; then
   service rpcbind start || echo "rpcbind start returned non-zero, continuing..."
 fi
