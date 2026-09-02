@@ -59,6 +59,17 @@ spec:
           # Modify this image for local development with master branch.
           image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           command: ["/nfs_services_start.sh"]
+          volumeMounts:
+            - mountPath: /run
+              name: rpc-run-dir
+          livenessProbe:
+            exec:
+              command: ["rpcinfo", "-T", "udp", "127.0.0.1", "100024"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            exec:
+              command: ["rpcinfo", "-p", "127.0.0.1"]
       volumes:
         - name: registration-dir
           hostPath:
@@ -72,3 +83,5 @@ spec:
           hostPath:
             path: /var/lib/kubelet/plugins/filestore.csi.storage.gke.io/
             type: DirectoryOrCreate
+        - name: rpc-run-dir
+          emptyDir: {}
