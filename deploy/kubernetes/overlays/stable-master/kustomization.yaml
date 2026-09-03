@@ -12,3 +12,7 @@ patchesJson6902:
    path: fsgrouppolicy.yaml
 transformers:
 - ../../images/stable-master
+
+# Uncomment the following if you want to use the node driver on gVisor node pools.
+# patchesStrategicMerge:
+# - node_toleration_patch.yaml

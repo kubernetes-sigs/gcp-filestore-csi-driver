@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -41,8 +42,8 @@ import (
 )
 
 const (
-	optionSmbUser     = "smbUser"
-	optionSmbPassword = "smbPassword"
+	optionSmbUser      = "smbUser"
+	optionSmbPassword  = "smbPassword"
 )
 
 var (
@@ -180,6 +181,21 @@ func (s *nodeServer) NodePublishVolume(ctx context.Context, req *csi.NodePublish
 	}
 
 	klog.V(4).Infof("Successfully mounted %s on node %s", targetPath, s.driver.config.NodeName)
+
+	if value, ok := volumeContext[util.AttrLateBindSubdir]; ok && value != "" {
+		lateBindPath := filepath.Join(targetPath, value)
+		if err := os.MkdirAll(lateBindPath, 0750); err != nil {
+			klog.Errorf("Failed to create late-bind subdirectory %s: %v", lateBindPath, err)
+		} else {
+			dirtyFilePath := filepath.Join(lateBindPath, ".gke-late-bind-dirty")
+			if err := os.WriteFile(dirtyFilePath, []byte("bypass"), 0644); err != nil {
+				klog.Errorf("Failed to create late-bind dirty file %s: %v", dirtyFilePath, err)
+			} else {
+				klog.V(4).Infof("Successfully prepared late-bind directory %s", lateBindPath)
+			}
+		}
+	}
+
 	return &csi.NodePublishVolumeResponse{}, nil
 }
 
