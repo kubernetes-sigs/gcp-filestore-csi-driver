@@ -299,7 +299,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				Name:             obj.Volume.Name,
 				CapacityGb:       util.RoundBytesToGb(obj.Volume.SizeBytes),
 				SourceBackup:     obj.BackupSource,
-				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions, obj.Network.Name),
+				NfsExportOptions: extractNfsShareExportOptions(obj.NfsExportOptions),
 			},
 		},
 		Networks: []*filev1beta1.NetworkConfig{
@@ -1148,7 +1148,7 @@ func (manager *gcfsServiceManager) StartCreateShareOp(ctx context.Context, share
 		Labels:           share.Labels,
 		MountName:        share.MountPointName,
 		Backup:           share.BackupId,
-		NfsExportOptions: extractNfsShareExportOptions(share.NfsExportOptions, share.Parent.Network.Name),
+		NfsExportOptions: extractNfsShareExportOptions(share.NfsExportOptions),
 	}
 
 	op, err := manager.multishareInstancesSharesService.Create(instanceuri, targetshare).ShareId(share.Name).Context(ctx).Do()
@@ -1466,7 +1466,7 @@ func isMultishareVolId(volId string) bool {
 	return strings.Contains(volId, "modeMultishare")
 }
 
-func extractNfsShareExportOptions(options []*NfsExportOptions, network string) []*filev1beta1multishare.NfsExportOptions {
+func extractNfsShareExportOptions(options []*NfsExportOptions) []*filev1beta1multishare.NfsExportOptions {
 	var filerOpts []*filev1beta1multishare.NfsExportOptions
 	for _, opt := range options {
 		filerOpts = append(filerOpts,
@@ -1476,7 +1476,6 @@ func extractNfsShareExportOptions(options []*NfsExportOptions, network string) [
 				AnonUid:    opt.AnonUid,
 				IpRanges:   opt.IpRanges,
 				SquashMode: opt.SquashMode,
-				Network:    network,
 			})
 	}
 	return filerOpts
