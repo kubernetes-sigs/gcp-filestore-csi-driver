@@ -1,0 +1,9 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: volume-pool-sc
+provisioner: filestore.csi.storage.gke.io
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  volume-pool: "projects/demo-project/locations/us-central1/volumePools/demo-pool-1"
