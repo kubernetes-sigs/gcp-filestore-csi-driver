@@ -67,9 +67,8 @@ const (
 	premiumTierMinSize       = 25 * util.Tb / 10
 	premiumTierMaxSize       = 639 * util.Tb / 10
 
-	directPeering         = "DIRECT_PEERING"
-	privateServiceAccess  = "PRIVATE_SERVICE_ACCESS"
-	privateServiceConnect = "PRIVATE_SERVICE_CONNECT"
+	directPeering        = "DIRECT_PEERING"
+	privateServiceAccess = "PRIVATE_SERVICE_ACCESS"
 
 	// Keys for Topology.
 	TopologyKeyZone = "topology.gke.io/zone"
@@ -746,8 +745,6 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	var nfsExportOptions []*file.NfsExportOptions
 	network := defaultNetwork
 	connectMode := directPeering
-	reservedIPRange := ""
-	reservedIPV4CIDR := ""
 	kmsKeyName := ""
 	fileProtocol := ""
 
@@ -776,15 +773,16 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			network = v
 		case ParamConnectMode:
 			connectMode = v
-			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
-				return nil, fmt.Errorf("connect mode can only be one of %q, %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
+			if connectMode != directPeering && connectMode != privateServiceAccess {
+				return nil, fmt.Errorf("connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
-		case ParamReservedIPV4CIDR:
-			reservedIPV4CIDR = v
-		case ParamReservedIPRange:
-			reservedIPRange = v
+		// Ignore the cidr flag as it is not passed to the cloud provider
+		// It will be used to get unreserved IP in the reserveIPV4Range function
+		// ignore IPRange flag as it will be handled at the same place as cidr
+		case ParamReservedIPV4CIDR, ParamReservedIPRange:
+			continue
 		case cloud.ParameterKeyResourceTags:
 			continue
 		case paramFileProtocol:
@@ -796,13 +794,6 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		default:
 			return nil, fmt.Errorf("invalid parameter %q", k)
 		}
-	}
-
-	if connectMode == privateServiceConnect &&
-		(reservedIPRange != "" || reservedIPV4CIDR != "") {
-		return nil, fmt.Errorf(
-			"reserved IP range parameters cannot be used with PRIVATE_SERVICE_CONNECT",
-		)
 	}
 
 	switch fileProtocol {
