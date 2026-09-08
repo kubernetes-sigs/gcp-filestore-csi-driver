@@ -68,7 +68,7 @@ var (
 
 	featureMultishareBackups        = flag.Bool("feature-multishare-backups", false, "if set to true, the multishare backups will be enabled. enable-multishare must be set to true as well")
 	featureNFSExportOptionsOnCreate = flag.Bool("feature-nfs-export-options", false, "if set to true, the driver will accpet nfs-export-options-on-create parameter and configure IP Access rules")
-	featureSharePools               = flag.Bool("feature-share-pools", false, "if set to true, the driver will support Filestore Share Pools provisioning")
+	featureVolumePools              = flag.Bool("feature-volume-pools", false, "if set to true, the driver will support Filestore Volume Pools provisioning")
 
 	// Feature stateful CSI driver specific parameters
 	featureStateful      = flag.Bool("feature-stateful-multishare", false, "if set to true, the controller will run stateful multishare controller, if set to true, enable-multishare must be set to true as well")
@@ -211,8 +211,8 @@ func main() {
 		FeatureNFSv4Support: &driver.FeatureNFSv4Support{
 			Enabled: *featureNFSv4Support,
 		},
-		FeatureSharePools: &driver.FeatureSharePools{
-			Enabled: *featureSharePools,
+		FeatureVolumePools: &driver.FeatureVolumePools{
+			Enabled: *featureVolumePools,
 		},
 	}
 
