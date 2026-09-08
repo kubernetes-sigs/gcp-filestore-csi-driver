@@ -1,0 +1,39 @@
+# Node DaemonSet patch for GKE Substrate Agent integration with GCP Filestore CSI Driver.
+#
+# Key Features & Rationale:
+# 1. role: node-plugin label
+#    - Differentiates Node DaemonSet pods from Controller Deployment pods so that the
+#      csi-filestore-controller Service does not route gRPC controller requests to nodes.
+#
+# 2. Bidirectional Mount Propagation (/var/lib/ateom-gvisor)
+#    - Substrate's ateom-gvisor daemon on worker nodes manages microVM actor volume staging
+#      under /var/lib/ateom-gvisor.
+#    - Mounting this host directory with 'mountPropagation: Bidirectional' allows NFS shares
+#      mounted by the CSI node driver to be immediately visible to the host and accessible
+#      by Substrate worker pods during actor resume.
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gcp-filestore-csi-node
+  namespace: gcp-filestore-csi-driver
+  labels:
+    role: node-plugin
+spec:
+  template:
+    metadata:
+      labels:
+        role: node-plugin
+    spec:
+      containers:
+      - name: gcp-filestore-driver
+        volumeMounts:
+        # Propagate mounts to the Substrate ateom-gvisor directory on the host
+        - name: ateom-dir
+          mountPath: /var/lib/ateom-gvisor
+          mountPropagation: Bidirectional
+      volumes:
+      - name: ateom-dir
+        hostPath:
+          path: /var/lib/ateom-gvisor
+          type: DirectoryOrCreate
