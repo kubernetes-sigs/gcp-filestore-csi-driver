@@ -2,13 +2,13 @@
 #
 # Key Features & Rationale:
 # 1. Selector: app=gcp-filestore-csi-driver, role=controller-plugin
-#    - Targets exclusively the controller deployment pod where the socat sidecar is running.
+#    - Targets exclusively the controller deployment pod where the envoy proxy is running.
 #    - Prevents gRPC traffic from load-balancing to node daemonset pods.
 #
-# 2. Port Mapping (port: 50053 -> targetPort: 10000)
-#    - Substrate ate-controller connects to port 50053 via cluster DNS:
-#      dns:///csi-filestore-controller.gcp-filestore-csi-driver.svc.cluster.local:50053
-#    - The service routes traffic to port 10000 where socat forwards it to /csi/csi.sock.
+# 2. Port Mapping (port: 10000 -> targetPort: 10000)
+#    - Substrate ate-api-server connects to port 10000 via cluster DNS:
+#      tcp://csi-filestore-controller.gcp-filestore-csi-driver.svc:10000
+#    - The service routes traffic to port 10000 where envoy forwards it to /csi/csi.sock.
 
 apiVersion: v1
 kind: Service
@@ -20,7 +20,7 @@ spec:
     app: gcp-filestore-csi-driver
     role: controller-plugin
   ports:
-  - name: grpc
-    port: 50053
+  - name: grpc-tls
+    port: 10000
     protocol: TCP
     targetPort: 10000
