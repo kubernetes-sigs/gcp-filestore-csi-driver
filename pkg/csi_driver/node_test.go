@@ -1231,3 +1231,52 @@ func gotExpectedError(testFunc string, wantErr bool, err error) error {
 	}
 	return nil
 }
+
+func TestNodePublishVolumeLateBind(t *testing.T) {
+	testEnv := initTestNodeServer(t)
+	base, err := os.MkdirTemp("", "node-publish-late-bind-")
+	if err != nil {
+		t.Fatalf("failed to setup testdir: %v", err)
+	}
+	defer os.RemoveAll(base)
+
+	targetPath := filepath.Join(base, "mount")
+	if err := os.MkdirAll(targetPath, 0750); err != nil {
+		t.Fatalf("failed to setup target path: %v", err)
+	}
+	stagingTargetPath := filepath.Join(base, "staging")
+	if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
+		t.Fatalf("failed to setup staging path: %v", err)
+	}
+
+	subdir := "my-subdir"
+	req := &csi.NodePublishVolumeRequest{
+		VolumeId:          testVolumeID,
+		StagingTargetPath: stagingTargetPath,
+		TargetPath:        targetPath,
+		VolumeCapability:  testVolumeCapability,
+		VolumeContext: map[string]string{
+			attrIP:                  "1.1.1.1",
+			attrVolume:              "test-volume",
+			util.AttrLateBindSubdir: subdir,
+		},
+	}
+
+	_, err = testEnv.ns.NodePublishVolume(context.TODO(), req)
+	if err != nil {
+		t.Fatalf("NodePublishVolume failed: %v", err)
+	}
+
+	lateBindPath := filepath.Join(targetPath, subdir)
+	if _, err := os.Stat(lateBindPath); os.IsNotExist(err) {
+		t.Errorf("Late-bind subdirectory %s was not created", lateBindPath)
+	}
+
+	dirtyFile := filepath.Join(lateBindPath, ".gke-late-bind-dirty")
+	content, err := os.ReadFile(dirtyFile)
+	if err != nil {
+		t.Errorf("Failed to read dirty file %s: %v", dirtyFile, err)
+	} else if string(content) != "bypass" {
+		t.Errorf("Unexpected content in dirty file: %s", string(content))
+	}
+}
