@@ -572,8 +572,6 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	tier := enterpriseTier
 	network := defaultNetwork
 	connectMode := directPeering
-	reservedIPRange := ""
-	reservedIPV4CIDR := ""
 	kmsKeyName := ""
 	fileProtocol := ""
 	for k, v := range req.GetParameters() {
@@ -584,8 +582,8 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			network = v
 		case ParamConnectMode:
 			connectMode = v
-			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
-				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q, %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
+			if connectMode != directPeering && connectMode != privateServiceAccess {
+				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q or %q", directPeering, privateServiceAccess)
 			}
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
@@ -597,10 +595,11 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			continue
 		case paramFileProtocol:
 			fileProtocol = v
-		case ParamReservedIPV4CIDR:
-			reservedIPV4CIDR = v
-		case ParamReservedIPRange:
-			reservedIPRange = v
+		// Ignore the cidr flag as it is not passed to the cloud provider
+		// It will be used to get unreserved IP in the reserveIPV4Range function
+		// ignore IPRange flag as it will be handled at the same place as cidr
+		case ParamReservedIPV4CIDR, ParamReservedIPRange:
+			continue
 		case ParamMultishareInstanceScLabel:
 			continue
 		case paramMaxVolumeSize:
@@ -612,14 +611,6 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		default:
 			return nil, status.Errorf(codes.InvalidArgument, "invalid parameter %q", k)
 		}
-	}
-
-	if connectMode == privateServiceConnect &&
-		(reservedIPRange != "" || reservedIPV4CIDR != "") {
-		return nil, status.Error(
-			codes.InvalidArgument,
-			"reserved IP range parameters cannot be used with PRIVATE_SERVICE_CONNECT",
-		)
 	}
 
 	if tier != enterpriseTier {

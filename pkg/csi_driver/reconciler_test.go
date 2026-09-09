@@ -20,10 +20,6 @@ import (
 	"fmt"
 	"testing"
 
-	storagev1 "k8s.io/api/storage/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	storageListers "k8s.io/client-go/listers/storage/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/utils/strings/slices"
 	v1 "sigs.k8s.io/gcp-filestore-csi-driver/pkg/apis/multishare/v1"
 	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
@@ -267,82 +263,4 @@ func TestInstanceEmpty(t *testing.T) {
 
 func instanceURI(project, location, name string) string {
 	return fmt.Sprintf("projects/%s/locations/%s/instances/%s", project, location, name)
-}
-
-func TestReconcilerGenerateNewMultishareInstance(t *testing.T) {
-	const storageClassName = "test-sc"
-
-	cases := []struct {
-		name      string
-		params    map[string]string
-		expectErr bool
-	}{
-		{
-			name: "private service connect",
-			params: map[string]string{
-				ParamConnectMode: privateServiceConnect,
-			},
-			expectErr: false,
-		},
-		{
-			name: "private service connect with reserved IP range",
-			params: map[string]string{
-				ParamConnectMode:     privateServiceConnect,
-				ParamReservedIPRange: "test-range",
-			},
-			expectErr: true,
-		},
-		{
-			name: "private service connect with reserved IPv4 CIDR",
-			params: map[string]string{
-				ParamConnectMode:      privateServiceConnect,
-				ParamReservedIPV4CIDR: "10.0.0.0/22",
-			},
-			expectErr: true,
-		},
-	}
-
-	recon := &MultishareReconciler{
-		config: &GCFSDriverConfig{
-			ClusterName: "test-cluster",
-			IsRegional:  true,
-		},
-		cloud: &cloud.Cloud{Zone: "us-central1-c"},
-		controllerServer: &controllerServer{config: &controllerServerConfig{
-			multiShareController: &MultishareController{},
-		}},
-	}
-	instanceInfo := &v1.InstanceInfo{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: util.InstanceURIToInstanceInfoName(
-				instanceURI("test-project", "us-central1", "test-instance"),
-			),
-		},
-		Spec: v1.InstanceInfoSpec{
-			CapacityBytes:    util.MinMultishareInstanceSizeBytes,
-			StorageClassName: storageClassName,
-		},
-	}
-
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
-			if err := indexer.Add(&storagev1.StorageClass{
-				ObjectMeta: metav1.ObjectMeta{Name: storageClassName},
-				Parameters: test.params,
-			}); err != nil {
-				t.Fatalf("failed to add StorageClass: %v", err)
-			}
-			recon.scLister = storageListers.NewStorageClassLister(indexer)
-
-			instance, err := recon.generateNewMultishareInstance(instanceInfo)
-			if (err != nil) != test.expectErr {
-				t.Errorf("got error %v, expectErr %v", err, test.expectErr)
-				return
-			}
-			if err == nil && instance.Network.ConnectMode != privateServiceConnect {
-				t.Errorf("got connect mode %q, want %q", instance.Network.ConnectMode, privateServiceConnect)
-			}
-		})
-	}
 }
