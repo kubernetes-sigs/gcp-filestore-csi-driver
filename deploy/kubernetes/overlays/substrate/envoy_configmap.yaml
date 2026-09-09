@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: csi-envoy-config
+  namespace: gcp-filestore-csi-driver
+data:
+  envoy.yaml: |
+    admin:
+      address:
+        socket_address: { address: 127.0.0.1, port_value: 15000 }
+    static_resources:
+      listeners:
+      - name: csi_tls_listener
+        address:
+          socket_address: { address: 0.0.0.0, port_value: 10000 }
+        filter_chains:
+        - transport_socket:
+            name: envoy.transport_sockets.tls
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
+              require_client_certificate: true
+              common_tls_context:
+                alpn_protocols:
+                - h2
+                tls_certificates:
+                - certificate_chain: { filename: /run/servicedns/credential-bundle.pem }
+                  private_key: { filename: /run/servicedns/credential-bundle.pem }
+                watched_directory: { path: /run/servicedns }
+                validation_context:
+                  trusted_ca: { filename: /run/podidentity-ca/trust-bundle.pem }
+                  watched_directory: { path: /run/podidentity-ca }
+                  match_typed_subject_alt_names:
+                  - san_type: URI
+                    matcher:
+                      # Pin to authorized Substrate API server identity
+                      exact: "spiffe://cluster.local/ns/ate-system/sa/ate-api-server"
+          filters:
+          - name: envoy.filters.network.tcp_proxy
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy
+              stat_prefix: csi_proxy
+              cluster: csi_unix_socket
+      clusters:
+      - name: csi_unix_socket
+        connect_timeout: 0.25s
+        type: STATIC
+        load_assignment:
+          cluster_name: csi_unix_socket
+          endpoints:
+          - lb_endpoints:
+            - endpoint:
+                address:
+                  pipe:
+                    path: /csi/csi.sock
