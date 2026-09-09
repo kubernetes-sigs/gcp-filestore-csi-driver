@@ -9,10 +9,10 @@
 #    - Differentiates controller pods from node daemonset pods so the csi-filestore-controller
 #      Kubernetes Service only routes gRPC control-plane traffic to this controller.
 #
-# 3. socat sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
-#    - Substrate's ate-controller communicates with CSI drivers over gRPC network sockets.
-#      Because the CSI driver natively listens on a local Unix domain socket, this lightweight
-#      socat proxy exposes the Unix socket over TCP port 10000 inside the pod.
+# 3. envoy mTLS proxy sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
+#    - Substrate's ate-api-server communicates with CSI drivers over mTLS gRPC network sockets.
+#      Because the CSI driver natively listens on a local Unix domain socket, this Envoy 
+#      proxy intercepts mTLS traffic on TCP port 10000 and forwards it to the Unix socket.
 #
 # 4. --feature-volume-pools=true
 #    - Enables VolumePool capacity management and volume claim/provisioning logic.
@@ -39,18 +39,44 @@ spec:
       volumes:
       - name: cloud-sa-volume
         $patch: delete
+      - name: envoy-config
+        configMap:
+          name: csi-envoy-config
+      - name: servicedns-certs
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+      - name: podidentity-ca
+        projected:
+          sources:
+          - clusterTrustBundle:
+              signerName: podidentity.podcert.ate.dev/identity
+              labelSelector:
+                matchLabels:
+                  podcert.ate.dev/canarying: live
+              path: trust-bundle.pem
       containers:
-      # socat sidecar bridges TCP port 10000 to the local Unix CSI domain socket for Substrate gRPC control plane
-      - name: socat
-        image: docker.io/alpine/socat:1.7.4.3-r0
-        args:
-        - "tcp-listen:10000,fork,reuseaddr"
-        - "unix-connect:/var/lib/csi/sockets/pluginproxy/csi.sock"
+      # envoy mTLS proxy sidecar intercepts traffic on port 10000 to the local Unix CSI domain socket for Substrate control plane
+      - name: envoy
+        image: envoyproxy/envoy:v1.34-latest
+        command: ["/usr/local/bin/envoy"]
+        args: ["-c", "/etc/envoy/envoy.yaml"]
         securityContext:
           privileged: true
         volumeMounts:
+        - name: envoy-config
+          mountPath: /etc/envoy
         - name: socket-dir
-          mountPath: /var/lib/csi/sockets/pluginproxy
+          mountPath: /csi
+        - name: servicedns-certs
+          mountPath: /run/servicedns
+          readOnly: true
+        - name: podidentity-ca
+          mountPath: /run/podidentity-ca
+          readOnly: true
       - name: gcp-filestore-driver
         volumeMounts:
         # Explicitly retain socket-dir mount for CSI operations
