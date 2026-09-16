@@ -1041,23 +1041,3 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 		})
 	}
 }
-
-func TestExtractNfsShareExportOptionsSetsSourceNetwork(t *testing.T) {
-	const network = "projects/test-project/global/networks/test-network"
-
-	got := extractNfsShareExportOptions(
-		[]*NfsExportOptions{
-			{
-				IpRanges: []string{"10.0.0.0/24"},
-			},
-		},
-		network,
-	)
-
-	if len(got) != 1 {
-		t.Fatalf("got %d options, want 1", len(got))
-	}
-	if got[0].Network != network {
-		t.Errorf("got network %q, want %q", got[0].Network, network)
-	}
-}

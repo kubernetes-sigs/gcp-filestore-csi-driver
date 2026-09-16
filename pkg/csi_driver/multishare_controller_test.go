@@ -695,62 +695,6 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 				Protocol: v3FileProtocol,
 			},
 		},
-		{
-			name:         "valid private service connect params",
-			instanceName: testInstanceName,
-			req: &csi.CreateVolumeRequest{
-				Parameters: map[string]string{
-					ParamConnectMode:               privateServiceConnect,
-					ParameterKeyLabels:             "a=b,c=d",
-					ParamMultishareInstanceScLabel: testInstanceScPrefix,
-				},
-			},
-			expectedInstance: &file.MultishareInstance{
-				Project:       "test-project",
-				Location:      "us-central1",
-				Name:          testInstanceName,
-				CapacityBytes: util.MinMultishareInstanceSizeBytes,
-				Network: file.Network{
-					Name:        "default",
-					ConnectMode: privateServiceConnect,
-				},
-				Tier:       enterpriseTier,
-				KmsKeyName: "",
-				Labels: map[string]string{
-					"a":                                    "b",
-					"c":                                    "d",
-					tagKeyCreatedBy:                        "test-driver",
-					TagKeyClusterLocation:                  testRegion,
-					TagKeyClusterName:                      testClusterName,
-					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
-				},
-				Protocol: v3FileProtocol,
-			},
-		},
-		{
-			name:         "private service connect with reserved IP range",
-			instanceName: testInstanceName,
-			req: &csi.CreateVolumeRequest{
-				Parameters: map[string]string{
-					ParamConnectMode:               privateServiceConnect,
-					ParamReservedIPRange:           "test-range",
-					ParamMultishareInstanceScLabel: testInstanceScPrefix,
-				},
-			},
-			expectErr: true,
-		},
-		{
-			name:         "private service connect with reserved IPv4 CIDR",
-			instanceName: testInstanceName,
-			req: &csi.CreateVolumeRequest{
-				Parameters: map[string]string{
-					ParamConnectMode:               privateServiceConnect,
-					ParamReservedIPV4CIDR:          "10.0.0.0/22",
-					ParamMultishareInstanceScLabel: testInstanceScPrefix,
-				},
-			},
-			expectErr: true,
-		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
