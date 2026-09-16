@@ -33,5 +33,5 @@ namespace: gcp-filestore-csi-driver
 
 images:
 - name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
-  newName: gcr.io/arokade-consumer/gcp-filestore-csi-driver
-  newTag: v2.0.0-dev
+  newName: gcr.io/gke-release/gcp-filestore-csi-driver
+  digest: sha256:e9d0230db57ed958cd0c4d79d68ce195debbd7ec39bef93f5d20fa6341803874
