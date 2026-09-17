@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcp-filestore-csi-controller
+  namespace: gcp-filestore-csi-driver
+spec:
+  template:
+    spec:
+      imagePullSecrets:
+      - name: gcr-json-key
+      # On GKE / Workload Identity deployments, remove the static SA key secret volume
+      # because authentication is handled natively by the metadata server.
+      volumes:
+      - name: cloud-sa-volume
+        $patch: delete
+      containers:
+      - name: gcp-filestore-driver
+        volumeMounts:
+        # Explicitly retain socket-dir mount so Kustomize list patching does not clear default mounts.
+        - name: socket-dir
+          mountPath: /csi
+        # Remove static SA key secret mount.
+        - name: cloud-sa-volume
+          $patch: delete
+        env:
+        # Remove GOOGLE_APPLICATION_CREDENTIALS as authentication is handled via Workload Identity.
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          $patch: delete
+        args:
+        - "--v=4"
+        - "--endpoint=unix:/csi/csi.sock"
+        - "--nodeid=$(KUBE_NODE_NAME)"
+        - "--controller=true"
+        - "--feature-share-pools=true"
