@@ -25,7 +25,7 @@ data:
                 tls_certificates:
                 - certificate_chain: { filename: /run/servicedns/credential-bundle.pem }
                   private_key: { filename: /run/servicedns/credential-bundle.pem }
-                watched_directory: { path: /run/servicedns }
+                  watched_directory: { path: /run/servicedns }
                 validation_context:
                   trusted_ca: { filename: /run/podidentity-ca/trust-bundle.pem }
                   watched_directory: { path: /run/podidentity-ca }
