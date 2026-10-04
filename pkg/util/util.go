@@ -54,6 +54,8 @@ const (
 	multiShareVolumeTotalElements = 8
 
 	ManagedFilestoreCSINamespace = "gke-managed-filestorecsi"
+
+	AttrLateBindSubdir =  "late-bind-subdirectory"
 )
 
 // Round up to the nearest Gb
