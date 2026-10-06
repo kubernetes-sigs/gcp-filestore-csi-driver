@@ -19,6 +19,15 @@ updates:
     - "release-note-none"
     - "ok-to-test"
     - "kind/cleanup"
+- package-ecosystem: "docker"
+  directory: "/cmd/lockrelease"
+  schedule:
+    interval: weekly
+  labels:
+    - "area/dependency"
+    - "release-note-none"
+    - "ok-to-test"
+    - "kind/cleanup"
 - package-ecosystem: gomod
   directory: "/"
   allow:
