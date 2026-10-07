@@ -60,7 +60,7 @@ spec:
           image: gcr.io/gke-release/gcp-filestore-csi-driver:v0.2.0-gke.0
           command: ["/nfs_services_start.sh"]
           volumeMounts:
-            - mountPath: /run
+            - mountPath: /run/rpcbind
               name: rpc-run-dir
           livenessProbe:
             exec:
@@ -82,5 +82,5 @@ spec:
             type: DirectoryOrCreate
         - name: rpc-run-dir
           hostPath:
-            path: /run
-            type: Directory
+            path: /run/rpcbind
+            type: DirectoryOrCreate
