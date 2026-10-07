@@ -3,9 +3,12 @@
 set -o errexit
 trap 'service nfs-common stop 2>/dev/null || true; service rpcbind stop 2>/dev/null || true; exit 0' TERM INT
 
-# 1. Ensure required runtime directories exist on /run
+# 1. Ensure required runtime directories exist
 mkdir -p /run/sendsigs.omit.d
 mkdir -p /run/rpc_pipefs
+mkdir -p /run/rpcbind
+chown _rpc:root /run/rpcbind 2>/dev/null || true
+chmod 0755 /run/rpcbind 2>/dev/null || true
 
 # 2. Start rpcbind safely (don't fail errexit if port 111 is already bound)
 if ! rpcinfo -p 127.0.0.1 >/dev/null 2>&1; then
