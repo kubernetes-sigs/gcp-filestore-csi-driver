@@ -203,6 +203,7 @@ func NewService(ctx context.Context, opts ...option.ClientOption) (*Service, err
 	s.OrganizationSecurityPolicies = NewOrganizationSecurityPoliciesService(s)
 	s.PacketMirrorings = NewPacketMirroringsService(s)
 	s.PreviewFeatures = NewPreviewFeaturesService(s)
+	s.ProjectViews = NewProjectViewsService(s)
 	s.Projects = NewProjectsService(s)
 	s.PublicAdvertisedPrefixes = NewPublicAdvertisedPrefixesService(s)
 	s.PublicDelegatedPrefixes = NewPublicDelegatedPrefixesService(s)
@@ -410,6 +411,8 @@ type Service struct {
 	PacketMirrorings *PacketMirroringsService
 
 	PreviewFeatures *PreviewFeaturesService
+
+	ProjectViews *ProjectViewsService
 
 	Projects *ProjectsService
 
@@ -1069,6 +1072,15 @@ func NewPreviewFeaturesService(s *Service) *PreviewFeaturesService {
 }
 
 type PreviewFeaturesService struct {
+	s *Service
+}
+
+func NewProjectViewsService(s *Service) *ProjectViewsService {
+	rs := &ProjectViewsService{s: s}
+	return rs
+}
+
+type ProjectViewsService struct {
 	s *Service
 }
 
@@ -1897,6 +1909,13 @@ type AcceleratorType struct {
 	MaximumCardsPerInstance int64 `json:"maximumCardsPerInstance,omitempty"`
 	// Name: [Output Only] Name of the resource.
 	Name string `json:"name,omitempty"`
+	// ResourceMetadata: Output only. Contains standard resource metadata for an
+	// AcceleratorType
+	// resource. It is populated for each instance of the AcceleratorType
+	// resource, and includes the api_version the
+	// instance was retrieved through, and its canonical
+	// resource_type name.
+	ResourceMetadata *ResourceMetadata `json:"resourceMetadata,omitempty"`
 	// SelfLink: Output only. [Output Only] Server-defined, fully qualified URL for
 	// this resource.
 	SelfLink string `json:"selfLink,omitempty"`
@@ -2058,7 +2077,7 @@ type AcceleratorTypeAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AcceleratorTypeAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -2239,7 +2258,7 @@ type AcceleratorTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AcceleratorTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -2406,7 +2425,7 @@ type AcceleratorTypesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AcceleratorTypesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -2957,7 +2976,7 @@ type AddressAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AddressAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -3139,7 +3158,7 @@ type AddressListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AddressListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -3305,7 +3324,7 @@ type AddressesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AddressesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -4607,7 +4626,7 @@ type AutoscalerAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AutoscalerAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -4789,7 +4808,7 @@ type AutoscalerListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AutoscalerListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -5097,7 +5116,7 @@ type AutoscalersScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*AutoscalersScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -5606,8 +5625,9 @@ type Backend struct {
 	// see
 	// Connection balancing mode.
 	//
-	// Backends must use compatible balancing modes. For more information,
-	// see
+	// Backends must use compatible balancing modes. Backends of a backend
+	// service may use different balancing modes. For more information, see
+	//
 	// Supported balancing modes and target capacity settings and
 	// Restrictions and guidance for instance groups.
 	//
@@ -5655,6 +5675,9 @@ type Backend struct {
 	// Failover: This field designates whether this is a failover backend. More
 	// than one
 	// failover backend can be configured for a given BackendService.
+	//
+	// This field can only be used for a regional external Passthrough Network
+	// Load Balancer or a regional internal Passthrough Network Load Balancer.
 	Failover bool `json:"failover,omitempty"`
 	// Group: The fully-qualified URL of aninstance
 	// group or network endpoint
@@ -5753,6 +5776,16 @@ type Backend struct {
 	//    capacity, backends in this layer would be used and traffic would be
 	//    assigned based on the load balancing algorithm you use. This is the
 	//    default
+	//
+	//
+	//
+	// For global external Passthrough Network Load Balancers, the
+	// following
+	// restrictions apply:
+	//
+	//    - At most one backend can be marked as PREFERRED.
+	//    - PREFERRED and DEFAULT backends cannot reside
+	//    in the same Cloud region.
 	//
 	// Possible values:
 	//   "DEFAULT" - No preference.
@@ -6061,7 +6094,7 @@ type BackendBucketAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendBucketAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -6127,18 +6160,18 @@ type BackendBucketCdnPolicy struct {
 	CacheKeyPolicy *BackendBucketCdnPolicyCacheKeyPolicy `json:"cacheKeyPolicy,omitempty"`
 	// CacheMode: Specifies the cache setting for all responses from this
 	// backend.
-	// The possible values are:USE_ORIGIN_HEADERS Requires the origin to set valid
-	// caching
+	// The possible values are:
+	// USE_ORIGIN_HEADERS Requires the origin to set valid caching
 	// headers to cache content. Responses without these headers will not be
 	// cached at Google's edge, and will require a full trip to the origin on
 	// every request, potentially impacting performance and increasing load on
-	// the origin server.FORCE_CACHE_ALL Cache all content, ignoring any
-	// "private",
+	// the origin server.
+	// FORCE_CACHE_ALL Cache all content, ignoring any "private",
 	// "no-store" or "no-cache" directives in Cache-Control response
 	// headers.
 	// Warning: this may result in Cloud CDN caching private,
-	// per-user (user identifiable) content.CACHE_ALL_STATIC Automatically cache
-	// static content,
+	// per-user (user identifiable) content.
+	// CACHE_ALL_STATIC Automatically cache static content,
 	// including common image formats, media (video and audio), and web
 	// assets
 	// (JavaScript and CSS). Requests and responses that are marked as
@@ -6512,7 +6545,7 @@ type BackendBucketListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendBucketListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -6693,7 +6726,7 @@ type BackendBucketListUsableWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendBucketListUsableWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -6914,7 +6947,7 @@ type BackendBucketsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendBucketsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -7200,8 +7233,9 @@ type BackendService struct {
 	// and external passthrough Network Load
 	// Balancers
 	// (https://cloud.google.com/load-balancing/docs/network/networklb-failover-overview).
-	//
-	// failoverPolicy cannot be specified with haPolicy.
+	// failoverPolicy cannot be specified with haPolicy.failoverPolicy cannot be
+	// used by global external Passthrough
+	// Network Load Balancers.
 	FailoverPolicy *BackendServiceFailoverPolicy `json:"failoverPolicy,omitempty"`
 	// Fingerprint: Fingerprint of this resource. A hash of the contents stored in
 	// this object.
@@ -7249,10 +7283,11 @@ type BackendService struct {
 	// endpoint health and electing a leader among the healthy
 	// endpoints.
 	// Therefore, haPolicy cannot be specified with healthChecks.
-	//
-	// haPolicy can only be specified for External Passthrough Network
-	// Load
-	// Balancers and Internal Passthrough Network Load Balancers.
+	// haPolicy can only be specified for External Passthrough
+	// Network Load Balancers and Internal Passthrough Network Load
+	// Balancers.haPolicy cannot be used by global external Passthrough
+	// Network
+	// Load Balancers.
 	HaPolicy *BackendServiceHAPolicy `json:"haPolicy,omitempty"`
 	// HealthChecks: The list of URLs to the healthChecks, httpHealthChecks
 	// (legacy), or
@@ -7339,8 +7374,8 @@ type BackendService struct {
 	// LoadBalancingScheme: Specifies the load balancer type. A backend
 	// service
 	// created for one type of load balancer cannot be used with another.
-	// For more information, refer toChoosing
-	// a load balancer.
+	// For more information, refer to
+	// Backend services product and scheme table.
 	//
 	// Possible values:
 	//   "EXTERNAL" - Signifies that this will be used for classic Application Load
@@ -7412,29 +7447,43 @@ type BackendService struct {
 	//    HTTP response header field Endpoint-Load-Metrics. The reported
 	//    metrics to use for computing the weights are specified via
 	// thecustomMetrics field.
+	//    - WEIGHTED_MAGLEV: Per-endpoint weighted load balancing via
+	//    health check reported weights. If set, the backend service must
+	// configure
+	//    an HTTP-based Health Check, and health check replies are expected to
+	//    contain the non-standard HTTP response header
+	// fieldX-Load-Balancing-Endpoint-Weight to specify the per-endpoint
+	//    weights. If set, load balancing is weighted based on the per-endpoint
+	//    weights reported in the last processed health check replies, as long as
+	//    every instance either reported a valid weight or had UNAVAILABLE_WEIGHT.
+	//    Otherwise, load balancing remains equal-weight.
 	//
-	//    This field is applicable to either:
-	//       - A regional backend service with the service protocol set to HTTP,
-	//       HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
-	//       INTERNAL_MANAGED.
-	//       - A global backend service with the
-	//       load_balancing_scheme set to INTERNAL_SELF_MANAGED, INTERNAL_MANAGED,
-	// or
-	//       EXTERNAL_MANAGED.
 	//
 	//
-	//    If sessionAffinity is not configured—that is, if session
-	//    affinity remains at the default value of NONE—then the
-	//    default value for localityLbPolicy
-	//    is ROUND_ROBIN. If session affinity is set to a value other
-	//    than NONE,
-	//    then the default value for localityLbPolicy isMAGLEV.
+	// This field is applicable to either:
 	//
-	//    Only ROUND_ROBIN and RING_HASH are supported
-	//    when the backend service is referenced by a URL map that is bound to
-	//    target gRPC proxy that has validateForProxyless field set to true.
+	//    - A regional backend service with the service protocol set to HTTP,
+	//    HTTPS, HTTP2 or H2C, and load_balancing_scheme set to
+	//    INTERNAL_MANAGED.
+	//    - A global backend service with the
+	//    load_balancing_scheme set to INTERNAL_SELF_MANAGED, INTERNAL_MANAGED, or
+	//    EXTERNAL_MANAGED.
 	//
-	//    localityLbPolicy cannot be specified with haPolicy.
+	//
+	//
+	// If sessionAffinity is not configured—that is, if session
+	// affinity remains at the default value of NONE—then the
+	// default value for localityLbPolicy
+	// is ROUND_ROBIN. If session affinity is set to a value other
+	// than NONE,
+	// then the default value for localityLbPolicy isMAGLEV.
+	//
+	// Only ROUND_ROBIN and RING_HASH are supported
+	// when the backend service is referenced by a URL map that is bound to
+	// target gRPC proxy that has validateForProxyless field set to
+	// true.
+	//
+	// localityLbPolicy cannot be specified with haPolicy.
 	//
 	// Possible values:
 	//   "INVALID_LB_POLICY"
@@ -7624,16 +7673,16 @@ type BackendService struct {
 	// Load
 	// Balancers, omit port_name.
 	PortName string `json:"portName,omitempty"`
-	// Protocol: The protocol this BackendService uses to communicate
-	// with backends.
+	// Protocol: The protocol this BackendService uses to communicate with
+	// backends.
 	//
-	// Possible values are HTTP, HTTPS, HTTP2, H2C, TCP, SSL, UDP or
-	// GRPC.
-	// depending on the chosen load balancer or Traffic Director
-	// configuration.
-	// Refer to the documentation for the load balancers or for Traffic
+	// Possible values are HTTP, HTTPS, HTTP2, H2C, TCP, SSL, UDP, GRPC,
+	// or
+	// UNSPECIFIED, depending on the chosen load balancer or Traffic
 	// Director
-	// for more information.
+	// configuration.
+	// Refer to
+	// Load balancing features for more information.
 	//
 	// Must be set to GRPC when the backend service is referenced by a URL map
 	// that is bound to target gRPC proxy.
@@ -7938,7 +7987,7 @@ type BackendServiceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendServiceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -8004,18 +8053,18 @@ type BackendServiceCdnPolicy struct {
 	CacheKeyPolicy *CacheKeyPolicy `json:"cacheKeyPolicy,omitempty"`
 	// CacheMode: Specifies the cache setting for all responses from this
 	// backend.
-	// The possible values are:USE_ORIGIN_HEADERS Requires the origin to set valid
-	// caching
+	// The possible values are:
+	// USE_ORIGIN_HEADERS Requires the origin to set valid caching
 	// headers to cache content. Responses without these headers will not be
 	// cached at Google's edge, and will require a full trip to the origin on
 	// every request, potentially impacting performance and increasing load on
-	// the origin server.FORCE_CACHE_ALL Cache all content, ignoring any
-	// "private",
+	// the origin server.
+	// FORCE_CACHE_ALL Cache all content, ignoring any "private",
 	// "no-store" or "no-cache" directives in Cache-Control response
 	// headers.
 	// Warning: this may result in Cloud CDN caching private,
-	// per-user (user identifiable) content.CACHE_ALL_STATIC Automatically cache
-	// static content,
+	// per-user (user identifiable) content.
+	// CACHE_ALL_STATIC Automatically cache static content,
 	// including common image formats, media (video and audio), and web
 	// assets
 	// (JavaScript and CSS). Requests and responses that are marked as
@@ -8658,8 +8707,8 @@ type BackendServiceHAPolicyLeaderNetworkEndpoint struct {
 	// the
 	// haPolicy.leader.backendGroup.
 	//
-	// The name must be 1-63 characters long, and comply with
-	// RFC1035.
+	// The value must be a valid RFC1035 name (1-63 characters) or a valid
+	// instance URL.
 	// Authorization requires the following IAM permission on the
 	// specified resource instance: compute.instances.use
 	Instance string `json:"instance,omitempty"`
@@ -8873,7 +8922,7 @@ type BackendServiceListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendServiceListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -9057,7 +9106,7 @@ type BackendServiceListUsableWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendServiceListUsableWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -9537,6 +9586,48 @@ type BackendServiceTlsSettings struct {
 	// authenticationMode
 	// field. Can only be specified if authenticationMode is not NONE.
 	AuthenticationConfig string `json:"authenticationConfig,omitempty"`
+	// Identity: Assigns the Managed Identity for the BackendService
+	// Workload.
+	//
+	//
+	// Use this property to configure the load balancer back-end to
+	// use
+	// certificates and roots of trust provisioned by the Managed Workload
+	// Identity system.
+	//
+	//  The `identity` property is the
+	// fully-specified SPIFFE ID to use in the SVID presented by the Load
+	// Balancer Workload.
+	//
+	//  The SPIFFE ID must be a resource starting with the
+	// `trustDomain` property value, followed by the path to the Managed
+	// Workload Identity.
+	//
+	//  Supported SPIFFE ID format:
+	//
+	//    - //<trust_domain>/ns/<namespace>/sa/<subject>
+	//
+	//
+	// The Trust Domain within the Managed Identity must refer to a valid
+	// Workload Identity Pool. The TrustConfig and CertificateIssuanceConfig
+	// will be inherited from the Workload Identity Pool.
+	//
+	//  Restrictions:
+	//
+	//    - If you set the `identity` property, you cannot manually set
+	//    the following fields:
+	//        - tlsSettings.sni
+	//       - tlsSettings.subjectAltNames
+	//       - tlsSettings.authenticationConfig
+	//
+	//
+	// When defining a `identity` for a RegionBackendServices, the
+	// corresponding Workload Identity Pool must have a ca_pool
+	// configured in the same region.
+	//
+	//  The system will set up a read-onlytlsSettings.authenticationConfig for the
+	// Managed Identity.
+	Identity string `json:"identity,omitempty"`
 	// Sni: Server Name Indication - see RFC3546 section 3.1. If set, the
 	// load
 	// balancer sends this string as the SNI hostname in the TLS connection to
@@ -9743,7 +9834,7 @@ type BackendServicesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*BackendServicesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -11023,6 +11114,610 @@ func (s CalendarModeRecommendation) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// CapacityAdviceRequest: A request to provide Assistant Scores. These scores
+// determine VM
+// obtainability and preemption likelihood.
+type CapacityAdviceRequest struct {
+	// DistributionPolicy: Policy specifying the distribution of instances
+	// across
+	// zones within the requested region.
+	DistributionPolicy *CapacityAdviceRequestDistributionPolicy `json:"distributionPolicy,omitempty"`
+	// InstanceFlexibilityPolicy: Policy for instance selectors.
+	InstanceFlexibilityPolicy *CapacityAdviceRequestInstanceFlexibilityPolicy `json:"instanceFlexibilityPolicy,omitempty"`
+	// InstanceProperties: Instance properties for this request.
+	InstanceProperties *CapacityAdviceRequestInstanceProperties `json:"instanceProperties,omitempty"`
+	// Size: The number of VM instances to request.
+	Size int64 `json:"size,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "DistributionPolicy") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "DistributionPolicy") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequest) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequest
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestDistributionPolicy: Distribution policy.
+type CapacityAdviceRequestDistributionPolicy struct {
+	// TargetShape: Target distribution shape. You can specify the following
+	// values:ANY, ANY_SINGLE_ZONE, or BALANCED.
+	//
+	// Possible values:
+	//   "ANY" - Picks zones for creating VM instances to fulfill the requested
+	// number
+	// of VMs within present resource constraints.
+	//   "ANY_SINGLE_ZONE" - Creates all VM instances within a single zone. The
+	// zone is selected
+	// based on the present resource constraints.
+	//   "BALANCED" - Prioritizes acquisition of resources, scheduling VMs in zones
+	// where
+	// resources are available while distributing VMs as evenly as possible
+	// across selected zones to minimize the impact of zonal failure.
+	//   "TARGET_SHAPE_UNSPECIFIED" - Default value, unused.
+	TargetShape string `json:"targetShape,omitempty"`
+	// Zones: Zones where Capacity Advisor looks for capacity.
+	Zones []*CapacityAdviceRequestDistributionPolicyZoneConfiguration `json:"zones,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "TargetShape") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "TargetShape") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestDistributionPolicy) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestDistributionPolicy
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestDistributionPolicyZoneConfiguration: Zone configuration
+// for the distribution policy.
+type CapacityAdviceRequestDistributionPolicyZoneConfiguration struct {
+	// Zone: The URL of the zone. It can be a
+	// partial or full URL. For example, the following are valid values:
+	//
+	//
+	//      - https://www.googleapis.com/compute/v1/projects/project/zones/zone
+	//    - projects/project/zones/zone
+	//    - zones/zone
+	Zone string `json:"zone,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Zone") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Zone") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestDistributionPolicyZoneConfiguration) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestDistributionPolicyZoneConfiguration
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestInstanceFlexibilityPolicy: Specification of
+// alternative, flexible instance configurations.
+type CapacityAdviceRequestInstanceFlexibilityPolicy struct {
+	// InstanceSelections: Named instance selections to configure properties.
+	// The key is an arbitrary, unique RFC1035 string that identifies the
+	// instance selection.
+	InstanceSelections map[string]CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelection `json:"instanceSelections,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "InstanceSelections") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "InstanceSelections") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestInstanceFlexibilityPolicy) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestInstanceFlexibilityPolicy
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelection: Machine
+// specification.
+type CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelection struct {
+	// Disks: Local SSDs.
+	Disks []*CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelectionAttachedDisk `json:"disks,omitempty"`
+	// GuestAccelerators: Accelerators configuration.
+	GuestAccelerators []*AcceleratorConfig `json:"guestAccelerators,omitempty"`
+	// MachineTypes: Full machine-type names, e.g. "n1-standard-16".
+	MachineTypes []string `json:"machineTypes,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Disks") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Disks") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelection) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelection
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelectionAttachedDisk:
+// Attached disk configuration.
+type CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelectionAttachedDisk struct {
+	// Type: Specifies the type of the disk.
+	//
+	// Possible values:
+	//   "DISK_TYPE_UNSPECIFIED" - Default value, unspecified disk type.
+	//   "SCRATCH" - Scratch disk (Local SSD).
+	Type string `json:"type,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Type") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Type") to include in API requests
+	// with the JSON null value. By default, fields with empty values are omitted
+	// from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelectionAttachedDisk) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestInstanceFlexibilityPolicyInstanceSelectionAttachedDisk
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestInstanceProperties: Instance provisioning properties.
+type CapacityAdviceRequestInstanceProperties struct {
+	// Scheduling: Specifies the scheduling options.
+	Scheduling *CapacityAdviceRequestInstancePropertiesScheduling `json:"scheduling,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Scheduling") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Scheduling") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestInstanceProperties) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestInstanceProperties
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceRequestInstancePropertiesScheduling: Defines the instance
+// scheduling options.
+type CapacityAdviceRequestInstancePropertiesScheduling struct {
+	// ProvisioningModel: Specifies the provisioning model.
+	//
+	// Possible values:
+	//   "FLEX_START" - Instance is provisioned using the Flex Start provisioning
+	// model and
+	// has a limited runtime.
+	//   "RESERVATION_BOUND" - Bound to the lifecycle of the reservation in which
+	// it is provisioned.
+	//   "SPOT" - Heavily discounted, no guaranteed runtime.
+	//   "STANDARD" - Standard provisioning with user controlled runtime, no
+	// discounts.
+	ProvisioningModel string `json:"provisioningModel,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ProvisioningModel") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ProvisioningModel") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceRequestInstancePropertiesScheduling) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceRequestInstancePropertiesScheduling
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceResponse: A response contains scoring recommendations.
+type CapacityAdviceResponse struct {
+	// Recommendations: Initially the API will provide one recommendation which
+	// balances the
+	// individual scores according to the service provider's preference.
+	Recommendations []*CapacityAdviceResponseRecommendation `json:"recommendations,omitempty"`
+
+	// ServerResponse contains the HTTP response code and headers from the server.
+	googleapi.ServerResponse `json:"-"`
+	// ForceSendFields is a list of field names (e.g. "Recommendations") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Recommendations") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceResponse) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceResponse
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceResponseRecommendation: Recommendation.
+type CapacityAdviceResponseRecommendation struct {
+	// Scores: Scores for the recommendation.
+	Scores *CapacityAdviceResponseRecommendationScores `json:"scores,omitempty"`
+	// Shards: Shards represent blocks of uniform capacity in recommendations.
+	Shards []*CapacityAdviceResponseRecommendationShard `json:"shards,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Scores") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Scores") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceResponseRecommendation) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceResponseRecommendation
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityAdviceResponseRecommendationScores: Groups information about a shard
+// of capacity.
+type CapacityAdviceResponseRecommendationScores struct {
+	// EstimatedUptime: The estimated run time of the majority of Spot VMs in the
+	// request
+	// before preemption. The estimate is best-effort only. It is based
+	// on
+	// historical data and current conditions.
+	EstimatedUptime string `json:"estimatedUptime,omitempty"`
+	// Obtainability: The obtainability score indicates the likelihood of
+	// successfully
+	// obtaining (provisioning) the requested number of VMs.
+	// The score range is 0.0 through 1.0. Higher is better.
+	Obtainability float64 `json:"obtainability,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "EstimatedUptime") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "EstimatedUptime") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceResponseRecommendationScores) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceResponseRecommendationScores
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+func (s *CapacityAdviceResponseRecommendationScores) UnmarshalJSON(data []byte) error {
+	type NoMethod CapacityAdviceResponseRecommendationScores
+	var s1 struct {
+		Obtainability gensupport.JSONFloat64 `json:"obtainability"`
+		*NoMethod
+	}
+	s1.NoMethod = (*NoMethod)(s)
+	if err := json.Unmarshal(data, &s1); err != nil {
+		return err
+	}
+	s.Obtainability = float64(s1.Obtainability)
+	return nil
+}
+
+// CapacityAdviceResponseRecommendationShard: Shards represent blocks of
+// uniform capacity in recommendations.
+// Each shard is for a single zone and a single machine shape. Each
+// shard
+// defines a size expressed as the number of VMs.
+type CapacityAdviceResponseRecommendationShard struct {
+	// InstanceCount: The number of instances.
+	InstanceCount int64 `json:"instanceCount,omitempty"`
+	// MachineType: The machine type corresponds to the instance selection in the
+	// request.
+	MachineType string `json:"machineType,omitempty"`
+	// ProvisioningModel: The provisioning model that you want to view
+	// recommendations for.
+	//
+	// Possible values:
+	//   "FLEX_START" - Instance is provisioned using the Flex Start provisioning
+	// model and
+	// has a limited runtime.
+	//   "RESERVATION_BOUND" - Bound to the lifecycle of the reservation in which
+	// it is provisioned.
+	//   "SPOT" - Heavily discounted, no guaranteed runtime.
+	//   "STANDARD" - Standard provisioning with user controlled runtime, no
+	// discounts.
+	ProvisioningModel string `json:"provisioningModel,omitempty"`
+	// Zone: Output only. The zone name for this shard.
+	Zone string `json:"zone,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "InstanceCount") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "InstanceCount") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityAdviceResponseRecommendationShard) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityAdviceResponseRecommendationShard
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryRequest: A request to get the capacity history.
+type CapacityHistoryRequest struct {
+	// InstanceProperties: Instance properties for this request.
+	InstanceProperties *CapacityHistoryRequestInstanceProperties `json:"instanceProperties,omitempty"`
+	// LocationPolicy: Location policy for this request.
+	LocationPolicy *CapacityHistoryRequestLocationPolicy `json:"locationPolicy,omitempty"`
+	// Types: List of history types to get capacity history for.
+	//
+	// Possible values:
+	//   "HISTORY_TYPE_UNSPECIFIED" - Default value, unused.
+	//   "PREEMPTION" - Preemption history.
+	//   "PRICE" - Price history.
+	Types []string `json:"types,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "InstanceProperties") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "InstanceProperties") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryRequest) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryRequest
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryRequestInstanceProperties: Instance properties for this
+// request.
+type CapacityHistoryRequestInstanceProperties struct {
+	// MachineType: The machine type for the VM, such as `n2-standard-4`.
+	MachineType string `json:"machineType,omitempty"`
+	// Scheduling: Specifies the scheduling options.
+	Scheduling *CapacityHistoryRequestInstancePropertiesScheduling `json:"scheduling,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "MachineType") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "MachineType") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryRequestInstanceProperties) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryRequestInstanceProperties
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryRequestInstancePropertiesScheduling: Scheduling options.
+type CapacityHistoryRequestInstancePropertiesScheduling struct {
+	// ProvisioningModel: The provisioning model to get capacity history for.
+	// This field must be set to SPOT.
+	//
+	// For more information, see
+	// Compute Engine instances provisioning models.
+	//
+	// Possible values:
+	//   "FLEX_START" - Instance is provisioned using the Flex Start provisioning
+	// model and
+	// has a limited runtime.
+	//   "RESERVATION_BOUND" - Bound to the lifecycle of the reservation in which
+	// it is provisioned.
+	//   "SPOT" - Heavily discounted, no guaranteed runtime.
+	//   "STANDARD" - Standard provisioning with user controlled runtime, no
+	// discounts.
+	ProvisioningModel string `json:"provisioningModel,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ProvisioningModel") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ProvisioningModel") to include in
+	// API requests with the JSON null value. By default, fields with empty values
+	// are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryRequestInstancePropertiesScheduling) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryRequestInstancePropertiesScheduling
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryRequestLocationPolicy: Location policy for this request.
+type CapacityHistoryRequestLocationPolicy struct {
+	// Location: The region or zone to get capacity history for.
+	//
+	// It can be a partial or full URL. For example, the following are
+	// valid
+	// values:
+	//
+	//
+	//      - https://www.googleapis.com/compute/v1/projects/project/zones/zone
+	//    - projects/project/zones/zone
+	//    - zones/zone
+	//
+	//
+	//
+	// This field is optional.
+	Location string `json:"location,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Location") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Location") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryRequestLocationPolicy) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryRequestLocationPolicy
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryResponse: Contains the capacity history.
+type CapacityHistoryResponse struct {
+	// Location: Output only. The location (region or zone) for which the capacity
+	// history is returned.
+	// It is returned as a URL - For
+	// example,https://www.googleapis.com/compute/v1/projects/project/zones/zone.
+	Location string `json:"location,omitempty"`
+	// MachineType: The machine type for which the capacity history is returned.
+	MachineType string `json:"machineType,omitempty"`
+	// PreemptionHistory: The preemption history for the requested machine type and
+	// location.
+	PreemptionHistory []*CapacityHistoryResponsePreemptionRecord `json:"preemptionHistory,omitempty"`
+	// PriceHistory: The price history for the requested machine type and location.
+	PriceHistory []*CapacityHistoryResponsePriceRecord `json:"priceHistory,omitempty"`
+
+	// ServerResponse contains the HTTP response code and headers from the server.
+	googleapi.ServerResponse `json:"-"`
+	// ForceSendFields is a list of field names (e.g. "Location") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Location") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryResponse) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryResponse
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// CapacityHistoryResponsePreemptionRecord: A record of Spot VM preemption
+// history.
+type CapacityHistoryResponsePreemptionRecord struct {
+	// Interval: The time interval for this preemption record.
+	Interval *Interval `json:"interval,omitempty"`
+	// PreemptionRate: The preemption rate during the interval, representing the
+	// fraction of
+	// Spot VMs that were preempted. Range: 0.0 to 1.0. Preemption rate
+	// is
+	// calculated as (total preempted Spots) / (total Spots that stopped
+	// running).
+	PreemptionRate float64 `json:"preemptionRate,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Interval") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Interval") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryResponsePreemptionRecord) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryResponsePreemptionRecord
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+func (s *CapacityHistoryResponsePreemptionRecord) UnmarshalJSON(data []byte) error {
+	type NoMethod CapacityHistoryResponsePreemptionRecord
+	var s1 struct {
+		PreemptionRate gensupport.JSONFloat64 `json:"preemptionRate"`
+		*NoMethod
+	}
+	s1.NoMethod = (*NoMethod)(s)
+	if err := json.Unmarshal(data, &s1); err != nil {
+		return err
+	}
+	s.PreemptionRate = float64(s1.PreemptionRate)
+	return nil
+}
+
+// CapacityHistoryResponsePriceRecord: A record of price history.
+type CapacityHistoryResponsePriceRecord struct {
+	// Interval: The time interval for this price record.
+	Interval *Interval `json:"interval,omitempty"`
+	// ListPrice: The Spot VM list price during the interval.
+	ListPrice *Money `json:"listPrice,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "Interval") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Interval") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s CapacityHistoryResponsePriceRecord) MarshalJSON() ([]byte, error) {
+	type NoMethod CapacityHistoryResponsePriceRecord
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // CircuitBreakers: Settings controlling the volume of requests, connections
 // and retries to this
 // backend service.
@@ -11254,7 +11949,9 @@ type Commitment struct {
 	// GENERAL_PURPOSE_N2D,GENERAL_PURPOSE_N4,
 	// GENERAL_PURPOSE_T2D,GRAPHICS_OPTIMIZED,
 	// GRAPHICS_OPTIMIZED_G4,GRAPHICS_OPTIMIZED_G4_VGPU,MEMORY_OPTIMIZED,
-	// MEMORY_OPTIMIZED_M3,MEMORY_OPTIMIZED_X4, STORAGE_OPTIMIZED_Z3. For
+	// MEMORY_OPTIMIZED_M3,MEMORY_OPTIMIZED_X4,
+	// STORAGE_OPTIMIZED_Z3,STORAGE_OPTIMIZED_Z4DS,
+	// STORAGE_OPTIMIZED_Z4DH,STORAGE_OPTIMIZED_Z4D4T. For
 	// example, type MEMORY_OPTIMIZED specifies a commitment that
 	// applies only to eligible resources of memory optimized M1 and M2
 	// machine
@@ -11307,7 +12004,13 @@ type Commitment struct {
 	//   "MEMORY_OPTIMIZED_X4_960_16T" - CUD bucket for X4 machine with 960 vCPUs
 	// and 16TB of memory.
 	//   "NETWORK_OPTIMIZED_C4N" - CUD bucket for C4N (dual Diorite) machines.
+	//   "NETWORK_OPTIMIZED_U4C" - CUD bucket for NETWORK_OPTIMIZED_U4C machines.
+	//   "NETWORK_OPTIMIZED_U4P" - CUD bucket for NETWORK_OPTIMIZED_U4P machines.
+	//   "NETWORK_OPTIMIZED_U4S" - CUD bucket for NETWORK_OPTIMIZED_U4S machines.
 	//   "STORAGE_OPTIMIZED_Z3"
+	//   "STORAGE_OPTIMIZED_Z4D4T" - CUD bucket for Z4D-4T machines.
+	//   "STORAGE_OPTIMIZED_Z4DH" - CUD bucket for Z4DH machines.
+	//   "STORAGE_OPTIMIZED_Z4DS" - CUD bucket for Z4DS machines.
 	//   "TYPE_UNSPECIFIED" - Note for internal users: When adding a new enum Type
 	// for v1, make sure
 	// to also add it in the comment for the `optional Type type` definition.
@@ -11464,7 +12167,7 @@ type CommitmentAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CommitmentAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -11646,7 +12349,7 @@ type CommitmentListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CommitmentListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -11871,7 +12574,7 @@ type CommitmentsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CommitmentsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -12147,7 +12850,7 @@ type CompositeHealthCheckAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CompositeHealthCheckAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -12365,7 +13068,7 @@ type CompositeHealthCheckListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CompositeHealthCheckListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -12560,7 +13263,7 @@ type CompositeHealthChecksScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CompositeHealthChecksScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -12620,6 +13323,7 @@ type ConfidentialInstanceConfig struct {
 	// confidential instance.
 	//
 	// Possible values:
+	//   "BMSAI" - Bare Metal Secure AI.
 	//   "CCA" - Arm Confidential Compute Architecture.
 	//   "CONFIDENTIAL_INSTANCE_TYPE_UNSPECIFIED" - No type specified. Do not use
 	// this value.
@@ -13001,7 +13705,7 @@ type CrossSiteNetworkListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*CrossSiteNetworkListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -14066,7 +14770,7 @@ type DiskAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DiskAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -14405,7 +15109,7 @@ type DiskListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DiskListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -14780,7 +15484,7 @@ type DiskTypeAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DiskTypeAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -14962,7 +15666,7 @@ type DiskTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DiskTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -15128,7 +15832,7 @@ type DiskTypesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DiskTypesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -15394,7 +16098,7 @@ type DisksScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*DisksScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -15930,7 +16634,7 @@ type ExchangedPeeringRoutesListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ExchangedPeeringRoutesListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -16370,7 +17074,7 @@ type ExternalVpnGatewayListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ExternalVpnGatewayListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -16875,7 +17579,7 @@ type FirewallListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FirewallListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -17135,7 +17839,7 @@ type FirewallPoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FirewallPoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -17476,7 +18180,7 @@ type FirewallPolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FirewallPolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -18003,6 +18707,9 @@ type ForwardingRule struct {
 	//
 	//
 	//
+	// The IP address can only be set at creation. Once set, it cannot be
+	// updated.
+	//
 	// The forwarding rule's target or backendService,
 	// and in most cases, also the loadBalancingScheme, determine the
 	// type of IP address that you can use. For detailed information, see
@@ -18012,6 +18719,12 @@ type ForwardingRule struct {
 	//
 	// When reading an IPAddress, the API always returns the IP
 	// address number.
+	//
+	// When creating a global external Passthrough Network Load Balancer
+	// forwarding rule (a parent forwarding rule), you must use theIPAddresses
+	// field, but the Google Cloud generated child
+	// forwarding rules set the IPAddress field instead. Refer to
+	// theavailabilityGroup field for further details.
 	IPAddress string `json:"IPAddress,omitempty"`
 	// IPProtocol: The IP protocol to which this rule applies.
 	//
@@ -18074,8 +18787,18 @@ type ForwardingRule struct {
 	AttachedExtensions []*ForwardingRuleAttachedExtension `json:"attachedExtensions,omitempty"`
 	// BackendService: Identifies the backend service to which the forwarding rule
 	// sends traffic.
-	// Required for internal and external passthrough Network Load Balancers;
-	// must be omitted for all other load balancer types.
+	//
+	// It is a required field for the following load balancers:
+	//
+	//    - Internal passthrough Network Load Balancers
+	//    - Backend service-based regional external passthrough Network Load
+	//    Balancers
+	//    - Global external passthrough Network Load Balancers
+	//
+	//
+	//
+	// It cannot be set by other load balancer types and protocol forwarding
+	// rules.
 	BackendService string `json:"backendService,omitempty"`
 	// BaseForwardingRule: Output only. [Output Only] The URL for the corresponding
 	// base forwarding rule. By base
@@ -18212,8 +18935,8 @@ type ForwardingRule struct {
 	Labels map[string]string `json:"labels,omitempty"`
 	// LoadBalancingScheme: Specifies the forwarding rule type.
 	//
-	// For more information about forwarding rules, refer to
-	// Forwarding rule concepts.
+	// For more information, refer to
+	// Forwarding rule product and scheme table.
 	//
 	// Possible values:
 	//   "EXTERNAL"
@@ -18267,6 +18990,18 @@ type ForwardingRule struct {
 	// APIs, the forwarding rule name must be a 1-20 characters string
 	// with
 	// lowercase letters and numbers and must start with a letter.
+	//
+	// For global external Passthrough Network Load Balancer forwarding rules,
+	// the
+	// forwarding rule name must be 1-43 characters long. For each global
+	// external
+	// Passthrough Network Load Balancer forwarding rule (a parent forwarding
+	// rule) that you create, Google Cloud generates two output-only
+	// child
+	// forwarding rules that are named by concatenating the parent forwarding
+	// rule
+	// name with the `-ag0` and `-ag1` suffixes, respectively. Refer to
+	// theavailabilityGroup field for further details.
 	Name string `json:"name,omitempty"`
 	// Network: This field is not used for global external load balancing.
 	//
@@ -18337,8 +19072,9 @@ type ForwardingRule struct {
 	//
 	// For external forwarding rules, two or more forwarding rules cannot use
 	// the
-	// same [IPAddress, IPProtocol] pair, and cannot have
-	// overlappingportRanges.
+	// same [IPAddress, IPProtocol] pair (specified inIPAddress, IPAddresses,
+	// IPProtocol
+	// fields) if they have overlapping portRanges.
 	//
 	// For internal forwarding rules within the same VPC network, two or
 	// more
@@ -18369,8 +19105,9 @@ type ForwardingRule struct {
 	//
 	// For external forwarding rules, two or more forwarding rules cannot use
 	// the
-	// same [IPAddress, IPProtocol] pair if they share at least one
-	// port number.
+	// same [IPAddress, IPProtocol] pair (specified inIPAddress, IPAddresses,
+	// IPProtocol
+	// fields) if they share at least one port number.
 	//
 	// For internal forwarding rules within the same VPC network, two or
 	// more
@@ -18479,6 +19216,16 @@ type ForwardingRule struct {
 	//      -  For Private Service Connect forwarding rules that forward traffic to
 	// managed services, the target must be a service attachment. The target is not
 	// mutable once set as a service attachment.
+	//
+	//
+	//
+	// The following load balancers cannot set the target field (they should set
+	// the backendService field instead):
+	//
+	//    - Internal passthrough Network Load Balancers
+	//    - Backend service-based regional external passthrough Network Load
+	//    Balancers
+	//    - Global external passthrough Network Load Balancers
 	Target string `json:"target,omitempty"`
 
 	// ServerResponse contains the HTTP response code and headers from the server.
@@ -18644,7 +19391,7 @@ type ForwardingRuleAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ForwardingRuleAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -18847,7 +19594,7 @@ type ForwardingRuleListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ForwardingRuleListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -19067,7 +19814,7 @@ type ForwardingRulesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ForwardingRulesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -19157,6 +19904,7 @@ type FutureReservation struct {
 	// existing commitment.
 	CommitmentInfo *FutureReservationCommitmentInfo `json:"commitmentInfo,omitempty"`
 	// Possible values:
+	//   "CONFIDENTIAL_COMPUTE_TYPE_BMSAI" - Bare Metal Secure AI.
 	//   "CONFIDENTIAL_COMPUTE_TYPE_TDX" - Intel Trust Domain Extensions.
 	//   "CONFIDENTIAL_COMPUTE_TYPE_UNSPECIFIED"
 	ConfidentialComputeType string `json:"confidentialComputeType,omitempty"`
@@ -19241,6 +19989,20 @@ type FutureReservation struct {
 	// the
 	// reservation_name or a name_prefix.
 	ReservationName string `json:"reservationName,omitempty"`
+	// ResourceMetadata: Output only. Contains standard resource metadata for an
+	// FutureReservation
+	// resource. It is populated for each instance of the
+	// FutureReservation
+	// resource, and includes the api_version the
+	// instance was retrieved through, and its canonical
+	// resource_type name.
+	ResourceMetadata *ResourceMetadata `json:"resourceMetadata,omitempty"`
+	// ResourceName: Name of the resource intended to be delivered. Name should
+	// conform to
+	// RFC1035. This will be the name of storage pool or Exapool for
+	// persistent
+	// disk FRs.
+	ResourceName string `json:"resourceName,omitempty"`
 	// SchedulingType: Maintenance information for this reservation
 	//
 	// Possible values:
@@ -19271,6 +20033,8 @@ type FutureReservation struct {
 	SpecificSkuProperties *FutureReservationSpecificSKUProperties `json:"specificSkuProperties,omitempty"`
 	// Status: Output only. [Output only] Status of the Future Reservation
 	Status *FutureReservationStatus `json:"status,omitempty"`
+	// StoragePoolProperties: Storage pool details for the future reservation.
+	StoragePoolProperties *FutureReservationStoragePoolProperties `json:"storagePoolProperties,omitempty"`
 	// TimeWindow: Time window for this Future Reservation.
 	TimeWindow *FutureReservationTimeWindow `json:"timeWindow,omitempty"`
 	// Zone: Output only. [Output Only] URL of the Zone where this future
@@ -19424,6 +20188,9 @@ type FutureReservationStatus struct {
 	// automatically created reservations at
 	// start_time.
 	AutoCreatedReservations []string `json:"autoCreatedReservations,omitempty"`
+	// ExapoolProvisionedCapacityGb: Output only. Exapool provisioned capacities
+	// for each SKU type.
+	ExapoolProvisionedCapacityGb *StoragePoolExapoolProvisionedCapacityGb `json:"exapoolProvisionedCapacityGb,omitempty"`
 	// ExistingMatchingUsageInfo: Output only. [Output Only] Represents the
 	// existing matching usage for the future
 	// reservation.
@@ -19481,6 +20248,9 @@ type FutureReservationStatus struct {
 	// persist past start_time + 24h.
 	ProcurementStatus     string                                        `json:"procurementStatus,omitempty"`
 	SpecificSkuProperties *FutureReservationStatusSpecificSKUProperties `json:"specificSkuProperties,omitempty"`
+	// StoragePoolProvisionedCapacity: Output only. Storage pool provisioned
+	// capacities for each SKU type.
+	StoragePoolProvisionedCapacity *FutureReservationStoragePoolProvisionedCapacity `json:"storagePoolProvisionedCapacity,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "AmendmentStatus") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -19655,6 +20425,68 @@ func (s FutureReservationStatusSpecificSKUProperties) MarshalJSON() ([]byte, err
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// FutureReservationStoragePoolProperties: Storage pool properties for the
+// future reservation.
+type FutureReservationStoragePoolProperties struct {
+	// RequestedExapoolProvisionedCapacityGb: Requested exapool provisioned
+	// capacity in GiB.
+	RequestedExapoolProvisionedCapacityGb *StoragePoolExapoolProvisionedCapacityGb `json:"requestedExapoolProvisionedCapacityGb,omitempty"`
+	// RequestedStoragePoolProvisionedCapacity: Requested storage pool provisioned
+	// capacity.
+	RequestedStoragePoolProvisionedCapacity *FutureReservationStoragePoolProvisionedCapacity `json:"requestedStoragePoolProvisionedCapacity,omitempty"`
+	// StoragePoolType: Type of the storage pool.
+	StoragePoolType string `json:"storagePoolType,omitempty"`
+	// ForceSendFields is a list of field names (e.g.
+	// "RequestedExapoolProvisionedCapacityGb") to unconditionally include in API
+	// requests. By default, fields with empty or default values are omitted from
+	// API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g.
+	// "RequestedExapoolProvisionedCapacityGb") to include in API requests with the
+	// JSON null value. By default, fields with empty values are omitted from API
+	// requests. See https://pkg.go.dev/google.golang.org/api#hdr-NullFields for
+	// more details.
+	NullFields []string `json:"-"`
+}
+
+func (s FutureReservationStoragePoolProperties) MarshalJSON() ([]byte, error) {
+	type NoMethod FutureReservationStoragePoolProperties
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// FutureReservationStoragePoolProvisionedCapacity: Storage pool provisioned
+// capacities for each SKU type.
+type FutureReservationStoragePoolProvisionedCapacity struct {
+	// PoolProvisionedCapacityGb: Size of the storage pool in GiB.
+	PoolProvisionedCapacityGb int64 `json:"poolProvisionedCapacityGb,omitempty,string"`
+	// PoolProvisionedIops: Provisioned IOPS of the storage pool. Only relevant if
+	// the storage pool
+	// type is hyperdisk-balanced.
+	PoolProvisionedIops int64 `json:"poolProvisionedIops,omitempty,string"`
+	// PoolProvisionedThroughput: Provisioned throughput of the storage pool in
+	// MiB/s. Only relevant if
+	// the storage pool type is hyperdisk-balanced or hyperdisk-throughput.
+	PoolProvisionedThroughput int64 `json:"poolProvisionedThroughput,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "PoolProvisionedCapacityGb")
+	// to unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PoolProvisionedCapacityGb") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s FutureReservationStoragePoolProvisionedCapacity) MarshalJSON() ([]byte, error) {
+	type NoMethod FutureReservationStoragePoolProvisionedCapacity
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 type FutureReservationTimeWindow struct {
 	Duration *Duration `json:"duration,omitempty"`
 	EndTime  string    `json:"endTime,omitempty"`
@@ -19813,7 +20645,7 @@ type FutureReservationsAggregatedListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FutureReservationsAggregatedListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -20001,7 +20833,7 @@ type FutureReservationsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FutureReservationsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -20167,7 +20999,7 @@ type FutureReservationsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*FutureReservationsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -20695,6 +21527,94 @@ func (s GRPCTLSHealthCheck) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// GetHealthOperationMetadata: Metadata for GetHealth operations.
+type GetHealthOperationMetadata struct {
+	// HealthInfo: Output only. The health information.
+	HealthInfo *GetHealthOperationMetadataHealthInfo `json:"healthInfo,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "HealthInfo") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "HealthInfo") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s GetHealthOperationMetadata) MarshalJSON() ([]byte, error) {
+	type NoMethod GetHealthOperationMetadata
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// GetHealthOperationMetadataHealthInfo: Health information.
+type GetHealthOperationMetadataHealthInfo struct {
+	// AvailabilitySloStatus: Output only. The availability SLO status.
+	//
+	// Possible values:
+	//   "AVAILABILITY_SLO_STATUS_IN_SLO" - The slot availability is in SLO.
+	//   "AVAILABILITY_SLO_STATUS_OUT_OF_SLO" - The slot availability is out of
+	// SLO.
+	//   "AVAILABILITY_SLO_STATUS_SLO_UNKNOWN" - The slot availability is unknown.
+	//   "AVAILABILITY_SLO_STATUS_UNSPECIFIED" - Unspecified availability SLO
+	// status.
+	AvailabilitySloStatus string `json:"availabilitySloStatus,omitempty"`
+	// HealthStatus: Output only. The health status.
+	//
+	// Possible values:
+	//   "HEALTH_STATUS_HEALTHY" - The reservation slot is healthy.
+	//   "HEALTH_STATUS_UNHEALTHY" - The reservation slot is unhealthy.
+	//   "HEALTH_STATUS_UNSPECIFIED" - Unspecified health status.
+	HealthStatus string `json:"healthStatus,omitempty"`
+	// RepairCategory: Output only. The repair category.
+	//
+	// Possible values:
+	//   "REPAIR_CATEGORY_CRITICAL_FAILURE" - The repair is because of critical
+	// failures, that are scoped outside
+	// emergent maintenance
+	//   "REPAIR_CATEGORY_EMERGENT_MAINTENANCE" - The repair is because of an
+	// emergent maintenance
+	//   "REPAIR_CATEGORY_PLANNED_MAINTENANCE" - The repair is because of a planned
+	// maintenance
+	//   "REPAIR_CATEGORY_UNSPECIFIED" - Unspecified repair category.
+	//   "REPAIR_CATEGORY_USER_REPORTED_FAULT" - The repair is because of a user
+	// reported fault
+	RepairCategory string `json:"repairCategory,omitempty"`
+	// UnhealthyReason: Output only. The reason for unhealthy status.
+	//
+	// Possible values:
+	//   "UNHEALTHY_REASON_PENDING_USER_APPROVAL" - The slot is unhealthy because
+	// there is a pending repair, waiting for
+	// customer approval
+	//   "UNHEALTHY_REASON_REPAIRING" - The slot is unhealthy because repair is in
+	// progress
+	//   "UNHEALTHY_REASON_UNSCHEDULABLE" - The slot is unhealthy because a vm
+	// cannot be scheduled on it, and no
+	// repairs are running on the slot
+	//   "UNHEALTHY_REASON_UNSPECIFIED" - Unspecified unhealthy reason.
+	UnhealthyReason string `json:"unhealthyReason,omitempty"`
+	// UpdateTime: Output only. The time when health info was updated.
+	UpdateTime string `json:"updateTime,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "AvailabilitySloStatus") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "AvailabilitySloStatus") to
+	// include in API requests with the JSON null value. By default, fields with
+	// empty values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s GetHealthOperationMetadataHealthInfo) MarshalJSON() ([]byte, error) {
+	type NoMethod GetHealthOperationMetadataHealthInfo
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 type GetVersionOperationMetadata struct {
 	InlineSbomInfo *GetVersionOperationMetadataSbomInfo `json:"inlineSbomInfo,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "InlineSbomInfo") to
@@ -21216,7 +22136,7 @@ type GlobalVmExtensionPolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*GlobalVmExtensionPolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -21633,6 +22553,7 @@ type GuestOsFeature struct {
 	//    - IDPF
 	//    - SNP_SVSM_CAPABLE
 	//    - CCA_CAPABLE
+	//    - SUSPEND_SAFE_FPR
 	//
 	//
 	// For more information, see
@@ -21640,6 +22561,9 @@ type GuestOsFeature struct {
 	//
 	// Possible values:
 	//   "BARE_METAL_LINUX_COMPATIBLE"
+	//   "BMSAI_CAPABLE" - Indicates the guest OS is capable of Bare Metal Secure
+	// AI (BMSAI)
+	// confidential computing.
 	//   "CCA_CAPABLE"
 	//   "FEATURE_TYPE_UNSPECIFIED"
 	//   "GVNIC"
@@ -21651,6 +22575,9 @@ type GuestOsFeature struct {
 	//   "SEV_LIVE_MIGRATABLE_V2"
 	//   "SEV_SNP_CAPABLE"
 	//   "SNP_SVSM_CAPABLE"
+	//   "SUSPEND_SAFE_FPR" - Indicates the guest OS is safe for free page
+	// reporting (FPR) during
+	// suspend.
 	//   "TDX_CAPABLE"
 	//   "UEFI_COMPATIBLE"
 	//   "VIRTIO_SCSI_MULTIQUEUE"
@@ -22084,7 +23011,7 @@ type HealthAggregationPoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthAggregationPoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -22388,7 +23315,7 @@ type HealthAggregationPolicyAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthAggregationPolicyAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -22570,7 +23497,7 @@ type HealthAggregationPolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthAggregationPolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -22892,7 +23819,7 @@ type HealthCheckListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthCheckListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -23255,7 +24182,7 @@ type HealthCheckServiceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthCheckServiceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -23470,7 +24397,7 @@ type HealthCheckServicesListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthCheckServicesListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -23635,7 +24562,7 @@ type HealthCheckServicesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthCheckServicesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -23817,7 +24744,7 @@ type HealthChecksAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthChecksAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -23982,7 +24909,7 @@ type HealthChecksScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthChecksScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -24266,7 +25193,7 @@ type HealthSourceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthSourceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -24481,7 +25408,7 @@ type HealthSourceListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthSourceListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -24709,7 +25636,7 @@ type HealthSourcesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HealthSourcesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -25261,7 +26188,7 @@ type HostsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HostsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -25843,7 +26770,7 @@ type HttpHealthCheckListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HttpHealthCheckListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -26734,7 +27661,7 @@ type HttpsHealthCheckListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*HttpsHealthCheckListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -27252,7 +28179,7 @@ type ImageListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ImageListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -27518,6 +28445,7 @@ type Instance struct {
 	//
 	//
 	// For example: zones/us-central1-f/machineTypes/custom-4-5120
+	//
 	// For a full list of restrictions, read theSpecifications
 	// for custom machine types.
 	MachineType string `json:"machineType,omitempty"`
@@ -27819,7 +28747,7 @@ type InstanceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -27980,6 +28908,10 @@ type InstanceFlexibilityPolicyInstanceSelection struct {
 	// these properties. This field only accepts a machine type names, for
 	// example `n2-standard-4` and not URLs or partial URLs.
 	MachineTypes []string `json:"machineTypes,omitempty"`
+	// MinCpuPlatform: Name of the minimum CPU platform to be used by this instance
+	// selection.
+	// e.g. 'Intel Ice Lake'.
+	MinCpuPlatform string `json:"minCpuPlatform,omitempty"`
 	// Rank: Rank when prioritizing the shape flexibilities.
 	// The instance selections with rank are considered
 	// first, in the ascending order of the rank.
@@ -28238,7 +29170,7 @@ type InstanceGroupAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -28421,7 +29353,7 @@ type InstanceGroupListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -28900,7 +29832,7 @@ type InstanceGroupManagerAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupManagerAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -29307,7 +30239,7 @@ type InstanceGroupManagerListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupManagerListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -29845,7 +30777,7 @@ type InstanceGroupManagerResizeRequestsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupManagerResizeRequestsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -31134,7 +32066,7 @@ type InstanceGroupManagersListPerInstanceConfigsRespWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupManagersListPerInstanceConfigsRespWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -31373,7 +32305,7 @@ type InstanceGroupManagersScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupManagersScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -31743,7 +32675,7 @@ type InstanceGroupsListInstancesWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupsListInstancesWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -31962,7 +32894,7 @@ type InstanceGroupsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceGroupsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -32177,7 +33109,7 @@ type InstanceListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -32358,7 +33290,7 @@ type InstanceListReferrersWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceListReferrersWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -32790,6 +33722,8 @@ func (s InstanceProperties) MarshalJSON() ([]byte, error) {
 // InstancePropertiesPatch: Represents the change that you want to make to the
 // instance properties.
 type InstancePropertiesPatch struct {
+	// ExposeHostTopology: This optional flag exposes the hashed physical host ID.
+	ExposeHostTopology bool `json:"exposeHostTopology,omitempty"`
 	// Labels: The label key-value pairs that you want to patch onto the instance.
 	Labels map[string]string `json:"labels,omitempty"`
 	// Metadata: The metadata key-value pairs that you want to patch onto the
@@ -32797,15 +33731,15 @@ type InstancePropertiesPatch struct {
 	// more information, see Project and
 	// instance metadata.
 	Metadata map[string]string `json:"metadata,omitempty"`
-	// ForceSendFields is a list of field names (e.g. "Labels") to unconditionally
-	// include in API requests. By default, fields with empty or default values are
-	// omitted from API requests. See
+	// ForceSendFields is a list of field names (e.g. "ExposeHostTopology") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
 	// details.
 	ForceSendFields []string `json:"-"`
-	// NullFields is a list of field names (e.g. "Labels") to include in API
-	// requests with the JSON null value. By default, fields with empty values are
-	// omitted from API requests. See
+	// NullFields is a list of field names (e.g. "ExposeHostTopology") to include
+	// in API requests with the JSON null value. By default, fields with empty
+	// values are omitted from API requests. See
 	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
 	NullFields []string `json:"-"`
 }
@@ -33138,7 +34072,7 @@ type InstanceTemplateAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceTemplateAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -33320,7 +34254,7 @@ type InstanceTemplateListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceTemplateListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -33488,7 +34422,7 @@ type InstanceTemplatesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstanceTemplatesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -33900,7 +34834,7 @@ type InstancesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstancesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -34453,7 +35387,7 @@ type InstantSnapshotAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstantSnapshotAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -34792,7 +35726,7 @@ type InstantSnapshotListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstantSnapshotListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -35011,7 +35945,7 @@ type InstantSnapshotsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InstantSnapshotsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -35336,6 +36270,9 @@ type Interconnect struct {
 	SatisfiesPzs bool `json:"satisfiesPzs,omitempty"`
 	// SelfLink: Output only. [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// SelfLinkWithId: Output only. Server-defined URL for this resource with the
+	// resource id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// State: Output only. [Output Only] The current state of Interconnect
 	// functionality, which can
 	// take one of the following values:
@@ -36094,7 +37031,7 @@ type InterconnectAttachmentAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectAttachmentAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -36759,7 +37696,7 @@ type InterconnectAttachmentGroupsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectAttachmentGroupsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -37197,7 +38134,7 @@ type InterconnectAttachmentListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectAttachmentListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -37460,7 +38397,7 @@ type InterconnectAttachmentsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectAttachmentsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -38485,7 +39422,7 @@ type InterconnectGroupsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectGroupsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -38742,7 +39679,7 @@ type InterconnectListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -38964,6 +39901,14 @@ type InterconnectLocationCrossSiteInterconnectInfo struct {
 	// InterconnectLocation city (metropolitan area designator), which itself
 	// may match multiple InterconnectLocations.
 	City string `json:"city,omitempty"`
+	// MaxDynamicPathBandwidthGbps: Output only. The maximum unmetered bandwidth
+	// for dynamic paths allowable per
+	// WireGroup for this metro.
+	MaxDynamicPathBandwidthGbps int64 `json:"maxDynamicPathBandwidthGbps,omitempty,string"`
+	// MaxFixedPathBandwidthGbps: Output only. The maximum unmetered bandwidth for
+	// fixed paths allowable per WireGroup
+	// for this metro.
+	MaxFixedPathBandwidthGbps int64 `json:"maxFixedPathBandwidthGbps,omitempty,string"`
 	// ForceSendFields is a list of field names (e.g. "City") to unconditionally
 	// include in API requests. By default, fields with empty or default values are
 	// omitted from API requests. See
@@ -39112,7 +40057,7 @@ type InterconnectLocationListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectLocationListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -39891,7 +40836,7 @@ type InterconnectRemoteLocationListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*InterconnectRemoteLocationListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -40017,6 +40962,43 @@ type InterconnectsGetMacsecConfigResponse struct {
 
 func (s InterconnectsGetMacsecConfigResponse) MarshalJSON() ([]byte, error) {
 	type NoMethod InterconnectsGetMacsecConfigResponse
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// Interval: Represents a time interval, encoded as a Timestamp start
+// (inclusive) and a
+// Timestamp end (exclusive).
+//
+// The start must be less than or equal to the end.
+// When the start equals the end, the interval is empty (matches no time).
+// When both start and end are unspecified, the interval matches any time.
+type Interval struct {
+	// EndTime: Optional. Exclusive end of the interval.
+	//
+	// If specified, a Timestamp matching this interval will have to be before
+	// the
+	// end.
+	EndTime string `json:"endTime,omitempty"`
+	// StartTime: Optional. Inclusive start of the interval.
+	//
+	// If specified, a Timestamp matching this interval will have to be the same
+	// or after the start.
+	StartTime string `json:"startTime,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "EndTime") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "EndTime") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s Interval) MarshalJSON() ([]byte, error) {
+	type NoMethod Interval
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -40477,7 +41459,7 @@ type LicensesListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*LicensesListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -40664,7 +41646,7 @@ type ListInstantSnapshotGroupsWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ListInstantSnapshotGroupsWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -41202,7 +42184,7 @@ type MachineImageListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*MachineImageListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -41528,7 +42510,7 @@ type MachineTypeAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*MachineTypeAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -41710,7 +42692,7 @@ type MachineTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*MachineTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -41876,7 +42858,7 @@ type MachineTypesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*MachineTypesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -42065,6 +43047,22 @@ type ManagedInstance struct {
 	// instance is in
 	// `PENDING_STOP` state or there is a programmed stop scheduled.
 	ShutdownDetails *ManagedInstanceShutdownDetails `json:"shutdownDetails,omitempty"`
+	// TargetStatus: Output only. The eventual status of the instance. The instance
+	// group
+	// manager will not be identified as stable till each managed instance
+	// reaches
+	// its targetStatus.
+	//
+	// Possible values:
+	//   "ABANDONED" - The managed instance will eventually be ABANDONED, i.e.
+	// dissociated
+	// from the managed instance group.
+	//   "DELETED" - The managed instance will eventually be DELETED.
+	//   "INVALID" - Only present to map the STATUS_INVALID value.
+	//   "RUNNING" - The managed instance will eventually reach status RUNNING.
+	//   "STOPPED" - The managed instance will eventually reach status TERMINATED.
+	//   "SUSPENDED" - The managed instance will eventually reach status SUSPENDED.
+	TargetStatus string `json:"targetStatus,omitempty"`
 	// Version: Output only. [Output Only] Intended version of this instance.
 	Version *ManagedInstanceVersion `json:"version,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "CurrentAction") to
@@ -42521,6 +43519,38 @@ type MetadataFilterLabelMatch struct {
 
 func (s MetadataFilterLabelMatch) MarshalJSON() ([]byte, error) {
 	type NoMethod MetadataFilterLabelMatch
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// Money: Represents an amount of money with its currency type.
+type Money struct {
+	// CurrencyCode: The three-letter currency code defined in ISO 4217.
+	CurrencyCode string `json:"currencyCode,omitempty"`
+	// Nanos: Number of nano (10^-9) units of the amount.
+	// The value must be between -999,999,999 and +999,999,999 inclusive.
+	// If `units` is positive, `nanos` must be positive or zero.
+	// If `units` is zero, `nanos` can be positive, zero, or negative.
+	// If `units` is negative, `nanos` must be negative or zero.
+	// For example $-1.75 is represented as `units`=-1 and `nanos`=-750,000,000.
+	Nanos int64 `json:"nanos,omitempty"`
+	// Units: The whole units of the amount.
+	// For example if `currencyCode` is "USD", then 1 unit is one US dollar.
+	Units int64 `json:"units,omitempty,string"`
+	// ForceSendFields is a list of field names (e.g. "CurrencyCode") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "CurrencyCode") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s Money) MarshalJSON() ([]byte, error) {
+	type NoMethod Money
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -43058,7 +44088,7 @@ type NetworkAttachmentAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkAttachmentAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -43297,7 +44327,7 @@ type NetworkAttachmentListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkAttachmentListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -43462,7 +44492,7 @@ type NetworkAttachmentsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkAttachmentsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -43725,7 +44755,7 @@ type NetworkEdgeSecurityServiceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEdgeSecurityServiceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -43891,7 +44921,7 @@ type NetworkEdgeSecurityServicesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEdgeSecurityServicesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -44105,6 +45135,10 @@ type NetworkEndpointGroup struct {
 	//
 	// Possible values:
 	//   "GCE_VM_IP" - The network endpoint is represented by an IP address.
+	//   "GCE_VM_IP_DEDICATED_BACKEND" - The network endpoint for targeting a
+	// specific network interface of a
+	// VM instance in configurations with multiple network interfaces on the
+	// same network.
 	//   "GCE_VM_IP_PORT" - The network endpoint is represented by IP address and
 	// port pair.
 	//   "GCE_VM_IP_PORTMAP" - The network endpoint is represented by an IP, Port
@@ -44301,7 +45335,7 @@ type NetworkEndpointGroupAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEndpointGroupAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -44644,7 +45678,7 @@ type NetworkEndpointGroupListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEndpointGroupListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -44950,7 +45984,7 @@ type NetworkEndpointGroupsListNetworkEndpointsWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEndpointGroupsListNetworkEndpointsWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -45118,7 +46152,7 @@ type NetworkEndpointGroupsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkEndpointGroupsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -45330,7 +46364,7 @@ type NetworkFirewallPolicyAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkFirewallPolicyAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -45698,7 +46732,7 @@ type NetworkListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -46665,7 +47699,7 @@ type NetworkProfilesListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NetworkProfilesListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -47262,7 +48296,7 @@ type NodeGroupAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeGroupAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -47480,7 +48514,7 @@ type NodeGroupListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeGroupListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -47798,7 +48832,7 @@ type NodeGroupsListNodesWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeGroupsListNodesWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -47988,7 +49022,7 @@ type NodeGroupsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeGroupsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -48321,7 +49355,7 @@ type NodeTemplateAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTemplateAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -48503,7 +49537,7 @@ type NodeTemplateListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTemplateListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -48692,7 +49726,7 @@ type NodeTemplatesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTemplatesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -48947,7 +49981,7 @@ type NodeTypeAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTypeAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -49129,7 +50163,7 @@ type NodeTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -49295,7 +50329,7 @@ type NodeTypesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NodeTypesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -49550,7 +50584,7 @@ type NotificationEndpointAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NotificationEndpointAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -49781,7 +50815,7 @@ type NotificationEndpointListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NotificationEndpointListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -49946,7 +50980,7 @@ type NotificationEndpointsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*NotificationEndpointsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -50044,7 +51078,9 @@ type Operation struct {
 	// Error: [Output Only] If errors are generated during processing of the
 	// operation,
 	// this field will be populated.
-	Error                       *OperationError              `json:"error,omitempty"`
+	Error *OperationError `json:"error,omitempty"`
+	// GetHealthOperationMetadata: Output only. Metadata for GetHealth operations.
+	GetHealthOperationMetadata  *GetHealthOperationMetadata  `json:"getHealthOperationMetadata,omitempty"`
 	GetVersionOperationMetadata *GetVersionOperationMetadata `json:"getVersionOperationMetadata,omitempty"`
 	// HttpErrorMessage: [Output Only] If the operation fails, this field contains
 	// the HTTP error
@@ -50343,7 +51379,7 @@ type OperationWarnings struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*OperationWarningsData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -50528,7 +51564,7 @@ type OperationAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*OperationAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -50712,7 +51748,7 @@ type OperationListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*OperationListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -50878,7 +51914,7 @@ type OperationsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*OperationsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -51356,7 +52392,7 @@ type PacketMirroringAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PacketMirroringAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -51611,7 +52647,7 @@ type PacketMirroringListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PacketMirroringListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -51892,7 +52928,7 @@ type PacketMirroringsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PacketMirroringsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -52857,7 +53893,7 @@ type PreviewFeatureListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PreviewFeatureListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -53137,6 +54173,42 @@ type Project struct {
 
 func (s Project) MarshalJSON() ([]byte, error) {
 	type NoMethod Project
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
+// ProjectView: Represents a ProjectView resource.
+//
+// A ProjectView resource contains read-only project data which is
+// available
+// globally.
+type ProjectView struct {
+	// Project: The project data.
+	// The returned Project data does not contain regional or zonal quota
+	// usage data. Global quota limits are present. For accurate, real-time
+	// quota
+	// usage numbers, query the global
+	// projects.get
+	// (https://cloud.google.com/compute/docs/reference/rest/v1/projects/get)
+	// endpoint.
+	Project *Project `json:"project,omitempty"`
+
+	// ServerResponse contains the HTTP response code and headers from the server.
+	googleapi.ServerResponse `json:"-"`
+	// ForceSendFields is a list of field names (e.g. "Project") to unconditionally
+	// include in API requests. By default, fields with empty or default values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "Project") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ProjectView) MarshalJSON() ([]byte, error) {
+	type NoMethod ProjectView
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
@@ -53589,7 +54661,7 @@ type PublicAdvertisedPrefixListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PublicAdvertisedPrefixListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -53985,7 +55057,7 @@ type PublicDelegatedPrefixAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PublicDelegatedPrefixAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -54167,7 +55239,7 @@ type PublicDelegatedPrefixListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PublicDelegatedPrefixListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -54427,7 +55499,7 @@ type PublicDelegatedPrefixesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*PublicDelegatedPrefixesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -54789,6 +55861,56 @@ func (s Reference) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// RegexRewrite: The spec for modifying the path using a regular expression.
+type RegexRewrite struct {
+	// PathPattern: Required. The regular expression used to match against the URL
+	// path.
+	// It uses RE2 syntax with the following constraints:
+	//
+	//
+	//      - Any single character operators
+	//      - Groups are allowed to have only submatch operator inside
+	//      - Groups are allowed only without any char repetition, e.g.
+	//      .*
+	//      - Any char repetition, e.g. .*, is
+	//      only allowed to be used in a single regex together with:
+	//
+	//
+	//             - Empty string operators
+	//             - Other repetitions
+	//             - Ranges
+	//             - Repetitions of ranges
+	//
+	//
+	//      - Ranges are only allowed to have:
+	//
+	//
+	//             - Character range
+	//             - Digits range
+	//             - Symbols listed in characters allowed for ranges
+	PathPattern string `json:"pathPattern,omitempty"`
+	// PathSubstitution: Required. Required when path pattern is specified. Used to
+	// rewrite matching parts of
+	// the path.
+	PathSubstitution string `json:"pathSubstitution,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "PathPattern") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "PathPattern") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s RegexRewrite) MarshalJSON() ([]byte, error) {
+	type NoMethod RegexRewrite
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 // Region: Represents a Region resource.
 //
 // A region is a geographical area where a resource is located. For
@@ -54942,7 +56064,7 @@ type RegionQuotaStatusWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionQuotaStatusWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -55158,7 +56280,7 @@ type RegionAutoscalerListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionAutoscalerListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -55338,7 +56460,7 @@ type RegionDiskTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionDiskTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -55665,7 +56787,7 @@ type RegionInstanceGroupListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionInstanceGroupListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -55873,7 +56995,7 @@ type RegionInstanceGroupManagerListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionInstanceGroupManagerListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -56084,7 +57206,7 @@ type RegionInstanceGroupManagerResizeRequestsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionInstanceGroupManagerResizeRequestsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -56481,7 +57603,7 @@ type RegionInstanceGroupManagersListInstanceConfigsRespWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionInstanceGroupManagersListInstanceConfigsRespWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -56869,7 +57991,7 @@ type RegionInstanceGroupsListInstancesWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionInstanceGroupsListInstancesWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -57117,7 +58239,7 @@ type RegionListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RegionListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -57610,7 +58732,7 @@ type ReliabilityRisksListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReliabilityRisksListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -57738,6 +58860,7 @@ type Reservation struct {
 	// displays for reservations that are tied to a commitment.
 	Commitment string `json:"commitment,omitempty"`
 	// Possible values:
+	//   "CONFIDENTIAL_COMPUTE_TYPE_BMSAI" - Bare Metal Secure AI.
 	//   "CONFIDENTIAL_COMPUTE_TYPE_TDX" - Intel Trust Domain Extensions.
 	//   "CONFIDENTIAL_COMPUTE_TYPE_UNSPECIFIED"
 	ConfidentialComputeType string `json:"confidentialComputeType,omitempty"`
@@ -57834,6 +58957,13 @@ type Reservation struct {
 	// unspecified, the reservation
 	// will not be shared with Google Cloud managed services.
 	ReservationSharingPolicy *AllocationReservationSharingPolicy `json:"reservationSharingPolicy,omitempty"`
+	// ResourceMetadata: Output only. [Output Only] Contains standard resource
+	// metadata for an Allocation
+	// resource. It is populated for each instance of the Allocation
+	// resource, and includes the api_version the
+	// instance was retrieved through, and its canonical
+	// resource_type name.
+	ResourceMetadata *ResourceMetadata `json:"resourceMetadata,omitempty"`
 	// ResourcePolicies: Resource policies to be added to this reservation. The key
 	// is defined by
 	// user, and the value is resource policy url. This is to define
@@ -58126,7 +59256,7 @@ type ReservationAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -58525,7 +59655,7 @@ type ReservationBlocksListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationBlocksListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -58708,7 +59838,7 @@ type ReservationListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -59088,7 +60218,7 @@ type ReservationSlotsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationSlotsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -59463,7 +60593,7 @@ type ReservationSubBlocksListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationSubBlocksListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -59787,7 +60917,7 @@ type ReservationsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ReservationsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -59922,6 +61052,36 @@ func (s ResourceGroupReference) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// ResourceMetadata: Standardized resource metadata common to all compute
+// resources.
+type ResourceMetadata struct {
+	// ApiVersion: The version of the API interface that this resource was
+	// retrieved through.
+	// For example, "2025-01-01" or "2025-01-01-preview".
+	ApiVersion string `json:"apiVersion,omitempty"`
+	// ResourceType: The canonical resource type name in the format of a resource
+	// type
+	// as defined by AIP-123 (https://google.aip.dev/123).
+	// For example, "compute.googleapis.com/Instance".
+	ResourceType string `json:"resourceType,omitempty"`
+	// ForceSendFields is a list of field names (e.g. "ApiVersion") to
+	// unconditionally include in API requests. By default, fields with empty or
+	// default values are omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-ForceSendFields for more
+	// details.
+	ForceSendFields []string `json:"-"`
+	// NullFields is a list of field names (e.g. "ApiVersion") to include in API
+	// requests with the JSON null value. By default, fields with empty values are
+	// omitted from API requests. See
+	// https://pkg.go.dev/google.golang.org/api#hdr-NullFields for more details.
+	NullFields []string `json:"-"`
+}
+
+func (s ResourceMetadata) MarshalJSON() ([]byte, error) {
+	type NoMethod ResourceMetadata
+	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
+}
+
 type ResourcePoliciesScopedList struct {
 	// ResourcePolicies: A list of resourcePolicies contained in this scope.
 	ResourcePolicies []*ResourcePolicy `json:"resourcePolicies,omitempty"`
@@ -60034,7 +61194,7 @@ type ResourcePoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ResourcePoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -60298,7 +61458,7 @@ type ResourcePolicyAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ResourcePolicyAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -60665,7 +61825,7 @@ type ResourcePolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ResourcePolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -61972,7 +63132,7 @@ type RolloutPlansListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RolloutPlansListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -62330,7 +63490,7 @@ type RolloutsListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RolloutsListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -62688,7 +63848,7 @@ type RouteWarnings struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RouteWarningsData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -62910,7 +64070,7 @@ type RouteListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RouteListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -63325,7 +64485,7 @@ type RouterAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RouterAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -63967,7 +65127,7 @@ type RouterListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RouterListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -64952,7 +66112,7 @@ type RoutersListBgpRoutesWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RoutersListBgpRoutesWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -65137,7 +66297,7 @@ type RoutersListNamedSetsWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RoutersListNamedSetsWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -65323,7 +66483,7 @@ type RoutersListRoutePoliciesWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RoutersListRoutePoliciesWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -65512,7 +66672,7 @@ type RoutersScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*RoutersScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -65871,7 +67031,11 @@ type Scheduling struct {
 	// in. The value
 	// must be a number between 1 and the number of availability domains
 	// specified in the spread placement policy attached to the instance.
-	AvailabilityDomain int64                       `json:"availabilityDomain,omitempty"`
+	AvailabilityDomain int64 `json:"availabilityDomain,omitempty"`
+	// ExposeHostTopology: This optional flag exposes the hashed physical host ID
+	// in the
+	// ResourceStatus resource of the VM.
+	ExposeHostTopology bool                        `json:"exposeHostTopology,omitempty"`
 	GracefulShutdown   *SchedulingGracefulShutdown `json:"gracefulShutdown,omitempty"`
 	// HostErrorTimeoutSeconds: Specify the time in seconds for host error
 	// detection, the value must be
@@ -66237,7 +67401,7 @@ type SecurityPoliciesAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SecurityPoliciesAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -66425,7 +67589,7 @@ type SecurityPoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SecurityPoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -67140,7 +68304,7 @@ type SecurityPolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SecurityPolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -67803,16 +68967,20 @@ type SecurityPolicyRuleRateLimitOptions struct {
 	//    which is resolved based on "userIpRequestHeaders" configured with the
 	//    security policy. If there is no "userIpRequestHeaders" configuration or
 	//    an IP address cannot be resolved from it, the key type defaults toIP.
+	//    - ASN: The autonomous system number of the originating
+	//    client. If not available, the key type defaults toALL.
+	//    - TLS_JA4_FINGERPRINT: JA4 TLS/SSL fingerprint if the
+	//    client connects using HTTPS, HTTP/2 or HTTP/3. If not available, the
+	//    key type defaults to ALL.
 	//
-	// - TLS_JA4_FINGERPRINT: JA4 TLS/SSL fingerprint if the
-	// client connects using HTTPS, HTTP/2 or HTTP/3. If not available, the
-	// key type defaults to ALL.
+	//
 	// For "fairshare" action, this value is limited to ALL i.e. a single
 	// rate
 	// limit threshold is enforced for all the requests matching the rule.
 	//
 	// Possible values:
 	//   "ALL"
+	//   "ASN"
 	//   "HTTP_COOKIE"
 	//   "HTTP_HEADER"
 	//   "HTTP_PATH"
@@ -67926,13 +69094,15 @@ type SecurityPolicyRuleRateLimitOptionsEnforceOnKeyConfig struct {
 	//    security policy. If there is no "userIpRequestHeaders" configuration
 	//    or an IP address cannot be resolved from it, the key type defaults toIP.
 	//
-	//
-	// - TLS_JA4_FINGERPRINT: JA4 TLS/SSL fingerprint if the
-	// client connects using HTTPS, HTTP/2 or HTTP/3. If not available, the
-	// key type defaults to ALL.
+	//    - ASN: The autonomous system number of the originating
+	//    client. If not available, the key type defaults toALL.
+	//    - TLS_JA4_FINGERPRINT: JA4 TLS/SSL fingerprint if the
+	//    client connects using HTTPS, HTTP/2 or HTTP/3. If not available, the
+	//    key type defaults to ALL.
 	//
 	// Possible values:
 	//   "ALL"
+	//   "ASN"
 	//   "HTTP_COOKIE"
 	//   "HTTP_HEADER"
 	//   "HTTP_PATH"
@@ -68547,7 +69717,7 @@ type ServiceAttachmentAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ServiceAttachmentAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -68807,7 +69977,7 @@ type ServiceAttachmentListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ServiceAttachmentListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -68972,7 +70142,7 @@ type ServiceAttachmentsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ServiceAttachmentsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -69737,7 +70907,7 @@ type SnapshotListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SnapshotListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -70421,7 +71591,7 @@ type SslCertificateAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslCertificateAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -70601,7 +71771,7 @@ type SslCertificateListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslCertificateListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -70853,7 +72023,7 @@ type SslCertificatesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslCertificatesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -71037,7 +72207,7 @@ type SslPoliciesAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslPoliciesAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -71218,7 +72388,7 @@ type SslPoliciesListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslPoliciesListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -71406,7 +72576,7 @@ type SslPoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslPoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -71686,7 +72856,7 @@ type SslPolicyWarnings struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SslPolicyWarningsData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -72193,7 +73363,7 @@ type StoragePoolAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -72468,7 +73638,7 @@ type StoragePoolListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -72656,7 +73826,7 @@ type StoragePoolListDisksWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolListDisksWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -73059,7 +74229,7 @@ type StoragePoolTypeAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolTypeAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -73240,7 +74410,7 @@ type StoragePoolTypeListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolTypeListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -73407,7 +74577,7 @@ type StoragePoolTypesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolTypesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -73573,7 +74743,7 @@ type StoragePoolsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*StoragePoolsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -73850,6 +75020,17 @@ type Subnetwork struct {
 	//
 	// Possible values:
 	//   "ARP_ALL_RANGES" - All ranges assigned to the VM NIC will respond to ARP.
+	//   "ARP_BROADCAST_PRIMARY_RANGE" - VMs will receive an ARP response from a VM
+	// instance owning the target IP
+	// address within the subnetwork's primary CIDR range, if such a VM
+	// instance
+	// exists and is running.
+	//   "ARP_BROADCAST_PRIMARY_RANGE_WITH_LEARNING" - Combines
+	// ARP_BROADCAST_PRIMARY_RANGE with MAC learning. Enables cache
+	// mapping between IP addresses and custom MAC addresses of instances and
+	// use of it to set the correct destination MAC address. If this option
+	// is
+	// chosen, the subnetwork must have /24 or a smaller CIDR range.
 	//   "ARP_PRIMARY_RANGE" - Only the primary range of the VM NIC will respond to
 	// ARP.
 	ResolveSubnetMask string `json:"resolveSubnetMask,omitempty"`
@@ -74068,7 +75249,7 @@ type SubnetworkAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SubnetworkAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -74250,7 +75431,7 @@ type SubnetworkListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SubnetworkListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -74709,7 +75890,7 @@ type SubnetworksScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SubnetworksScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -74872,7 +76053,7 @@ type SubnetworksScopedWarningWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*SubnetworksScopedWarningWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -75337,7 +76518,7 @@ type TargetGrpcProxyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetGrpcProxyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -75502,7 +76683,7 @@ type TargetHttpProxiesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetHttpProxiesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -75846,7 +77027,7 @@ type TargetHttpProxyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetHttpProxyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -76011,7 +77192,7 @@ type TargetHttpsProxiesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetHttpsProxiesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -76572,7 +77753,7 @@ type TargetHttpsProxyAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetHttpsProxyAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -76754,7 +77935,7 @@ type TargetHttpsProxyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetHttpsProxyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -77031,7 +78212,7 @@ type TargetInstanceAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetInstanceAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -77211,7 +78392,7 @@ type TargetInstanceListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetInstanceListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -77376,7 +78557,7 @@ type TargetInstancesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetInstancesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -77442,7 +78623,8 @@ type TargetPool struct {
 	// applicable only when
 	// the containing target pool is serving a forwarding rule as the primary
 	// pool, and its failoverRatio field is properly set to a value
-	// between [0, 1].backupPool and failoverRatio together define
+	// between [0, 1].
+	// backupPool and failoverRatio together define
 	// the fallback behavior of the primary target pool: if the ratio of
 	// the
 	// healthy instances in the primary pool is at or belowfailoverRatio, traffic
@@ -77740,7 +78922,7 @@ type TargetPoolAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetPoolAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -77949,7 +79131,7 @@ type TargetPoolListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetPoolListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -78214,7 +79396,7 @@ type TargetPoolsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetPoolsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -78605,7 +79787,7 @@ type TargetSslProxyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetSslProxyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -78770,7 +79952,7 @@ type TargetTcpProxiesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetTcpProxiesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -79100,7 +80282,7 @@ type TargetTcpProxyAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetTcpProxyAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -79280,7 +80462,7 @@ type TargetTcpProxyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetTcpProxyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -79569,7 +80751,7 @@ type TargetVpnGatewayAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetVpnGatewayAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -79750,7 +80932,7 @@ type TargetVpnGatewayListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetVpnGatewayListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -79951,7 +81133,7 @@ type TargetVpnGatewaysScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*TargetVpnGatewaysScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -80578,7 +81760,7 @@ type UrlMapListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*UrlMapListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -80896,7 +82078,7 @@ type UrlMapsAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*UrlMapsAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -81061,7 +82243,7 @@ type UrlMapsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*UrlMapsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -81239,6 +82421,9 @@ type UrlRewrite struct {
 	//
 	// Only one of path_prefix_rewrite orpath_template_rewrite may be specified.
 	PathTemplateRewrite string `json:"pathTemplateRewrite,omitempty"`
+	// RegexRewrite: The regex rewrite to be applied to the URL. Only one
+	// ofpathPrefixRewrite, pathTemplateRewrite, orregexRewrite may be specified.
+	RegexRewrite *RegexRewrite `json:"regexRewrite,omitempty"`
 	// ForceSendFields is a list of field names (e.g. "HostRewrite") to
 	// unconditionally include in API requests. By default, fields with empty or
 	// default values are omitted from API requests. See
@@ -81523,7 +82708,7 @@ type UsableSubnetworksAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*UsableSubnetworksAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -81876,7 +83061,7 @@ type VmEndpointNatMappingsListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VmEndpointNatMappingsListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -82042,7 +83227,7 @@ type VmExtensionPoliciesScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VmExtensionPoliciesScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -82324,7 +83509,7 @@ type VmExtensionPolicyAggregatedListResponseWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VmExtensionPolicyAggregatedListResponseWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -82600,7 +83785,7 @@ type VmExtensionPolicyListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VmExtensionPolicyListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -82896,7 +84081,7 @@ type VpnGatewayAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnGatewayAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -83078,7 +84263,7 @@ type VpnGatewayListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnGatewayListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -83492,7 +84677,7 @@ type VpnGatewaysScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnGatewaysScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -83893,7 +85078,7 @@ type VpnTunnelAggregatedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnTunnelAggregatedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -84096,7 +85281,7 @@ type VpnTunnelListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnTunnelListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -84340,7 +85525,7 @@ type VpnTunnelsScopedListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*VpnTunnelsScopedListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -84878,7 +86063,7 @@ type WireGroupListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*WireGroupListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -85194,7 +86379,7 @@ type XpnHostListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*XpnHostListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
@@ -85468,7 +86653,7 @@ type ZoneListWarning struct {
 	//   {
 	//    "key": "scope",
 	//    "value": "zones/us-east1-d"
-	//   }
+	//   }]
 	Data []*ZoneListWarningData `json:"data,omitempty"`
 	// Message: [Output Only] A human-readable description of the warning code.
 	Message string `json:"message,omitempty"`
