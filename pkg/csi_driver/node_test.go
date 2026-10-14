@@ -1098,6 +1098,372 @@ func TestNodeStageVolume_AppendsMountOptions(t *testing.T) {
 	}
 }
 
+const testVolumePoolVolumeID = "volumepool://test-project/us-central1/my-pool/volumes/test-vol?ip=10.1.1.1"
+
+func TestShouldApplyVolumePoolNFSv3DefaultMountOptions(t *testing.T) {
+	tests := []struct {
+		name     string
+		volumeID string
+		attr     map[string]string
+		options  []string
+		want     bool
+	}{
+		{
+			name:     "VolumePool, protocol NFS_V3, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			want:     true,
+		},
+		{
+			name:     "VolumePool, protocol omitted, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{},
+			want:     true,
+		},
+		{
+			name:     "VolumePool, nil volume context, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     nil,
+			want:     true,
+		},
+		{
+			name:     "VolumePool, protocol empty string, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: ""},
+			want:     true,
+		},
+		{
+			name:     "VolumePool, protocol lowercase nfs_v3, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: "nfs_v3"},
+			want:     true,
+		},
+		{
+			name:     "VolumePool, protocol mixed case Nfs_V3, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: "Nfs_V3"},
+			want:     true,
+		},
+		{
+			name:     "VolumePool, protocol NFS_V4_1, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: v4_1FileProtocol},
+			want:     false,
+		},
+		{
+			name:     "VolumePool, protocol lowercase nfs_v4_1, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: "nfs_v4_1"},
+			want:     false,
+		},
+		{
+			name:     "VolumePool, unknown protocol, no options",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: "SMB"},
+			want:     false,
+		},
+		{
+			name:     "VolumePool, protocol NFS_V3, user options present",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			options:  []string{"nconnect=8"},
+			want:     false,
+		},
+		{
+			name:     "VolumePool, protocol omitted, user options present",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{},
+			options:  []string{"vers=4.1"},
+			want:     false,
+		},
+		{
+			name:     "VolumePool, empty (non-nil) options slice",
+			volumeID: testVolumePoolVolumeID,
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			options:  []string{},
+			want:     true,
+		},
+		{
+			name:     "Instance volume, protocol NFS_V3, no options",
+			volumeID: testVolumeID,
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			want:     false,
+		},
+		{
+			name:     "Instance volume, protocol omitted, no options",
+			volumeID: testVolumeID,
+			attr:     map[string]string{},
+			want:     false,
+		},
+		{
+			name:     "Multishare volume, protocol NFS_V3, no options",
+			volumeID: "modeMultishare/test-prefix/test-project/us-central1/test-instance/test-share",
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			want:     false,
+		},
+		{
+			name:     "Empty volume ID",
+			volumeID: "",
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			want:     false,
+		},
+		{
+			name:     "volumepool substring not at prefix",
+			volumeID: "modeInstance/volumepool://x",
+			attr:     map[string]string{attrFileProtocol: v3FileProtocol},
+			want:     false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldApplyVolumePoolNFSv3DefaultMountOptions(tc.volumeID, tc.attr, tc.options); got != tc.want {
+				t.Errorf("shouldApplyVolumePoolNFSv3DefaultMountOptions(%q, %v, %v) = %v, want %v", tc.volumeID, tc.attr, tc.options, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestVolumePoolNFSv3DefaultMountOptions(t *testing.T) {
+	want := []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+	got := volumePoolNFSv3DefaultMountOptions()
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("volumePoolNFSv3DefaultMountOptions() mismatch (-want +got):\n%s", diff)
+	}
+
+	// Mutating a returned slice must not affect later calls.
+	got[0] = "vers=4.1"
+	got = append(got, "nolock")
+	if diff := cmp.Diff(want, volumePoolNFSv3DefaultMountOptions()); diff != "" {
+		t.Errorf("volumePoolNFSv3DefaultMountOptions() changed after caller mutation (-want +got):\n%s", diff)
+	}
+}
+
+func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
+	expectedDevice := "10.1.1.1:/vol1"
+	defaultOpts := []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+
+	tests := []struct {
+		name              string
+		volumeID          string
+		mountFlags        []string
+		volumeContext     map[string]string
+		enableNFSv4       bool
+		expectedMountOpts []string
+	}{
+		// Defaults are applied.
+		{
+			name:              "VolumePool NFS_V3, NFSv4 feature disabled: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool NFS_V3, NFSv4 feature enabled: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			enableNFSv4:       true,
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool protocol omitted, NFSv4 feature disabled: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool protocol omitted, NFSv4 feature enabled: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
+			enableNFSv4:       true,
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool lowercase nfs_v3: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: "nfs_v3"},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool empty mount-options parameter: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: ""},
+			expectedMountOpts: defaultOpts,
+		},
+		// User options are respected as-is.
+		{
+			name:              "VolumePool respects StorageClass.mountOptions (MountFlags)",
+			volumeID:          testVolumePoolVolumeID,
+			mountFlags:        []string{"vers=3", "nolock"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: []string{"vers=3", "nolock"},
+		},
+		{
+			name:              "VolumePool respects StorageClass.parameters[mount-options] (attrMountOptions)",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: "nconnect=8,rsize=1048576,wsize=1048576"},
+			expectedMountOpts: []string{"nconnect=8,rsize=1048576,wsize=1048576"},
+		},
+		{
+			name:              "VolumePool respects both MountFlags and attrMountOptions",
+			volumeID:          testVolumePoolVolumeID,
+			mountFlags:        []string{"nolock"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: "nconnect=8"},
+			expectedMountOpts: []string{"nolock", "nconnect=8"},
+		},
+		{
+			name:              "VolumePool protocol omitted respects MountFlags",
+			volumeID:          testVolumePoolVolumeID,
+			mountFlags:        []string{"hard"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
+			expectedMountOpts: []string{"hard"},
+		},
+		{
+			name:              "VolumePool NFS_V3 with NFSv4 feature enabled respects MountFlags",
+			volumeID:          testVolumePoolVolumeID,
+			mountFlags:        []string{"hard"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			enableNFSv4:       true,
+			expectedMountOpts: []string{"hard"},
+		},
+		// NFSv4.1 never gets NFSv3 defaults.
+		{
+			name:              "VolumePool NFS_V4_1, NFSv4 feature enabled: no defaults",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
+			enableNFSv4:       true,
+			expectedMountOpts: []string{},
+		},
+		{
+			name:              "VolumePool NFS_V4_1, NFSv4 feature disabled: no defaults",
+			volumeID:          testVolumePoolVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
+			expectedMountOpts: []string{},
+		},
+		{
+			name:              "VolumePool NFS_V4_1 respects MountFlags",
+			volumeID:          testVolumePoolVolumeID,
+			mountFlags:        []string{"vers=4.1"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
+			enableNFSv4:       true,
+			expectedMountOpts: []string{"vers=4.1"},
+		},
+		// Non-VolumePool volumes are unchanged.
+		{
+			name:              "Instance volume, protocol omitted: no defaults",
+			volumeID:          testVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
+			expectedMountOpts: []string{},
+		},
+		{
+			name:              "Instance volume, explicit NFS_V3: no defaults",
+			volumeID:          testVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: []string{},
+		},
+		{
+			name:              "Instance volume, explicit NFS_V3, NFSv4 feature enabled: no defaults",
+			volumeID:          testVolumeID,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			enableNFSv4:       true,
+			expectedMountOpts: []string{},
+		},
+		{
+			name:              "Instance volume respects MountFlags",
+			volumeID:          testVolumeID,
+			mountFlags:        []string{"nolock"},
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: []string{"nolock"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			testEnv := initTestNodeServer(t)
+			ns := testEnv.ns.(*nodeServer)
+			ns.features.FeatureNFSv4Support = &FeatureNFSv4Support{Enabled: tc.enableNFSv4}
+
+			stagingTargetPath := filepath.Join(t.TempDir(), "staging")
+			stageReq := &csi.NodeStageVolumeRequest{
+				VolumeId:          tc.volumeID,
+				StagingTargetPath: stagingTargetPath,
+				VolumeCapability: &csi.VolumeCapability{
+					AccessType: &csi.VolumeCapability_Mount{
+						Mount: &csi.VolumeCapability_MountVolume{
+							MountFlags: tc.mountFlags,
+						},
+					},
+					AccessMode: &csi.VolumeCapability_AccessMode{
+						Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+					},
+				},
+				VolumeContext: tc.volumeContext,
+			}
+
+			if _, err := testEnv.ns.NodeStageVolume(context.Background(), stageReq); err != nil {
+				t.Fatalf("NodeStageVolume failed: %v", err)
+			}
+
+			validateMountPoint(t, tc.name, testEnv.fm, &mount.MountPoint{
+				Device: expectedDevice,
+				Path:   stagingTargetPath,
+				Type:   "nfs",
+				Opts:   tc.expectedMountOpts,
+			})
+
+			// NodeUnstageVolume does not depend on mount options; verify the staged
+			// mount is still cleaned up normally.
+			unstageReq := &csi.NodeUnstageVolumeRequest{
+				VolumeId:          tc.volumeID,
+				StagingTargetPath: stagingTargetPath,
+			}
+			if _, err := testEnv.ns.NodeUnstageVolume(context.Background(), unstageReq); err != nil {
+				t.Fatalf("NodeUnstageVolume failed: %v", err)
+			}
+			validateMountPoint(t, tc.name+" (after unstage)", testEnv.fm, nil)
+		})
+	}
+}
+
+func TestNodeStageVolume_VolumePoolAlreadyMounted(t *testing.T) {
+	testEnv := initTestNodeServer(t)
+	ns := testEnv.ns.(*nodeServer)
+	ns.features.FeatureNFSv4Support = &FeatureNFSv4Support{Enabled: false}
+
+	stagingTargetPath := filepath.Join(t.TempDir(), "staging")
+	if err := os.MkdirAll(stagingTargetPath, 0750); err != nil {
+		t.Fatalf("failed to create staging path: %v", err)
+	}
+	existing := mount.MountPoint{
+		Device: "10.1.1.1:/vol1",
+		Path:   stagingTargetPath,
+		Type:   "nfs",
+		Opts:   []string{"existing-opt"},
+	}
+	testEnv.fm.MountPoints = []mount.MountPoint{existing}
+
+	stageReq := &csi.NodeStageVolumeRequest{
+		VolumeId:          testVolumePoolVolumeID,
+		StagingTargetPath: stagingTargetPath,
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{
+				Mount: &csi.VolumeCapability_MountVolume{},
+			},
+			AccessMode: &csi.VolumeCapability_AccessMode{
+				Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			},
+		},
+		VolumeContext: map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+	}
+
+	if _, err := testEnv.ns.NodeStageVolume(context.Background(), stageReq); err != nil {
+		t.Fatalf("NodeStageVolume failed: %v", err)
+	}
+
+	// The existing mount must be left untouched: no remount and no default options injected.
+	validateMountPoint(t, "already mounted", testEnv.fm, &existing)
+}
+
 func TestNodeUnstageVolumeUpdateLockInfo(t *testing.T) {
 	basePath, err := ioutil.TempDir("", "node-publish-")
 	if err != nil {
