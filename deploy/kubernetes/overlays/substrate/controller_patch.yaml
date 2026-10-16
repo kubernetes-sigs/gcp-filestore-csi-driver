@@ -5,14 +5,19 @@
 #    - Disables host networking on the controller pod so GKE Workload Identity metadata server
 #      interception works properly, allowing the pod to authenticate as its annotated GCP Service Account.
 #
-# 2. role: controller-plugin label
+# 2. role: controller-plugin label (pod template and selector)
 #    - Differentiates controller pods from node daemonset pods so the csi-filestore-controller
 #      Kubernetes Service only routes gRPC control-plane traffic to this controller.
+#    - The label is also part of spec.selector, so the controller Deployment and the node
+#      DaemonSet no longer share the same selector. spec.selector is immutable; see README.md
+#      for upgrading an existing install.
 #
 # 3. envoy mTLS proxy sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
 #    - Substrate's ate-api-server communicates with CSI drivers over mTLS gRPC network sockets.
 #      Because the CSI driver natively listens on a local Unix domain socket, this Envoy 
 #      proxy intercepts mTLS traffic on TCP port 10000 and forwards it to the Unix socket.
+#    - --concurrency 2 caps Envoy worker threads. By default Envoy starts one worker per host
+#      core, which leads to CPU throttling under a small CPU limit.
 #
 # 4. --feature-volume-pools=true
 #    - Enables VolumePool capacity management and volume claim/provisioning logic.
@@ -20,6 +25,21 @@
 # 5. Workload Identity Cleanup ($patch: delete)
 #    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
 #      env variables in favor of dynamic, short-lived OAuth tokens via GKE Workload Identity.
+#
+# 6. Scale tuning (sized from Substrate VolumePool scale tests)
+#    - replicas: 5 for 40 RPS of CreateVolume/DeleteVolume. With RPCs spread across replicas,
+#      3 replicas handled 40 RPS in the scale tests, so 5 leave two spare. Each replica's limits
+#      are also sized so one pod can absorb all 40 RPS, in case the client does not spread RPCs.
+#    - Burstable QoS: requests sit above the measured peak usage, so the pods stay within their
+#      requests (which keeps them out of the first eviction tier), while the limits leave
+#      headroom for load spikes without reserving it on the node.
+#    - --v=2 drops the verbose per-RPC request/response logs (V(4)/V(5)) while keeping INFO logs.
+#
+# 7. Availability
+#    - Readiness probes keep a pod out of the headless Service's DNS until it can serve: the
+#      driver must be listening on /csi/csi.sock, and envoy must be listening on port 10000.
+#    - A soft topology spread places the replicas on different nodes and zones when possible.
+#      The PodDisruptionBudget in pdb.yaml allows at most two replicas to be evicted at a time.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -27,14 +47,35 @@ metadata:
   name: gcp-filestore-csi-controller
   namespace: gcp-filestore-csi-driver
   labels:
+    app: gcp-filestore-csi-driver
     role: controller-plugin
 spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      role: controller-plugin
   template:
     metadata:
       labels:
         role: controller-plugin
     spec:
       hostNetwork: false
+      # Spread replicas across nodes and zones when possible, without blocking scheduling on small clusters
+      topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: gcp-filestore-csi-driver
+            role: controller-plugin
+      - maxSkew: 1
+        topologyKey: topology.kubernetes.io/zone
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app: gcp-filestore-csi-driver
+            role: controller-plugin
       # Remove static Service Account key secret volume; authentication is handled via GKE Workload Identity
       volumes:
       - name: cloud-sa-volume
@@ -63,9 +104,21 @@ spec:
       - name: envoy
         image: envoyproxy/envoy:v1.34-latest
         command: ["/usr/local/bin/envoy"]
-        args: ["-c", "/etc/envoy/envoy.yaml"]
+        args: ["-c", "/etc/envoy/envoy.yaml", "--concurrency", "2"]
         securityContext:
           privileged: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        # Ready once envoy accepts connections on the mTLS listener
+        readinessProbe:
+          tcpSocket:
+            port: 10000
+          periodSeconds: 5
         volumeMounts:
         - name: envoy-config
           mountPath: /etc/envoy
@@ -90,7 +143,22 @@ spec:
         - name: GOOGLE_APPLICATION_CREDENTIALS
           $patch: delete
         args:
-        - "--v=4"
+        - "--v=2"
         - "--endpoint=unix:/csi/csi.sock"
         - "--controller=true"
         - "--feature-volume-pools=true"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 256Mi
+          limits:
+            cpu: "2"
+            memory: 1Gi
+        # Ready once the driver is listening on its CSI socket, which envoy forwards to. If only the
+        # driver container restarts (for example after a crash), its old socket file stays in the
+        # pod's emptyDir until the new process starts listening, so also require a live listener
+        # for it in /proc/net/unix.
+        readinessProbe:
+          exec:
+            command: ["sh", "-c", "test -S /csi/csi.sock && grep -q ' /csi/csi.sock$' /proc/net/unix"]
+          periodSeconds: 5
