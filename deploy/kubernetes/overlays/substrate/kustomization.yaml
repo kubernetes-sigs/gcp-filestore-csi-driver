@@ -14,6 +14,7 @@
 # - Headless gRPC Service for Substrate control-plane connectivity (service.yaml)
 # - Substrate CSIDriverConfig registration CR (csi_driver_config.yaml)
 # - Envoy configuration map (envoy_configmap.yaml)
+# - Controller PodDisruptionBudget (pdb.yaml)
 # - Controller Workload Identity, role label/selector, envoy mTLS proxy and scale tuning patch (controller_patch.yaml)
 # - Node DaemonSet role label/selector, bidirectional mount propagation and scale tuning patch (node_patch.yaml)
 # - ServiceAccount Workload Identity annotation patch (serviceaccount_patch.yaml)
@@ -25,6 +26,7 @@ resources:
 - service.yaml
 - csi_driver_config.yaml
 - envoy_configmap.yaml
+- pdb.yaml
 patches:
 - path: controller_patch.yaml
 - path: node_patch.yaml

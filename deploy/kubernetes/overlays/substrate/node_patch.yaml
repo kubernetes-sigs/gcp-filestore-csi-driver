@@ -18,7 +18,7 @@
 # 3. Scale tuning (sized from Substrate VolumePool scale tests)
 #    - Burstable QoS for the node plugin: requests cover steady state, while limits leave room
 #      for mount/unmount bursts. Requests are reserved on every node, so they are kept small.
-#    - --v=2 drops per-RPC logs (V(4)/V(5)) while keeping INFO logs.
+#    - --v=2 drops the verbose per-RPC request/response logs (V(4)/V(5)) while keeping INFO logs.
 
 apiVersion: apps/v1
 kind: DaemonSet
