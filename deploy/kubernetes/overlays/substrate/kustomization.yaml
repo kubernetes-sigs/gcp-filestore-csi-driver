@@ -11,11 +11,11 @@
 #
 # Components Included:
 # - Base upstream CSI Driver deployment (../stable-master)
-# - gRPC ClusterIP Service for Substrate control-plane connectivity (service.yaml)
+# - Headless gRPC Service for Substrate control-plane connectivity (service.yaml)
 # - Substrate CSIDriverConfig registration CR (csi_driver_config.yaml)
 # - Envoy configuration map (envoy_configmap.yaml)
-# - Controller Workload Identity, role label, and envoy mTLS proxy patch (controller_patch.yaml)
-# - Node DaemonSet role label and bidirectional mount propagation patch (node_patch.yaml)
+# - Controller Workload Identity, role label/selector, envoy mTLS proxy and scale tuning patch (controller_patch.yaml)
+# - Node DaemonSet role label/selector, bidirectional mount propagation and scale tuning patch (node_patch.yaml)
 # - ServiceAccount Workload Identity annotation patch (serviceaccount_patch.yaml)
 
 apiVersion: kustomize.config.k8s.io/v1beta1

@@ -5,14 +5,19 @@
 #    - Disables host networking on the controller pod so GKE Workload Identity metadata server
 #      interception works properly, allowing the pod to authenticate as its annotated GCP Service Account.
 #
-# 2. role: controller-plugin label
+# 2. role: controller-plugin label (pod template and selector)
 #    - Differentiates controller pods from node daemonset pods so the csi-filestore-controller
 #      Kubernetes Service only routes gRPC control-plane traffic to this controller.
+#    - The label is also part of spec.selector, so the controller Deployment and the node
+#      DaemonSet no longer share the same selector. spec.selector is immutable; see README.md
+#      for upgrading an existing install.
 #
 # 3. envoy mTLS proxy sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
 #    - Substrate's ate-api-server communicates with CSI drivers over mTLS gRPC network sockets.
 #      Because the CSI driver natively listens on a local Unix domain socket, this Envoy 
 #      proxy intercepts mTLS traffic on TCP port 10000 and forwards it to the Unix socket.
+#    - --concurrency 2 caps Envoy worker threads. By default Envoy starts one worker per host
+#      core, which leads to CPU throttling under a small CPU limit.
 #
 # 4. --feature-volume-pools=true
 #    - Enables VolumePool capacity management and volume claim/provisioning logic.
@@ -20,6 +25,14 @@
 # 5. Workload Identity Cleanup ($patch: delete)
 #    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
 #      env variables in favor of dynamic, short-lived OAuth tokens via GKE Workload Identity.
+#
+# 6. Scale tuning (sized from Substrate VolumePool scale tests)
+#    - replicas: 5, sized for 40 RPS of CreateVolume/DeleteVolume. Each replica can absorb the
+#      full rate on its own, in case the client does not spread RPCs across replicas.
+#    - Burstable QoS: requests sit above the measured peak usage, so the pods stay within their
+#      requests (which keeps them out of the first eviction tier), while the limits leave
+#      headroom for load spikes without reserving it on the node.
+#    - --v=2 drops per-RPC logs (V(4)/V(5)) while keeping INFO logs.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -27,8 +40,13 @@ metadata:
   name: gcp-filestore-csi-controller
   namespace: gcp-filestore-csi-driver
   labels:
+    app: gcp-filestore-csi-driver
     role: controller-plugin
 spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      role: controller-plugin
   template:
     metadata:
       labels:
@@ -63,9 +81,16 @@ spec:
       - name: envoy
         image: envoyproxy/envoy:v1.34-latest
         command: ["/usr/local/bin/envoy"]
-        args: ["-c", "/etc/envoy/envoy.yaml"]
+        args: ["-c", "/etc/envoy/envoy.yaml", "--concurrency", "2"]
         securityContext:
           privileged: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
         volumeMounts:
         - name: envoy-config
           mountPath: /etc/envoy
@@ -90,7 +115,14 @@ spec:
         - name: GOOGLE_APPLICATION_CREDENTIALS
           $patch: delete
         args:
-        - "--v=4"
+        - "--v=2"
         - "--endpoint=unix:/csi/csi.sock"
         - "--controller=true"
         - "--feature-volume-pools=true"
+        resources:
+          requests:
+            cpu: 500m
+            memory: 256Mi
+          limits:
+            cpu: "2"
+            memory: 1Gi

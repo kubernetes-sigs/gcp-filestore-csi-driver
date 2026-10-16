@@ -9,6 +9,14 @@
 #    - Substrate ate-api-server connects to port 10000 via cluster DNS:
 #      tcp://csi-filestore-controller.gcp-filestore-csi-driver.svc:10000
 #    - The service routes traffic to port 10000 where envoy forwards it to /csi/csi.sock.
+#
+# 3. Headless (clusterIP: None)
+#    - DNS for the Service name returns the IP of every ready controller pod, so gRPC clients
+#      can spread RPCs across all controller replicas (for example with round_robin). Behind a
+#      ClusterIP, a long-lived gRPC connection stays pinned to a single pod.
+#    - The Service name is unchanged, so the CSIDriverConfig controllerEndpoint and TLS
+#      serverName still match.
+#    - spec.clusterIP is immutable; see README.md for upgrading an existing install.
 
 apiVersion: v1
 kind: Service
@@ -16,6 +24,7 @@ metadata:
   name: csi-filestore-controller
   namespace: gcp-filestore-csi-driver
 spec:
+  clusterIP: None
   selector:
     app: gcp-filestore-csi-driver
     role: controller-plugin
