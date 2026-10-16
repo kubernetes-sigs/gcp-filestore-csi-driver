@@ -1,10 +1,11 @@
 # PodDisruptionBudget for the Filestore CSI Controller Deployment.
 #
 # Key Features & Rationale:
-# 1. maxUnavailable: 1
-#    - During voluntary disruptions (node drains, node pool upgrades), at most one of the five
-#      controller replicas is evicted at a time, so the remaining replicas keep serving
-#      Substrate's gRPC control-plane traffic.
+# 1. maxUnavailable: 2
+#    - During voluntary disruptions (node drains, node pool upgrades), at most two of the five
+#      controller replicas are evicted at a time. The remaining three are enough for 40 RPS
+#      (3 replicas handled 40 RPS in the scale tests), and a replacement pod that stays Pending
+#      does not block every further eviction, as it would with maxUnavailable: 1.
 #
 # 2. Selector: app=gcp-filestore-csi-driver, role=controller-plugin
 #    - Matches only the controller pods, not the node DaemonSet pods.
@@ -15,7 +16,7 @@ metadata:
   name: gcp-filestore-csi-controller
   namespace: gcp-filestore-csi-driver
 spec:
-  maxUnavailable: 1
+  maxUnavailable: 2
   selector:
     matchLabels:
       app: gcp-filestore-csi-driver

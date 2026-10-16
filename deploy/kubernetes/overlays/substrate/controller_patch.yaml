@@ -37,9 +37,9 @@
 #
 # 7. Availability
 #    - Readiness probes keep a pod out of the headless Service's DNS until it can serve: the
-#      driver must have created /csi/csi.sock, and envoy must be listening on port 10000.
+#      driver must be listening on /csi/csi.sock, and envoy must be listening on port 10000.
 #    - A soft topology spread places the replicas on different nodes and zones when possible.
-#      The PodDisruptionBudget in pdb.yaml allows at most one replica to be evicted at a time.
+#      The PodDisruptionBudget in pdb.yaml allows at most two replicas to be evicted at a time.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -154,8 +154,11 @@ spec:
           limits:
             cpu: "2"
             memory: 1Gi
-        # Ready once the driver has created its CSI socket, which envoy forwards to
+        # Ready once the driver is listening on its CSI socket, which envoy forwards to. If only the
+        # driver container restarts (for example after a crash), its old socket file stays in the
+        # pod's emptyDir until the new process starts listening, so also require a live listener
+        # for it in /proc/net/unix.
         readinessProbe:
           exec:
-            command: ["test", "-S", "/csi/csi.sock"]
+            command: ["sh", "-c", "test -S /csi/csi.sock && grep -q ' /csi/csi.sock$' /proc/net/unix"]
           periodSeconds: 5

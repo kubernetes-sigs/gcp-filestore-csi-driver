@@ -13,7 +13,7 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
 | **Node DaemonSet Patch** | `node_patch.yaml` | 1. Adds label `role: node-plugin` to the pods and the DaemonSet selector.<br>2. Mounts `/var/lib/ateom-gvisor` with `mountPropagation: Bidirectional` so NFS mounts are accessible by Substrate `ateom-gvisor`.<br>3. Applies the scale tuning described in **Scale Tuning** below. |
 | **gRPC Controller Service** | `service.yaml` | Creates the headless `Service/csi-filestore-controller` (port `10000` -> targetPort `10000` over mTLS) selecting `app=gcp-filestore-csi-driver` and `role=controller-plugin`, guaranteeing traffic reaches only the controller. Being headless, the Service name resolves to every ready controller pod, so gRPC clients can spread RPCs across replicas. |
 | **Substrate Driver Config** | `csi_driver_config.yaml` | Registers the driver (`ate.dev/v1alpha1`) with Substrate pointing to the internal cluster DNS gRPC endpoint. |
-| **Controller Disruption Budget** | `pdb.yaml` | `PodDisruptionBudget` allowing at most one controller pod to be evicted at a time during voluntary disruptions such as node drains and upgrades. |
+| **Controller Disruption Budget** | `pdb.yaml` | `PodDisruptionBudget` allowing at most two controller pods to be evicted at a time during voluntary disruptions such as node drains and upgrades, leaving the three needed for 40 RPS. |
 
 ---
 
@@ -94,7 +94,7 @@ The controller and node patches size the driver for Substrate's VolumePool workl
 ### Controller (`controller_patch.yaml`)
 
 - **Replicas:** 5 for 40 RPS of `CreateVolume`/`DeleteVolume`. In the scale tests, with RPCs spread across replicas, 3 replicas handled 40 RPS, 5 replicas 80 to 100 RPS, and 8 replicas 200 RPS, so 5 replicas leave two spare at 40 RPS. Each replica's limits are also sized so that a single pod can absorb all 40 RPS, in case the client does not spread RPCs across replicas.
-- **Availability:** readiness probes keep a pod out of the Service's DNS until it can serve (the driver must have created `/csi/csi.sock`, and `envoy` must be listening on port `10000`). A soft topology spread places the replicas on different nodes and zones when possible, and `pdb.yaml` allows at most one replica to be evicted at a time.
+- **Availability:** readiness probes keep a pod out of the Service's DNS until it can serve (the driver must be listening on `/csi/csi.sock`, and `envoy` must be listening on port `10000`). A soft topology spread places the replicas on different nodes and zones when possible, and `pdb.yaml` allows at most two replicas to be evicted at a time, leaving the three needed for 40 RPS.
 - **Burstable QoS:** requests sit above the measured peak usage, so the pods stay within their requests (which keeps them out of the first eviction tier), while the limits leave headroom for load spikes without reserving it on the node. In the scale tests, the driver container peaked at about 35 MiB while handling 25 RPS per replica.
 
 | Container | Requests (CPU / Memory) | Limits (CPU / Memory) |
@@ -117,7 +117,7 @@ The `csi-driver-registrar` and `nfs-services` sidecars keep the base manifests' 
 ### Common settings
 
 - **CPU limits and threads:** the driver's Go runtime (Go 1.25 and later) sizes `GOMAXPROCS` to the container's CPU limit automatically, so no `GOMAXPROCS` setting is needed. `envoy` does not adjust to the CPU limit by itself, so it runs with `--concurrency 2` instead of one worker thread per host core.
-- **Logging:** the driver runs with `--v=2`, which drops per-RPC request/response logs (`V(4)`/`V(5)`) but keeps INFO logs for debugging. The controller still logs one INFO line for each VolumePool volume it creates or deletes.
+- **Logging:** the driver runs with `--v=2`, which drops per-RPC request/response logs (`V(4)`/`V(5)`) but keeps INFO logs for debugging. The controller still logs INFO lines for each VolumePool volume it creates or deletes.
 - **Priority:** both workloads use the `csi-gcp-fs-controller` and `csi-gcp-fs-node` PriorityClasses from the base manifests. No change is needed in this overlay.
 - **Filestore API quota:** every `CreateVolume` and `DeleteVolume` results in one Filestore API request. Make sure the project's Filestore API request quota covers your expected rate. For example, 40 RPS of creates plus 40 RPS of deletes is about 4,800 requests per minute. Request a quota increase if needed.
 
