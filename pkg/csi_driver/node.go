@@ -348,6 +348,10 @@ func (s *nodeServer) NodeStageVolume(ctx context.Context, req *csi.NodeStageVolu
 		options = append(options, mountOptions)
 	}
 
+	if shouldApplyVolumePoolNFSv3DefaultMountOptions(volumeID, attr, options) {
+		options = volumePoolNFSv3DefaultMountOptions()
+	}
+
 	err = s.mounter.Mount(source, stagingTargetPath, fstype, options)
 	if err != nil {
 		klog.Errorf("Mount %q failed on node %s, cleaning up", stagingTargetPath, s.driver.config.NodeName)
@@ -629,4 +633,34 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 	project := s.metaService.GetProject()
 	lockInfoKey = lockrelease.GenerateConfigMapKey(project, filestoreInstance.Location, filestoreInstance.Name, filestoreInstance.Volume.Name, nodeID, nodeInternalIP)
 	return lockInfoKey, nil
+}
+
+// volumePoolNFSv3DefaultMountOptions returns the mount options applied to VolumePool
+// NFSv3 volumes when the user specifies none. Pinning vers=3 and TCP for both the NFS
+// and MOUNT protocols skips mount.nfs version/transport negotiation, which otherwise
+// stalls for ~3s on a UDP portmapper/mountd timeout, because today's VolumePool
+// instances serve only NFSv3. Volumes provisioned with protocol NFS_V4_1 are left
+// alone (see shouldApplyVolumePoolNFSv3DefaultMountOptions). A new slice is returned
+// on every call so callers may modify it freely.
+func volumePoolNFSv3DefaultMountOptions() []string {
+	return []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+}
+
+// shouldApplyVolumePoolNFSv3DefaultMountOptions reports whether the VolumePool NFSv3
+// default mount options should be used for a NodeStageVolume call. Defaults apply only
+// when all of the following hold:
+//   - the volume is a VolumePool volume,
+//   - the user provided no mount options (neither StorageClass.mountOptions nor
+//     StorageClass.parameters["mount-options"]), and
+//   - the volume context protocol is unset, empty, or NFS_V3 (case-insensitive).
+//
+// The raw volume context protocol is used rather than the value normalized by
+// NodeStageVolume, so a volume provisioned as NFS_V4_1 never gets NFSv3 options forced
+// on it, regardless of whether --feature-nfs-v4 is enabled on the node.
+func shouldApplyVolumePoolNFSv3DefaultMountOptions(volumeID string, attr map[string]string, options []string) bool {
+	if !isVolumePoolVolumeID(volumeID) || len(options) > 0 {
+		return false
+	}
+	protocol := attr[attrFileProtocol]
+	return protocol == "" || strings.EqualFold(protocol, v3FileProtocol)
 }
