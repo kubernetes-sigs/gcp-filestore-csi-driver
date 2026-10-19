@@ -1,0 +1,31 @@
+# PodDisruptionBudget for the Filestore CSI Controller Deployment.
+#
+# Key Features & Rationale:
+# 1. maxUnavailable: 2
+#    - During voluntary disruptions (node drains, node pool upgrades), at most two of the five
+#      controller replicas are evicted at a time. The remaining three are enough for 40 RPS
+#      whether or not the client spreads RPCs across them (see controller_patch.yaml), and a
+#      replacement pod that stays Pending does not block every further eviction, as it would
+#      with maxUnavailable: 1.
+#
+# 2. unhealthyPodEvictionPolicy: AlwaysAllow
+#    - Running pods that are not Ready (for example a crash-looping driver that its readiness
+#      probe keeps NotReady) can always be evicted, so they cannot stall node drains and
+#      upgrades. With the default policy, IfHealthyBudget, three or more NotReady replicas would
+#      block every eviction. Ready pods stay protected by maxUnavailable.
+#
+# 3. Selector: app=gcp-filestore-csi-driver, role=controller-plugin
+#    - Matches only the controller pods, not the node DaemonSet pods.
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gcp-filestore-csi-controller
+  namespace: gcp-filestore-csi-driver
+spec:
+  maxUnavailable: 2
+  unhealthyPodEvictionPolicy: AlwaysAllow
+  selector:
+    matchLabels:
+      app: gcp-filestore-csi-driver
+      role: controller-plugin
