@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/google/uuid"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
@@ -82,7 +83,20 @@ type PoolVolume struct {
 	Name      string
 	IpAddress string
 	MountName string
+	// State is the volume's lifecycle state, such as VolumePoolVolumeStateHot.
+	// It is empty if the API did not report a state.
+	State string
 }
+
+// Lifecycle states of a volume pool volume, as reported by the Filestore API.
+// Only HOT volumes have a mount point.
+const (
+	VolumePoolVolumeStateUnspecified = "STATE_UNSPECIFIED"
+	VolumePoolVolumeStateCreating    = "CREATING"
+	VolumePoolVolumeStateHot         = "HOT"
+	VolumePoolVolumeStateWarm        = "WARM"
+	VolumePoolVolumeStateCold        = "COLD"
+)
 
 type VolumePoolMountPoint struct {
 	IpAddress string `json:"ipAddress,omitempty"`
@@ -93,6 +107,19 @@ type VolumePoolVolume struct {
 	Name        string                `json:"name,omitempty"`
 	Description string                `json:"description,omitempty"`
 	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
+	State       string                `json:"state,omitempty"`
+}
+
+func (v *VolumePoolVolume) toPoolVolume() *PoolVolume {
+	vol := &PoolVolume{
+		Name:  v.Name,
+		State: v.State,
+	}
+	if v.MountPoint != nil {
+		vol.IpAddress = v.MountPoint.IpAddress
+		vol.MountName = v.MountPoint.MountName
+	}
+	return vol
 }
 
 type MultishareInstance struct {
@@ -154,6 +181,7 @@ type Backup struct {
 	Backup            *filev1beta1.Backup
 	SourceInstance    string
 	SourceShare       string
+	SourceVolume      string
 	FileSystemProtocl string
 }
 
@@ -168,6 +196,11 @@ type BackupInfo struct {
 	Location           string
 	Tier               string
 	Labels             map[string]string
+	// SourceVolume is the resource name of a volume pool volume to back up:
+	// projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume}.
+	// When it is set, the backup is taken from that volume, and SourceInstance,
+	// SourceInstanceName and SourceShare are not used.
+	SourceVolume string
 }
 
 func (bi *BackupInfo) SourceVolumeLocation() string {
@@ -214,6 +247,8 @@ type Service interface {
 	// Volume pool ops
 	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
 	DeleteVolumePoolVolume(ctx context.Context, name string) error
+	GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error)
+	CreateVolumePoolVolumeFromSource(ctx context.Context, parentPool, volumeID, backupName string) (*PoolVolume, error)
 }
 
 type gcfsServiceManager struct {
@@ -637,11 +672,15 @@ func (manager *gcfsServiceManager) GetBackup(ctx context.Context, backupUri stri
 		Backup:            backup,
 		SourceInstance:    backup.SourceInstance,
 		SourceShare:       backup.SourceFileShare,
+		SourceVolume:      backup.SourceVolume,
 		FileSystemProtocl: backup.FileSystemProtocol,
 	}, nil
 }
 
 func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
+	if backupInfo.SourceVolume != "" {
+		return manager.createVolumePoolBackup(ctx, backupInfo)
+	}
 
 	backupobj := &filev1beta1.Backup{
 		SourceInstance:  backupInfo.BackupSource(),
@@ -1546,7 +1585,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, googleapi.CheckResponse(resp)
+		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("create volume %q in volume pool %q", volumeID, parentPool))
 	}
 
 	var vol VolumePoolVolume
@@ -1558,22 +1597,236 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 		return nil, fmt.Errorf("volume %q created without mount details information", vol.Name)
 	}
 
-	return &PoolVolume{
-		Name:      vol.Name,
-		IpAddress: vol.MountPoint.IpAddress,
-		MountName: vol.MountPoint.MountName,
-	}, nil
+	return vol.toPoolVolume(), nil
 }
 
 func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
 	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, name, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete volume %q: %w", name, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return googleapi.CheckResponse(resp)
+		return volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("delete volume %q", name))
 	}
 	return nil
+}
+
+// Polling settings for volume pool operations. They are variables so that tests
+// can shorten them.
+var (
+	volumePoolOpPollInterval = 5 * time.Second
+	volumePoolOpTimeout      = 5 * time.Minute
+)
+
+// GetVolumePoolVolume returns the volume pool volume with resource name name
+// (projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume}).
+// If the volume does not exist, the returned error has code NotFound.
+func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	resp, err := manager.executeRESTRequest(ctx, http.MethodGet, name, nil)
+	if err != nil {
+		return nil, fmt.Errorf("get volume %q: %w", name, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("get volume %q", name))
+	}
+
+	var vol VolumePoolVolume
+	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
+		return nil, fmt.Errorf("failed to decode volume %q: %w", name, err)
+	}
+	return vol.toPoolVolume(), nil
+}
+
+// createFromSourceRequest is the body of a volumes:createFromSource request.
+type createFromSourceRequest struct {
+	VolumeID  string `json:"volumeId"`
+	Backup    string `json:"backup"`
+	RequestID string `json:"requestId,omitempty"`
+}
+
+// CreateVolumePoolVolumeFromSource creates the volume volumeID in parentPool from
+// the volume backup backupName, waits for the restore to finish, and returns the
+// new volume.
+//
+// No quota is sent: the API rejects a quota on this call, and the new volume gets
+// the volume pool's default quota.
+func (manager *gcfsServiceManager) CreateVolumePoolVolumeFromSource(ctx context.Context, parentPool, volumeID, backupName string) (*PoolVolume, error) {
+	name := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
+	reqBody := &createFromSourceRequest{
+		VolumeID: volumeID,
+		Backup:   backupName,
+		// Use a new ID for every call. The API returns the original operation
+		// when an ID is reused, even if that operation failed, so a fixed ID
+		// would make a failed restore impossible to retry. Callers make retries
+		// safe by looking the volume up first.
+		RequestID: uuid.New().String(),
+	}
+
+	resp, err := manager.executeRESTRequest(ctx, http.MethodPost, parentPool+"/volumes:createFromSource", reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("create volume %q from backup %q: %w", name, backupName, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("create volume %q from backup %q", name, backupName))
+	}
+
+	var op filev1beta1.Operation
+	if err := json.NewDecoder(resp.Body).Decode(&op); err != nil {
+		return nil, fmt.Errorf("failed to decode the operation that creates volume %q: %w", name, err)
+	}
+
+	klog.V(4).Infof("Waiting for operation %s to create volume %q from backup %q", op.Name, name, backupName)
+	if err := manager.waitForVolumePoolOp(ctx, &op); err != nil {
+		return nil, err
+	}
+	return manager.GetVolumePoolVolume(ctx, name)
+}
+
+// createVolumePoolBackup creates a backup of the volume pool volume
+// backupInfo.SourceVolume and waits for the backup to be READY.
+func (manager *gcfsServiceManager) createVolumePoolBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
+	backupobj := &filev1beta1.Backup{
+		SourceVolume: backupInfo.SourceVolume,
+		Labels:       backupInfo.Labels,
+	}
+	klog.V(4).Infof("Creating backup %v of volume %v", backupInfo.BackupURI, backupInfo.SourceVolume)
+	op, err := manager.backupService.Create(locationURI(backupInfo.Project, backupInfo.Location), backupobj).BackupId(backupInfo.Name).Context(ctx).Do()
+	if err != nil {
+		return nil, volumePoolAPIError(err, fmt.Sprintf("create backup %v of volume %v", backupInfo.BackupURI, backupInfo.SourceVolume))
+	}
+
+	klog.V(4).Infof("Waiting for operation %s to create backup %v", op.Name, backupInfo.BackupURI)
+	if err := manager.waitForVolumePoolOp(ctx, op); err != nil {
+		return nil, err
+	}
+
+	backup, err := manager.backupService.Get(backupInfo.BackupURI).Context(ctx).Do()
+	if err != nil {
+		return nil, volumePoolAPIError(err, fmt.Sprintf("get backup %v", backupInfo.BackupURI))
+	}
+	if backup.State != "READY" {
+		return nil, status.Errorf(codes.Internal, "backup %v of volume %v is not ready, current state: %v", backupInfo.BackupURI, backupInfo.SourceVolume, backup.State)
+	}
+	klog.Infof("Successfully created backup %v of volume %v", backupInfo.BackupURI, backupInfo.SourceVolume)
+	return backup, nil
+}
+
+// waitForVolumePoolOp waits until op is done.
+//
+// Unlike waitForOp, a failed operation returns an error with the operation's
+// canonical code, and an operation that is still running when
+// volumePoolOpTimeout passes returns DeadlineExceeded, so that the caller can
+// retry later.
+func (manager *gcfsServiceManager) waitForVolumePoolOp(ctx context.Context, op *filev1beta1.Operation) error {
+	current := op
+	err := wait.PollUntilContextTimeout(ctx, volumePoolOpPollInterval, volumePoolOpTimeout, true, func(ctx context.Context) (bool, error) {
+		if current.Done {
+			return true, nil
+		}
+		next, err := manager.operationsService.Get(op.Name).Context(ctx).Do()
+		if err != nil {
+			return false, volumePoolAPIError(err, fmt.Sprintf("get operation %s", op.Name))
+		}
+		current = next
+		return current.Done, nil
+	})
+	if err != nil {
+		if !wait.Interrupted(err) {
+			return err
+		}
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return status.FromContextError(ctxErr).Err()
+		}
+		return status.Errorf(codes.DeadlineExceeded, "operation %s is still running after %v", op.Name, volumePoolOpTimeout)
+	}
+
+	if current.Error != nil {
+		code := codes.Code(current.Error.Code)
+		if code == codes.OK {
+			code = codes.Unknown
+		}
+		return status.Errorf(code, "operation %s failed: %s", op.Name, current.Error.Message)
+	}
+	return nil
+}
+
+// VolumePoolStatusError converts err, returned by a volume pool call of the
+// file service, into a gRPC status error:
+//   - an API error gets the canonical code from its error body, as in
+//     volumePoolAPIError;
+//   - any other status error is returned unchanged;
+//   - anything else, such as a network or context error, is classified by
+//     StatusError.
+//
+// API errors are checked first because errors from the generated Go client
+// also implement GRPCStatus, with a code derived from the HTTP status.
+func VolumePoolStatusError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var apiErr *googleapi.Error
+	if errors.As(err, &apiErr) {
+		return status.Error(volumePoolAPICode(apiErr), err.Error())
+	}
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+	return StatusError(err)
+}
+
+// volumePoolAPIError converts err, returned by a volume pool API call, into a gRPC
+// status error whose message starts with msg.
+//
+// The code is the canonical code that the API reports in the "status" field of
+// the error body. StatusError derives the code from the HTTP status instead,
+// which turns FAILED_PRECONDITION into InvalidArgument and ALREADY_EXISTS into
+// Internal. Errors that did not come from the API, such as network or context
+// errors, are only wrapped, and StatusError classifies them as usual.
+func volumePoolAPIError(err error, msg string) error {
+	var apiErr *googleapi.Error
+	if !errors.As(err, &apiErr) {
+		return fmt.Errorf("%s: %w", msg, err)
+	}
+
+	message := apiErr.Message
+	if message == "" {
+		message = apiErr.Error()
+	}
+	return status.Errorf(volumePoolAPICode(apiErr), "%s: %s", msg, message)
+}
+
+// volumePoolAPICode returns the gRPC code for an API error: the canonical code
+// in its body if there is one, or else a code derived from the HTTP status.
+func volumePoolAPICode(apiErr *googleapi.Error) codes.Code {
+	if code, ok := canonicalCode(apiErr); ok {
+		return code
+	}
+	if code, ok := userErrorCodeMap[apiErr.Code]; ok {
+		return code
+	}
+	return codes.Internal
+}
+
+// canonicalCode returns the canonical code in the body of an API error, such as
+// FAILED_PRECONDITION in {"error": {"code": 400, "status": "FAILED_PRECONDITION"}}.
+func canonicalCode(apiErr *googleapi.Error) (codes.Code, bool) {
+	var body struct {
+		Error struct {
+			Status json.RawMessage `json:"status"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal([]byte(apiErr.Body), &body); err != nil || len(body.Error.Status) == 0 {
+		return codes.Unknown, false
+	}
+	var code codes.Code
+	if err := code.UnmarshalJSON(body.Error.Status); err != nil || code == codes.OK {
+		return codes.Unknown, false
+	}
+	return code, true
 }

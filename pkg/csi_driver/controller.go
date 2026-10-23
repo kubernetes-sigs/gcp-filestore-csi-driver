@@ -207,7 +207,7 @@ func (m *controllerServer) Run(stopCh <-chan struct{}) {
 func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
 	volumePoolPath := req.GetParameters()[paramKeyVolumePool]
 	if volumePoolPath != "" {
-		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
+		if !s.volumePoolsEnabled() {
 			return nil, status.Error(codes.FailedPrecondition, "cannot create volume pool volume: Volume Pools feature is disabled")
 		}
 		return s.handleCreateVolumePoolVolume(ctx, req, volumePoolPath)
@@ -437,7 +437,7 @@ func (s *controllerServer) DeleteVolume(ctx context.Context, req *csi.DeleteVolu
 	}
 
 	if isVolumePoolVolumeID(volumeID) {
-		if s.config.features.FeatureVolumePools == nil || !s.config.features.FeatureVolumePools.Enabled {
+		if !s.volumePoolsEnabled() {
 			return nil, status.Errorf(codes.FailedPrecondition, "cannot delete volume pool volume %q: Volume Pools feature is disabled", volumeID)
 		}
 		return s.handleDeleteVolumePoolVolume(ctx, req, volumeID)
@@ -1118,7 +1118,10 @@ func (s *controllerServer) CreateSnapshot(ctx context.Context, req *csi.CreateSn
 	}
 
 	if isVolumePoolVolumeID(volumeID) {
-		return nil, status.Error(codes.InvalidArgument, "CreateSnapshot is not supported for volumepool volumes")
+		if !s.volumePoolsEnabled() {
+			return nil, status.Errorf(codes.FailedPrecondition, "cannot create snapshot of volume pool volume %q: Volume Pools feature is disabled", volumeID)
+		}
+		return s.handleCreateVolumePoolSnapshot(ctx, req)
 	}
 	if isMultishareVolId(volumeID) {
 		if s.config.multiShareController == nil {

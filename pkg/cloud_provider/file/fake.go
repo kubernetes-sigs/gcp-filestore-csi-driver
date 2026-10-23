@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"strings"
 )
 
@@ -174,6 +175,9 @@ func (manager *fakeServiceManager) UpdateInstancePerformance(ctx context.Context
 }
 
 func (manager *fakeServiceManager) CreateBackup(ctx context.Context, backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
+	if backupInfo.SourceVolume != "" {
+		return manager.createVolumePoolBackup(backupInfo)
+	}
 	if backupInfo.SourceInstanceName == "" || backupInfo.SourceShare == "" || backupInfo.SourceVolumeId == "" || backupInfo.BackupURI == "" {
 		return nil, fmt.Errorf("BackupInfo fields are not set %+v", backupInfo)
 	}
@@ -540,24 +544,22 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}
 
 	volumeURI := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
-	if vol, exists := manager.allocatedVolumes[volumeURI]; exists {
-		return vol, nil
+	if _, exists := manager.allocatedVolumes[volumeURI]; exists {
+		return nil, status.Errorf(codes.AlreadyExists, "volume %q already exists in volume pool %q", volumeID, parentPool)
 	}
 
 	if strings.Contains(parentPool, "exhausted") {
-		return nil, &googleapi.Error{
-			Code:    429,
-			Message: "no available volumes in the pool",
-		}
+		return nil, status.Error(codes.ResourceExhausted, "no available volumes in the pool")
 	}
 
 	vol := &PoolVolume{
 		Name:      volumeURI,
 		IpAddress: "10.1.1.1",
 		MountName: fmt.Sprintf("vol_%s", volumeID),
+		State:     VolumePoolVolumeStateHot,
 	}
 	manager.allocatedVolumes[volumeURI] = vol
-	return vol, nil
+	return copyPoolVolume(vol), nil
 }
 
 func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
@@ -571,4 +573,91 @@ func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 	}
 
 	return nil
+}
+
+func (manager *fakeServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	vol, ok := manager.allocatedVolumes[name]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "volume %q not found", name)
+	}
+	return copyPoolVolume(vol), nil
+}
+
+// CreateVolumePoolVolumeFromSource checks the request like the API does: the
+// volume must not exist yet, and the backup must be a READY backup of a volume
+// in the same volume pool. The new volume is HOT.
+func (manager *fakeServiceManager) CreateVolumePoolVolumeFromSource(ctx context.Context, parentPool, volumeID, backupName string) (*PoolVolume, error) {
+	if manager.allocatedVolumes == nil {
+		manager.allocatedVolumes = make(map[string]*PoolVolume)
+	}
+
+	volumeURI := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
+	if _, exists := manager.allocatedVolumes[volumeURI]; exists {
+		return nil, status.Errorf(codes.AlreadyExists, "volume %s already exists", volumeID)
+	}
+	backup, ok := manager.backups[backupName]
+	if !ok || backup.Backup == nil {
+		return nil, status.Errorf(codes.Internal, "failed to fetch backup %s", backupName)
+	}
+	if backup.Backup.State != "READY" {
+		return nil, status.Errorf(codes.InvalidArgument, "backup %s is not in READY state", backupName)
+	}
+	if !strings.HasPrefix(backup.SourceVolume, parentPool+"/volumes/") {
+		return nil, status.Errorf(codes.InvalidArgument, "backup %s was created from volume %q, not from a volume in volume pool %s", backupName, backup.SourceVolume, parentPool)
+	}
+
+	vol := &PoolVolume{
+		Name:      volumeURI,
+		IpAddress: "10.1.1.2",
+		MountName: fmt.Sprintf("vol_%s", volumeID),
+		State:     VolumePoolVolumeStateHot,
+	}
+	manager.allocatedVolumes[volumeURI] = vol
+	return copyPoolVolume(vol), nil
+}
+
+// createVolumePoolBackup creates a backup of a volume pool volume like the API
+// does: only HOT volumes can be backed up, the backup reports the volume's
+// backing instance and share as its source, and its capacity is not set.
+func (manager *fakeServiceManager) createVolumePoolBackup(backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
+	if backupInfo.BackupURI == "" {
+		return nil, fmt.Errorf("BackupInfo fields are not set %+v", backupInfo)
+	}
+	if _, ok := manager.backups[backupInfo.BackupURI]; ok {
+		return nil, status.Errorf(codes.AlreadyExists, "backup %s already exists", backupInfo.BackupURI)
+	}
+
+	vol, ok := manager.allocatedVolumes[backupInfo.SourceVolume]
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "volume %q not found", backupInfo.SourceVolume)
+	}
+	switch vol.State {
+	case VolumePoolVolumeStateHot:
+	case VolumePoolVolumeStateCold:
+		return nil, status.Errorf(codes.Internal, "fake: volume %q is COLD and has no share to back up", backupInfo.SourceVolume)
+	default:
+		return nil, status.Errorf(codes.FailedPrecondition, "fake: volume %q is %s; only HOT volumes can be backed up", backupInfo.SourceVolume, vol.State)
+	}
+
+	backupToCreate := &filev1beta1.Backup{
+		Name:            backupInfo.BackupURI,
+		SourceVolume:    backupInfo.SourceVolume,
+		SourceInstance:  fmt.Sprintf(instanceURIFmt, backupInfo.Project, backupInfo.Location, "pool-instance"),
+		SourceFileShare: vol.MountName,
+		CreateTime:      "2020-10-02T15:01:23Z",
+		State:           "READY",
+		Labels:          backupInfo.Labels,
+	}
+	manager.backups[backupInfo.BackupURI] = &Backup{
+		Backup:         backupToCreate,
+		SourceInstance: backupToCreate.SourceInstance,
+		SourceShare:    backupToCreate.SourceFileShare,
+		SourceVolume:   backupInfo.SourceVolume,
+	}
+	return backupToCreate, nil
+}
+
+func copyPoolVolume(vol *PoolVolume) *PoolVolume {
+	c := *vol
+	return &c
 }
