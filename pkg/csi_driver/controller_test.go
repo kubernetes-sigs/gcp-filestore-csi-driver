@@ -2480,7 +2480,7 @@ func TestCreateSnapshot(t *testing.T) {
 	}{
 		// Failure test cases
 		{
-			name: "Volume pool volume is not supported",
+			name: "Volume pool volume with the Volume Pools feature disabled",
 			req: &csi.CreateSnapshotRequest{
 				SourceVolumeId: "volumepool://demo-project/us-central1/demo-pool-1/volumes/vol1",
 				Name:           backupName,
