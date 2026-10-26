@@ -12,6 +12,10 @@
 #      mounted by the CSI node driver to be immediately visible to the host and accessible
 #      by Substrate worker pods during actor resume.
 
+# 3. nfs-services /run/rpcbind ownership
+#    - Sets /run/rpcbind to _rpc:root 0755 before the image's start script runs, as the
+#      repository's nfs_services_start.sh does since #1394.
+
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -26,6 +30,13 @@ spec:
         role: node-plugin
     spec:
       containers:
+      # The pinned driver image predates the nfs_services_start.sh change in #1394,
+      # so its rpcbind init script refuses a /run/rpcbind hostPath that the kubelet
+      # created as root:root ("/run/rpcbind not owned by root"). Set the ownership
+      # the init script expects before starting. Drop this once the pinned image
+      # includes #1394.
+      - name: nfs-services
+        command: ["/bin/sh", "-c", "chown _rpc:root /run/rpcbind && chmod 0755 /run/rpcbind && exec /nfs_services_start.sh"]
       - name: gcp-filestore-driver
         volumeMounts:
         # Propagate mounts to the Substrate ateom-gvisor directory on the host
