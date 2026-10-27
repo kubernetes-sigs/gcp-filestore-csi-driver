@@ -35,12 +35,43 @@ const (
 	pmapProgramVersion = uint32(4)
 	pmapPort           = "111"
 
+	// Portmapper (rpcbind) program used to look up the NLM port.
+	portmapperProgramNumber          = uint32(100000)
+	portmapperProgramVersion         = uint32(2)
+	portmapperGetPortProcedureNumber = uint32(3)
+	portmapperGetPortProcedureName   = "Pmap.ProcGetPort"
+
 	protocol               = "tcp"
 	connectionTimeout      = 5 * time.Second
 	notifyCloseChannelSize = 1
+
+	// defaultRPCTimeout bounds each RPC exchange (write request + read reply)
+	// so that an unresponsive Filestore server cannot block the caller forever.
+	defaultRPCTimeout = 30 * time.Second
 )
 
-type FileStoreRPCClient struct{}
+type FileStoreRPCClient struct {
+	// PmapPort is the portmapper port on the Filestore server.
+	// Defaults to pmapPort ("111") when empty. Overridable for tests.
+	PmapPort string
+	// RPCTimeout is the deadline applied to each RPC exchange after the
+	// connection is established. Defaults to defaultRPCTimeout when zero.
+	RPCTimeout time.Duration
+}
+
+func (c *FileStoreRPCClient) pmapPort() string {
+	if c.PmapPort != "" {
+		return c.PmapPort
+	}
+	return pmapPort
+}
+
+func (c *FileStoreRPCClient) rpcTimeout() time.Duration {
+	if c.RPCTimeout > 0 {
+		return c.RPCTimeout
+	}
+	return defaultRPCTimeout
+}
 
 type releaseLockResponse struct {
 	status releaseLockStatus
@@ -64,7 +95,57 @@ func RegisterLockReleaseProcedure() error {
 	if err := sunrpc.RegisterProcedure(procedure, true /* validateProcName */); err != nil {
 		return fmt.Errorf("failed to register procedure %+v: %w", procedure, err)
 	}
+	// getPort issues the portmapper GETPORT call itself (instead of
+	// sunrpc.PmapGetPort, which has no timeouts), so the procedure must be in
+	// sunrpc's registry. sunrpc only registers its portmapper procedures lazily
+	// from inside its own Pmap* helpers, which we no longer call.
+	// RegisterProcedure overwrites, so this is safe even if sunrpc has also
+	// registered it.
+	pmapProcedure := sunrpc.Procedure{
+		ID: sunrpc.ProcedureID{
+			ProgramNumber:   portmapperProgramNumber,
+			ProgramVersion:  portmapperProgramVersion,
+			ProcedureNumber: portmapperGetPortProcedureNumber,
+		},
+		Name: portmapperGetPortProcedureName,
+	}
+	if err := sunrpc.RegisterProcedure(pmapProcedure, true /* validateProcName */); err != nil {
+		return fmt.Errorf("failed to register procedure %+v: %w", pmapProcedure, err)
+	}
 	return nil
+}
+
+// getPort queries the portmapper on hostIP for the NLM (program
+// pmapProgramNumber, version pmapProgramVersion) TCP port.
+// Unlike sunrpc.PmapGetPort, both the dial and the RPC exchange are bounded
+// by timeouts, so an unresponsive server cannot block the caller forever.
+func (c *FileStoreRPCClient) getPort(hostIP string) (uint32, error) {
+	hostAddress := net.JoinHostPort(hostIP, c.pmapPort())
+	conn, err := net.DialTimeout(protocol, hostAddress, connectionTimeout)
+	if err != nil {
+		return 0, fmt.Errorf("failed to connect to portmapper at %s: %w", hostAddress, err)
+	}
+	// Closing the rpc.Client closes conn and stops the client's reader goroutine.
+	client := rpc.NewClientWithCodec(sunrpc.NewClientCodec(conn, nil))
+	defer client.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(c.rpcTimeout())); err != nil {
+		return 0, fmt.Errorf("failed to set deadline on portmapper connection %s: %w", hostAddress, err)
+	}
+
+	mapping := &sunrpc.PortMapping{
+		Program:  pmapProgramNumber,
+		Version:  pmapProgramVersion,
+		Protocol: uint32(sunrpc.IPProtoTCP),
+	}
+	var port uint32
+	if err := client.Call(portmapperGetPortProcedureName, mapping, &port); err != nil {
+		return 0, fmt.Errorf("portmapper GETPORT call to %s failed: %w", hostAddress, err)
+	}
+	if port == 0 {
+		return 0, fmt.Errorf("program %d version %d is not registered with portmapper at %s", pmapProgramNumber, pmapProgramVersion, hostAddress)
+	}
+	return port, nil
 }
 
 // ReleaseLock calls the Filestore server to remove all advisory locks for a given GKE node IP.
@@ -76,9 +157,9 @@ func (c *FileStoreRPCClient) ReleaseLock(hostIP, clientIP string) error {
 		return fmt.Errorf("invalid Filestore IP address %s", hostIP)
 	}
 	// Get port from portmapper.
-	hostAddress := fmt.Sprintf("%s:%s", hostIP, pmapPort)
+	hostAddress := net.JoinHostPort(hostIP, c.pmapPort())
 	klog.Infof("Pmap getting port for host %s", hostAddress)
-	port, err := sunrpc.PmapGetPort(hostAddress, pmapProgramNumber, pmapProgramVersion, sunrpc.IPProtoTCP)
+	port, err := c.getPort(hostIP)
 	if err != nil {
 		return fmt.Errorf("failed to get port for host %s: %w", hostAddress, err)
 	}
@@ -94,6 +175,12 @@ func (c *FileStoreRPCClient) ReleaseLock(hostIP, clientIP string) error {
 	// Ensure the network connection is closed on all return paths to avoid
 	// leaking OS file descriptors and goroutines inside the codec.
 	defer conn.Close()
+
+	// Bound the whole request/response exchange so an unresponsive server
+	// cannot block the lock release controller's workers indefinitely.
+	if err := conn.SetDeadline(time.Now().Add(c.rpcTimeout())); err != nil {
+		return fmt.Errorf("failed to set deadline on connection to Filestore at address %s: %w", serverAddress, err)
+	}
 
 	// Create client using sunrpc codec. We don't provide a notify channel
 	// because the codec is nil-safe and will not attempt to send
