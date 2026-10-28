@@ -7,7 +7,7 @@
 #
 # 2. Bidirectional Mount Propagation (/var/lib/ateom-gvisor and /var/lib/ate)
 #    - Substrate's node agent asks the CSI node plugin to mount actor volumes under its
-#      node state root: /var/lib/ateom-gvisor up to Substrate release-0.1, and
+#      node state root: /var/lib/ateom-gvisor up to Substrate release-0.2, and
 #      /var/lib/ate (/var/lib/ate/actors/<uid>/volumes/<name>) since
 #      agent-substrate/substrate#1926.
 #    - Mounting this host directory with 'mountPropagation: Bidirectional' allows NFS shares
@@ -34,7 +34,7 @@ spec:
         - name: ateom-dir
           mountPath: /var/lib/ateom-gvisor
           mountPropagation: Bidirectional
-        # Propagate mounts to the Substrate node state root (Substrate after release-0.1)
+        # Propagate mounts to the Substrate node state root (Substrate release-0.3 and later)
         - name: ate-dir
           mountPath: /var/lib/ate
           mountPropagation: Bidirectional
