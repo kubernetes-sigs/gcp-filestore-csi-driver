@@ -36,6 +36,11 @@ if [ "${DEPLOY_VERSION}" == multishare ]; then
   rm $webhook_config
 fi
 
-readonly tmp_spec=/tmp/gcp-filestore-csi-driver-specs-generated.yaml
-${KUSTOMIZE_PATH} build "${PKGDIR}/deploy/kubernetes/overlays/${DEPLOY_VERSION}" | tee $tmp_spec
-${KUBECTL} apply -v="${VERBOSITY}" -f $tmp_spec
+# Use a securely created, unpredictable temporary file (mode 0600) instead of a
+# fixed path in a world-writable directory, to prevent other local users from
+# tampering with the generated specs before they are applied.
+tmp_spec="$(mktemp "${TMPDIR:-/tmp}/gcp-filestore-csi-driver-specs-generated.XXXXXX")"
+readonly tmp_spec
+trap 'rm -f "${tmp_spec}"' EXIT
+${KUSTOMIZE_PATH} build "${PKGDIR}/deploy/kubernetes/overlays/${DEPLOY_VERSION}" | tee "${tmp_spec}"
+${KUBECTL} apply -v="${VERBOSITY}" -f "${tmp_spec}"
