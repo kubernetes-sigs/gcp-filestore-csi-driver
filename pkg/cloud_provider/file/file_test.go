@@ -3,16 +3,19 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"google.golang.org/api/option"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"github.com/googleapis/gax-go/v2/apierror"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
@@ -988,16 +991,30 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 	tests := []struct {
 		testName     string
 		responseCode int
+		responseBody string
 		expectErr    bool
+		wantCode     codes.Code
 	}{
 		{
 			testName:     "successful release",
 			responseCode: http.StatusOK,
 		},
 		{
+			testName:     "volume does not exist",
+			responseCode: http.StatusNotFound,
+		},
+		{
 			testName:     "api error response",
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,
+			wantCode:     codes.InvalidArgument,
+		},
+		{
+			testName:     "canonical code in the error body",
+			responseCode: http.StatusBadRequest,
+			responseBody: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "volume is busy"),
+			expectErr:    true,
+			wantCode:     codes.FailedPrecondition,
 		},
 	}
 
@@ -1013,6 +1030,7 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 				}
 
 				w.WriteHeader(tc.responseCode)
+				fmt.Fprint(w, tc.responseBody)
 			}))
 			defer server.Close()
 
@@ -1031,7 +1049,10 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			err = manager.DeleteVolumePoolVolume(ctx, name)
 			if tc.expectErr {
 				if err == nil {
-					t.Errorf("expected error, got nil")
+					t.Fatalf("expected error, got nil")
+				}
+				if code := status.Code(VolumePoolStatusError(err)); code != tc.wantCode {
+					t.Errorf("DeleteVolumePoolVolume() = %v (code %v), want code %v", err, code, tc.wantCode)
 				}
 				return
 			}
@@ -1059,5 +1080,463 @@ func TestExtractNfsShareExportOptionsSetsSourceNetwork(t *testing.T) {
 	}
 	if got[0].Network != network {
 		t.Errorf("got network %q, want %q", got[0].Network, network)
+	}
+}
+
+// newVolumePoolTestManager returns a gcfsServiceManager that sends its requests,
+// including polls of long-running operations, to server. It also shortens the
+// polling of volume pool operations for the duration of the test.
+func newVolumePoolTestManager(t *testing.T, server *httptest.Server) *gcfsServiceManager {
+	t.Helper()
+	fileService, err := filev1beta1.NewService(context.Background(), option.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("failed to create service client: %v", err)
+	}
+	fileService.BasePath = server.URL + "/"
+
+	interval, timeout := volumePoolOpPollInterval, volumePoolOpTimeout
+	volumePoolOpPollInterval, volumePoolOpTimeout = 5*time.Millisecond, 500*time.Millisecond
+	t.Cleanup(func() { volumePoolOpPollInterval, volumePoolOpTimeout = interval, timeout })
+
+	return &gcfsServiceManager{
+		fileService:       fileService,
+		httpClient:        server.Client(),
+		operationsService: filev1beta1.NewProjectsLocationsOperationsService(fileService),
+		backupService:     filev1beta1.NewProjectsLocationsBackupsService(fileService),
+	}
+}
+
+func apiErrorBody(code int, status, message string) string {
+	return fmt.Sprintf(`{"error": {"code": %d, "message": %q, "status": %q}}`, code, message, status)
+}
+
+func TestGetVolumePoolVolume(t *testing.T) {
+	name := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
+
+	tests := []struct {
+		name         string
+		responseCode int
+		responseBody string
+		want         *PoolVolume
+		wantCode     codes.Code
+	}{
+		{
+			name:         "HOT volume",
+			responseCode: http.StatusOK,
+			responseBody: fmt.Sprintf(`{"name": %q, "mountPoint": {"ipAddress": "10.0.0.1", "mountName": "vol_123"}, "quotaMib": "2048", "state": "HOT"}`, name),
+			want:         &PoolVolume{Name: name, IpAddress: "10.0.0.1", MountName: "vol_123", State: VolumePoolVolumeStateHot},
+		},
+		{
+			name:         "COLD volume has no mount point",
+			responseCode: http.StatusOK,
+			responseBody: fmt.Sprintf(`{"name": %q, "quotaMib": "1024", "state": "COLD"}`, name),
+			want:         &PoolVolume{Name: name, State: VolumePoolVolumeStateCold},
+		},
+		{
+			name:         "volume does not exist",
+			responseCode: http.StatusNotFound,
+			responseBody: apiErrorBody(http.StatusNotFound, "NOT_FOUND", "volume vol-123 not found"),
+			wantCode:     codes.NotFound,
+		},
+		{
+			name:         "not found without an error body",
+			responseCode: http.StatusNotFound,
+			responseBody: "not found",
+			wantCode:     codes.NotFound,
+		},
+		{
+			name:         "failed precondition keeps its code",
+			responseCode: http.StatusBadRequest,
+			responseBody: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "Volume Pools are not supported"),
+			wantCode:     codes.FailedPrecondition,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet || r.URL.Path != "/v1beta1/"+name {
+					t.Errorf("got %s %s, want GET /v1beta1/%s", r.Method, r.URL.Path, name)
+				}
+				w.WriteHeader(tc.responseCode)
+				fmt.Fprint(w, tc.responseBody)
+			}))
+			defer server.Close()
+
+			got, err := newVolumePoolTestManager(t, server).GetVolumePoolVolume(context.Background(), name)
+			if code := status.Code(err); code != tc.wantCode {
+				t.Fatalf("GetVolumePoolVolume() error = %v (code %v), want code %v", err, code, tc.wantCode)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("GetVolumePoolVolume() mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestCreateVolumePoolVolumeFromSource(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
+	volumeName := parentPool + "/volumes/vol-123"
+	backupName := "projects/test-project/locations/us-central1/backups/snap-1"
+	opName := "projects/test-project/locations/us-central1/operations/op-1"
+	runningOp := fmt.Sprintf(`{"name": %q, "done": false}`, opName)
+
+	tests := []struct {
+		name         string
+		createCode   int
+		createBody   string
+		opBodies     []string // returned by successive operation polls; the last one repeats
+		want         *PoolVolume
+		wantCode     codes.Code
+		wantGetCalls int
+	}{
+		{
+			name:       "restores the volume",
+			createCode: http.StatusOK,
+			createBody: runningOp,
+			opBodies: []string{
+				runningOp,
+				fmt.Sprintf(`{"name": %q, "done": true, "response": {"volume": {"name": %q}}}`, opName, volumeName),
+			},
+			want:         &PoolVolume{Name: volumeName, IpAddress: "10.0.0.2", MountName: "vol_123", State: VolumePoolVolumeStateHot},
+			wantGetCalls: 1,
+		},
+		{
+			name:       "operation fails with a canonical code",
+			createCode: http.StatusOK,
+			createBody: runningOp,
+			opBodies:   []string{fmt.Sprintf(`{"name": %q, "done": true, "error": {"code": 9, "message": "backup is not in READY state"}}`, opName)},
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "operation is still running when the wait ends",
+			createCode: http.StatusOK,
+			createBody: runningOp,
+			opBodies:   []string{runningOp},
+			wantCode:   codes.DeadlineExceeded,
+		},
+		{
+			name:       "volume already exists",
+			createCode: http.StatusConflict,
+			createBody: apiErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume vol-123 already exists"),
+			wantCode:   codes.AlreadyExists,
+		},
+		{
+			name:       "invalid backup",
+			createCode: http.StatusBadRequest,
+			createBody: apiErrorBody(http.StatusBadRequest, "INVALID_ARGUMENT", "backup snap-1 was created from volume pool other-pool"),
+			wantCode:   codes.InvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests []map[string]interface{}
+			opPolls, getCalls := 0, 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1beta1/"+parentPool+"/volumes:createFromSource":
+					var body map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("failed to decode request body: %v", err)
+					}
+					requests = append(requests, body)
+					w.WriteHeader(tc.createCode)
+					fmt.Fprint(w, tc.createBody)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+opName:
+					fmt.Fprint(w, tc.opBodies[min(opPolls, len(tc.opBodies)-1)])
+					opPolls++
+				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+volumeName:
+					getCalls++
+					fmt.Fprintf(w, `{"name": %q, "mountPoint": {"ipAddress": "10.0.0.2", "mountName": "vol_123"}, "quotaMib": "1024", "state": "HOT"}`, volumeName)
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			manager := newVolumePoolTestManager(t, server)
+
+			got, err := manager.CreateVolumePoolVolumeFromSource(context.Background(), parentPool, "vol-123", backupName)
+			if code := status.Code(err); code != tc.wantCode {
+				t.Fatalf("CreateVolumePoolVolumeFromSource() error = %v (code %v), want code %v", err, code, tc.wantCode)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("CreateVolumePoolVolumeFromSource() mismatch (-want +got):\n%s", diff)
+			}
+			if getCalls != tc.wantGetCalls {
+				t.Errorf("volume was read %d times, want %d", getCalls, tc.wantGetCalls)
+			}
+
+			if len(requests) != 1 {
+				t.Fatalf("got %d createFromSource requests, want 1", len(requests))
+			}
+			body := requests[0]
+			if body["volumeId"] != "vol-123" || body["backup"] != backupName {
+				t.Errorf("request body = %v, want volumeId vol-123 and backup %s", body, backupName)
+			}
+			if _, ok := body["quota"]; ok {
+				t.Errorf("request body = %v, want no quota (the API rejects it)", body)
+			}
+			if id, _ := body["requestId"].(string); uuid.Validate(id) != nil {
+				t.Errorf("requestId = %q, want a UUID", id)
+			}
+		})
+	}
+}
+
+func TestCreateVolumePoolVolumeFromSource_NewRequestIDPerCall(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
+	var requestIDs []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			RequestID string `json:"requestId"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("failed to decode request body: %v", err)
+		}
+		requestIDs = append(requestIDs, body.RequestID)
+		w.WriteHeader(http.StatusConflict)
+		fmt.Fprint(w, apiErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume vol-123 already exists"))
+	}))
+	defer server.Close()
+	manager := newVolumePoolTestManager(t, server)
+
+	for i := 0; i < 2; i++ {
+		if _, err := manager.CreateVolumePoolVolumeFromSource(context.Background(), parentPool, "vol-123", "projects/test-project/locations/us-central1/backups/snap-1"); status.Code(err) != codes.AlreadyExists {
+			t.Fatalf("CreateVolumePoolVolumeFromSource() error = %v, want code AlreadyExists", err)
+		}
+	}
+	if len(requestIDs) != 2 || requestIDs[0] == "" || requestIDs[0] == requestIDs[1] {
+		t.Errorf("request IDs = %q, want two different IDs", requestIDs)
+	}
+}
+
+func TestCreateBackup_VolumePool(t *testing.T) {
+	sourceVolume := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
+	backupURI := "projects/test-project/locations/us-central1/backups/snap-1"
+	opName := "projects/test-project/locations/us-central1/operations/op-1"
+	backupInfo := &BackupInfo{
+		Name:           "snap-1",
+		SourceVolumeId: "volumepool://test-project/us-central1/test-pool/volumes/vol-123?ip=10.0.0.1",
+		SourceVolume:   sourceVolume,
+		BackupURI:      backupURI,
+		Project:        "test-project",
+		Location:       "us-central1",
+		Labels:         map[string]string{"storage_gke_io_created-by": "test-driver"},
+	}
+
+	tests := []struct {
+		name        string
+		createCode  int
+		createBody  string
+		opBody      string // returned by every operation poll; done without an error if empty
+		backupState string // state of the finished backup; READY if empty
+		wantCode    codes.Code
+	}{
+		{
+			name:       "creates a backup of the volume",
+			createCode: http.StatusOK,
+			createBody: fmt.Sprintf(`{"name": %q, "done": false}`, opName),
+		},
+		{
+			name:       "volume is busy",
+			createCode: http.StatusBadRequest,
+			createBody: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "Volume vol-123 is currently in use by another operation"),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "operation fails with a canonical code",
+			createCode: http.StatusOK,
+			createBody: fmt.Sprintf(`{"name": %q, "done": false}`, opName),
+			opBody:     fmt.Sprintf(`{"name": %q, "done": true, "error": {"code": 9, "message": "volume is not HOT"}}`, opName),
+			wantCode:   codes.FailedPrecondition,
+		},
+		{
+			name:       "operation is still running when the wait ends",
+			createCode: http.StatusOK,
+			createBody: fmt.Sprintf(`{"name": %q, "done": false}`, opName),
+			opBody:     fmt.Sprintf(`{"name": %q, "done": false}`, opName),
+			wantCode:   codes.DeadlineExceeded,
+		},
+		{
+			name:        "finished backup is not READY",
+			createCode:  http.StatusOK,
+			createBody:  fmt.Sprintf(`{"name": %q, "done": false}`, opName),
+			backupState: "INVALID",
+			wantCode:    codes.Internal,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var created map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/v1beta1/projects/test-project/locations/us-central1/backups":
+					if got := r.URL.Query().Get("backupId"); got != "snap-1" {
+						t.Errorf("backupId = %q, want snap-1", got)
+					}
+					if err := json.NewDecoder(r.Body).Decode(&created); err != nil {
+						t.Errorf("failed to decode request body: %v", err)
+					}
+					w.WriteHeader(tc.createCode)
+					fmt.Fprint(w, tc.createBody)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+opName:
+					if tc.opBody != "" {
+						fmt.Fprint(w, tc.opBody)
+						return
+					}
+					fmt.Fprintf(w, `{"name": %q, "done": true}`, opName)
+				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+backupURI:
+					state := tc.backupState
+					if state == "" {
+						state = "READY"
+					}
+					fmt.Fprintf(w, `{"name": %q, "state": %q, "sourceVolume": %q, "createTime": "2026-10-19T10:00:00Z"}`, backupURI, state, sourceVolume)
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			manager := newVolumePoolTestManager(t, server)
+
+			backup, err := manager.CreateBackup(context.Background(), backupInfo)
+			if code := status.Code(err); code != tc.wantCode {
+				t.Fatalf("CreateBackup() error = %v (code %v), want code %v", err, code, tc.wantCode)
+			}
+
+			if created["sourceVolume"] != sourceVolume {
+				t.Errorf("request body = %v, want sourceVolume %s", created, sourceVolume)
+			}
+			for _, field := range []string{"sourceInstance", "sourceFileShare"} {
+				if _, ok := created[field]; ok {
+					t.Errorf("request body = %v, want no %s", created, field)
+				}
+			}
+			if tc.wantCode != codes.OK {
+				return
+			}
+			if backup.Name != backupURI {
+				t.Errorf("backup name = %q, want %q", backup.Name, backupURI)
+			}
+
+			got, err := manager.GetBackup(context.Background(), backupURI)
+			if err != nil {
+				t.Fatalf("GetBackup() error = %v", err)
+			}
+			if got.SourceVolume != sourceVolume {
+				t.Errorf("GetBackup() SourceVolume = %q, want %q", got.SourceVolume, sourceVolume)
+			}
+		})
+	}
+}
+
+func TestVolumePoolAPIError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{
+			name:     "canonical status in the body",
+			err:      &googleapi.Error{Code: http.StatusBadRequest, Message: "busy", Body: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "busy")},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name:     "conflict with ALREADY_EXISTS",
+			err:      &googleapi.Error{Code: http.StatusConflict, Body: apiErrorBody(http.StatusConflict, "ALREADY_EXISTS", "exists")},
+			wantCode: codes.AlreadyExists,
+		},
+		{
+			name:     "wrapped API error",
+			err:      fmt.Errorf("call failed: %w", &googleapi.Error{Code: http.StatusBadRequest, Body: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "busy")}),
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name:     "no body: code from the HTTP status",
+			err:      &googleapi.Error{Code: http.StatusNotFound},
+			wantCode: codes.NotFound,
+		},
+		{
+			name:     "unknown HTTP status",
+			err:      &googleapi.Error{Code: http.StatusBadGateway, Body: "bad gateway"},
+			wantCode: codes.Internal,
+		},
+		{
+			name:     "not an API error",
+			err:      context.DeadlineExceeded,
+			wantCode: codes.DeadlineExceeded,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := volumePoolAPIError(tc.err, "get volume")
+			if code := status.Code(StatusError(err)); code != tc.wantCode {
+				t.Errorf("volumePoolAPIError() = %v (code %v), want code %v", err, code, tc.wantCode)
+			}
+			if msg := status.Convert(err).Message(); !strings.HasPrefix(msg, "get volume") {
+				t.Errorf("volumePoolAPIError() message = %q, want it to start with the call", msg)
+			}
+		})
+	}
+}
+
+func TestVolumePoolStatusError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		wantCode codes.Code
+	}{
+		{name: "nil", err: nil, wantCode: codes.OK},
+		{
+			// Errors from the generated Go client implement GRPCStatus with a
+			// code derived from the HTTP status (InvalidArgument here).
+			name:     "Go client error with a canonical status in the body",
+			err:      &googleapi.Error{Code: http.StatusBadRequest, Body: apiErrorBody(http.StatusBadRequest, "FAILED_PRECONDITION", "busy")},
+			wantCode: codes.FailedPrecondition,
+		},
+		{
+			name:     "wrapped API error",
+			err:      fmt.Errorf("get backup: %w", &googleapi.Error{Code: http.StatusConflict, Body: apiErrorBody(http.StatusConflict, "ALREADY_EXISTS", "exists")}),
+			wantCode: codes.AlreadyExists,
+		},
+		{name: "API error without a body", err: &googleapi.Error{Code: http.StatusNotFound}, wantCode: codes.NotFound},
+		{name: "status error", err: status.Error(codes.Aborted, "busy"), wantCode: codes.Aborted},
+		{name: "context error", err: fmt.Errorf("get volume: %w", context.DeadlineExceeded), wantCode: codes.DeadlineExceeded},
+		{name: "other error", err: errors.New("boom"), wantCode: codes.Internal},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if code := status.Code(VolumePoolStatusError(tc.err)); code != tc.wantCode {
+				t.Errorf("VolumePoolStatusError(%v) code = %v, want %v", tc.err, code, tc.wantCode)
+			}
+		})
+	}
+}
+
+// The caller's deadline ends the wait before volumePoolOpTimeout does. In
+// production, the CO's timeout usually ends it first.
+func TestWaitForVolumePoolOp_ContextDeadline(t *testing.T) {
+	opName := "projects/test-project/locations/us-central1/operations/op-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, `{"name": %q, "done": false}`, opName)
+	}))
+	defer server.Close()
+	manager := newVolumePoolTestManager(t, server)
+	volumePoolOpTimeout = time.Minute
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := manager.waitForVolumePoolOp(ctx, &filev1beta1.Operation{Name: opName})
+	if code := status.Code(err); code != codes.DeadlineExceeded {
+		t.Fatalf("waitForVolumePoolOp() error = %v (code %v), want code %v", err, code, codes.DeadlineExceeded)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("waitForVolumePoolOp() returned after %v, want it to stop at the context deadline", elapsed)
 	}
 }
