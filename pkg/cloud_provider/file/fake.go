@@ -617,7 +617,8 @@ func (manager *fakeServiceManager) CreateVolumePoolVolumeFromSource(ctx context.
 }
 
 // createVolumePoolBackup creates a backup of a volume pool volume like the API
-// does: only HOT volumes can be backed up, the backup reports the volume's
+// does: HOT, WARM and unspecified-state volumes can be backed up, a COLD volume
+// gives INTERNAL because it has no share, the backup reports the volume's
 // backing instance and share as its source, and its capacity is not set.
 func (manager *fakeServiceManager) createVolumePoolBackup(backupInfo *BackupInfo) (*filev1beta1.Backup, error) {
 	if backupInfo.BackupURI == "" {
@@ -632,11 +633,11 @@ func (manager *fakeServiceManager) createVolumePoolBackup(backupInfo *BackupInfo
 		return nil, status.Errorf(codes.NotFound, "volume %q not found", backupInfo.SourceVolume)
 	}
 	switch vol.State {
-	case VolumePoolVolumeStateHot:
+	case "", VolumePoolVolumeStateUnspecified, VolumePoolVolumeStateHot, VolumePoolVolumeStateWarm:
 	case VolumePoolVolumeStateCold:
 		return nil, status.Errorf(codes.Internal, "fake: volume %q is COLD and has no share to back up", backupInfo.SourceVolume)
 	default:
-		return nil, status.Errorf(codes.FailedPrecondition, "fake: volume %q is %s; only HOT volumes can be backed up", backupInfo.SourceVolume, vol.State)
+		return nil, status.Errorf(codes.FailedPrecondition, "fake: volume %q is %s; only HOT, WARM and unspecified-state volumes can be backed up", backupInfo.SourceVolume, vol.State)
 	}
 
 	backupToCreate := &filev1beta1.Backup{

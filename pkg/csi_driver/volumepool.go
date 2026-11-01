@@ -354,8 +354,8 @@ func (s *controllerServer) handleCreateVolumePoolSnapshot(ctx context.Context, r
 	if err != nil {
 		return nil, volumePoolError(err)
 	}
-	if !isVolumePoolVolumeHot(vol) {
-		return nil, status.Errorf(codes.FailedPrecondition, "volume %q is in state %q; only HOT volumes can be snapshotted", sourceVolume, vol.State)
+	if err := checkVolumePoolVolumeBackupable(vol); err != nil {
+		return nil, err
 	}
 
 	backup, err := s.config.fileService.CreateBackup(ctx, &file.BackupInfo{
@@ -429,8 +429,8 @@ func volumePoolSnapshotResponse(backup *filev1beta1.Backup, volumeID string) (*c
 }
 
 // isVolumePoolVolumeHot reports whether vol is HOT, the only state in which a
-// volume can be mounted or backed up. A volume from an API version that does
-// not report states counts as HOT if it has a mount point.
+// volume can be mounted. A volume from an API version that does not report
+// states counts as HOT if it has a mount point.
 func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
 	switch vol.State {
 	case "", file.VolumePoolVolumeStateUnspecified, file.VolumePoolVolumeStateHot:
@@ -438,6 +438,24 @@ func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
 	default:
 		return false
 	}
+}
+
+// checkVolumePoolVolumeBackupable returns nil if a backup of vol can be
+// requested, and otherwise the error to return for it. The API backs up HOT,
+// WARM and unspecified-state volumes, and refuses the others with
+// FAILED_PRECONDITION, which is passed on. But it answers a COLD volume, which
+// has no share, with a misleading INTERNAL, so a COLD volume gives
+// FailedPrecondition here; and a volume that is still being created may have
+// no share yet either, so it gives Aborted, and the caller retries until the
+// volume is HOT. The mount point doesn't matter for a backup.
+func checkVolumePoolVolumeBackupable(vol *file.PoolVolume) error {
+	switch vol.State {
+	case file.VolumePoolVolumeStateCold:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is COLD; unfreeze it before snapshotting it", vol.Name)
+	case file.VolumePoolVolumeStateCreating:
+		return status.Errorf(codes.Aborted, "volume %q cannot be snapshotted yet: it is still being created", vol.Name)
+	}
+	return nil
 }
 
 // volumePoolError returns err, which a file service call returned, as a gRPC

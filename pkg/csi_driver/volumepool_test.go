@@ -479,6 +479,9 @@ func TestCreateSnapshot_VolumePool(t *testing.T) {
 		setup    func(cs *controllerServer, fs *volumePoolTestService)
 		req      *csi.CreateSnapshotRequest
 		wantCode codes.Code
+		// wantNoAPICall is set when the driver must refuse the request
+		// without asking the API for a backup.
+		wantNoAPICall bool
 	}{
 		{
 			name: "creates a backup of the volume",
@@ -528,28 +531,41 @@ func TestCreateSnapshot_VolumePool(t *testing.T) {
 			wantCode: codes.NotFound,
 		},
 		{
+			// The API answers a COLD volume, which has no share, with a
+			// misleading INTERNAL, so the driver doesn't call it.
 			name: "source volume is COLD",
 			setup: func(_ *controllerServer, fs *volumePoolTestService) {
 				fs.getVolume = volumeInState(file.VolumePoolVolumeStateCold)
 			},
-			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
-			wantCode: codes.FailedPrecondition,
+			req:           snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
+			wantCode:      codes.FailedPrecondition,
+			wantNoAPICall: true,
 		},
 		{
+			// The volume becomes HOT soon, so the caller retries.
 			name: "source volume is still being created",
 			setup: func(_ *controllerServer, fs *volumePoolTestService) {
 				fs.getVolume = volumeInState(file.VolumePoolVolumeStateCreating)
 			},
-			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
-			wantCode: codes.FailedPrecondition,
+			req:           snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
+			wantCode:      codes.Aborted,
+			wantNoAPICall: true,
 		},
 		{
+			// The API backs up WARM volumes.
 			name: "source volume is WARM",
 			setup: func(_ *controllerServer, fs *volumePoolTestService) {
 				fs.getVolume = volumeInState(file.VolumePoolVolumeStateWarm)
 			},
-			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
-			wantCode: codes.FailedPrecondition,
+			req: snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
+		},
+		{
+			// A backup needs no mount point, so the API decides.
+			name: "source volume in an unspecified state without a mount point",
+			setup: func(_ *controllerServer, fs *volumePoolTestService) {
+				fs.getVolume = volumeInState(file.VolumePoolVolumeStateUnspecified)
+			},
+			req: snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
 		},
 		{
 			name: "the API reports that the volume is busy",
@@ -588,6 +604,9 @@ func TestCreateSnapshot_VolumePool(t *testing.T) {
 
 			resp, err := cs.CreateSnapshot(ctx, tc.req)
 			expectCode(t, err, tc.wantCode)
+			if tc.wantNoAPICall && fs.calls["CreateBackup"] != 0 {
+				t.Errorf("CreateBackup called %d times, want 0", fs.calls["CreateBackup"])
+			}
 			if tc.wantCode != codes.OK {
 				return
 			}

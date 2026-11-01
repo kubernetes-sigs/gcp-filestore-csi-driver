@@ -1540,3 +1540,45 @@ func TestWaitForVolumePoolOp_ContextDeadline(t *testing.T) {
 		t.Errorf("waitForVolumePoolOp() returned after %v, want it to stop at the context deadline", elapsed)
 	}
 }
+
+// The fake backs up volume pool volumes in the states that the API accepts.
+func TestFakeCreateBackup_VolumePoolStates(t *testing.T) {
+	const pool = "projects/test-project/locations/us-central1/volumePools/test-pool"
+	for _, tc := range []struct {
+		state    string
+		wantCode codes.Code
+	}{
+		{state: VolumePoolVolumeStateHot},
+		{state: VolumePoolVolumeStateWarm},
+		{state: VolumePoolVolumeStateUnspecified},
+		{state: ""},
+		{state: VolumePoolVolumeStateCold, wantCode: codes.Internal},
+		{state: VolumePoolVolumeStateCreating, wantCode: codes.FailedPrecondition},
+	} {
+		t.Run(tc.state, func(t *testing.T) {
+			ctx := context.Background()
+			s, err := NewFakeService()
+			if err != nil {
+				t.Fatalf("NewFakeService() error = %v", err)
+			}
+			manager := s.(*fakeServiceManager)
+			vol, err := manager.CreateVolumePoolVolume(ctx, pool, "vol-1")
+			if err != nil {
+				t.Fatalf("CreateVolumePoolVolume() error = %v", err)
+			}
+			manager.allocatedVolumes[vol.Name].State = tc.state
+
+			_, err = manager.CreateBackup(ctx, &BackupInfo{
+				Name:           "snap-1",
+				SourceVolumeId: "volumepool://test-project/us-central1/test-pool/volumes/vol-1?ip=10.1.1.1",
+				SourceVolume:   vol.Name,
+				BackupURI:      "projects/test-project/locations/us-central1/backups/snap-1",
+				Project:        "test-project",
+				Location:       "us-central1",
+			})
+			if code := status.Code(err); code != tc.wantCode {
+				t.Errorf("CreateBackup() of a %q volume: error = %v (code %v), want code %v", tc.state, err, code, tc.wantCode)
+			}
+		})
+	}
+}
