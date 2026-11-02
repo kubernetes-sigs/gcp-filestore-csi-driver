@@ -1727,10 +1727,13 @@ func (manager *gcfsServiceManager) createVolumePoolBackup(ctx context.Context, b
 // Unlike waitForOp, a failed operation returns an error with the operation's
 // canonical code, and an operation that is still running when
 // volumePoolOpTimeout passes returns DeadlineExceeded, so that the caller can
-// retry later.
+// retry later. A poll that times out by itself, for example because the
+// connection timed out, also returns DeadlineExceeded, with the poll's error.
 func (manager *gcfsServiceManager) waitForVolumePoolOp(ctx context.Context, op *filev1beta1.Operation) error {
+	waitCtx, cancel := context.WithTimeout(ctx, volumePoolOpTimeout)
+	defer cancel()
 	current := op
-	err := wait.PollUntilContextTimeout(ctx, volumePoolOpPollInterval, volumePoolOpTimeout, true, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextCancel(waitCtx, volumePoolOpPollInterval, true, func(ctx context.Context) (bool, error) {
 		if current.Done {
 			return true, nil
 		}
@@ -1742,13 +1745,19 @@ func (manager *gcfsServiceManager) waitForVolumePoolOp(ctx context.Context, op *
 		return current.Done, nil
 	})
 	if err != nil {
-		if !wait.Interrupted(err) {
-			return err
-		}
+		// Check the contexts rather than the error: a poll can also fail with
+		// an error that matches context.DeadlineExceeded, such as a connection
+		// timeout, while both contexts are still alive.
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return status.FromContextError(ctxErr).Err()
 		}
-		return status.Errorf(codes.DeadlineExceeded, "operation %s is still running after %v", op.Name, volumePoolOpTimeout)
+		if waitCtx.Err() != nil {
+			return status.Errorf(codes.DeadlineExceeded, "operation %s is still running after %v", op.Name, volumePoolOpTimeout)
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return status.Errorf(codes.DeadlineExceeded, "operation %s may still be running: %v", op.Name, err)
+		}
+		return err
 	}
 
 	if current.Error != nil {

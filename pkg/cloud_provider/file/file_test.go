@@ -1680,3 +1680,43 @@ func TestVolumePoolUnexpectedSuccessStatus(t *testing.T) {
 		})
 	}
 }
+
+// A poll that times out by itself, as when a connection times out, reports its
+// own error with a retryable code, not that the operation is still running
+// after volumePoolOpTimeout.
+func TestWaitForVolumePoolOp_PollTimeout(t *testing.T) {
+	opName := "projects/test-project/locations/us-central1/operations/op-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	// The client's timeout ends the poll, as a connection timeout would.
+	server.Client().Timeout = 50 * time.Millisecond
+	manager := newVolumePoolTestManager(t, server)
+	volumePoolOpTimeout = time.Minute
+
+	err := manager.waitForVolumePoolOp(context.Background(), &filev1beta1.Operation{Name: opName})
+	if code := status.Code(err); code != codes.DeadlineExceeded {
+		t.Fatalf("waitForVolumePoolOp() error = %v (code %v), want code %v", err, code, codes.DeadlineExceeded)
+	}
+	if msg := err.Error(); !strings.Contains(msg, "may still be running") || !strings.Contains(msg, "Client.Timeout") || strings.Contains(msg, "still running after") {
+		t.Errorf("waitForVolumePoolOp() error = %v, want the poll's own timeout", err)
+	}
+}
+
+// When volumePoolOpTimeout passes during a poll, the operation is reported as
+// still running after volumePoolOpTimeout.
+func TestWaitForVolumePoolOp_TimeoutDuringPoll(t *testing.T) {
+	opName := "projects/test-project/locations/us-central1/operations/op-1"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	manager := newVolumePoolTestManager(t, server)
+	volumePoolOpTimeout = 100 * time.Millisecond
+
+	err := manager.waitForVolumePoolOp(context.Background(), &filev1beta1.Operation{Name: opName})
+	if code := status.Code(err); code != codes.DeadlineExceeded || !strings.Contains(err.Error(), "still running after") {
+		t.Errorf("waitForVolumePoolOp() error = %v (code %v), want code %v saying that the operation is still running", err, code, codes.DeadlineExceeded)
+	}
+}
