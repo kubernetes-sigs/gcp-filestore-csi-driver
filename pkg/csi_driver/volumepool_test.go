@@ -1013,6 +1013,10 @@ func TestCreateVolumeFromSnapshot_VolumePool(t *testing.T) {
 			wantCode: codes.FailedPrecondition,
 		},
 		{
+			// This only shows that the driver's own check accepts a project
+			// number. The fake restores from its own record of the backup, and
+			// the API checks the volume pool itself when it restores, so a real
+			// restore also depends on the API naming both pools the same way.
 			name: "snapshot reports its source volume with a project number",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				fs.getBackup = func(ctx context.Context, name string) (*file.Backup, error) {
