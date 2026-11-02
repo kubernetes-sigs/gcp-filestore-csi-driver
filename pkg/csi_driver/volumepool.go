@@ -117,7 +117,10 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	}
 
 	// Look the volume up first, so that a retried request returns the volume
-	// that an earlier attempt created.
+	// that an earlier attempt created. Creating first, and looking up only on
+	// ALREADY_EXISTS, would save a call, but the API's CreateVolume looks for a
+	// free share before it notices that the name exists: a retry in a full
+	// volume pool would get RESOURCE_EXHAUSTED instead of its volume.
 	poolVol, err := s.lookupVolumePoolVolume(ctx, volumeName)
 	if err != nil {
 		return nil, err

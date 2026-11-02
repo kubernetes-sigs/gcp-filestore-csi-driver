@@ -1238,6 +1238,19 @@ func TestCreateVolume_VolumePoolExistingVolume(t *testing.T) {
 			wantIP: "10.1.1.1",
 		},
 		{
+			// The API looks for a free share before it notices that the name
+			// exists, so a create would get RESOURCE_EXHAUSTED here.
+			name: "retry after the volume was created, in a full volume pool",
+			setup: func(t *testing.T, cs *controllerServer, fs *volumePoolTestService) {
+				_, err := cs.CreateVolume(ctx, req)
+				expectCode(t, err, codes.OK)
+				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
+					return nil, status.Error(codes.ResourceExhausted, "no available volumes in the pool")
+				}
+			},
+			wantIP: "10.1.1.1",
+		},
+		{
 			name: "another request created the volume first",
 			setup: func(t *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				if _, err := fs.Service.CreateVolumePoolVolume(ctx, testVolumePool, "new-vol"); err != nil {
