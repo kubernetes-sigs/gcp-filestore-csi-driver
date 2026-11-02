@@ -1029,6 +1029,12 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			expectErr:    true,
 			wantCode:     codes.FailedPrecondition,
 		},
+		{
+			testName:     "rate limited without an error body",
+			responseCode: http.StatusTooManyRequests,
+			expectErr:    true,
+			wantCode:     codes.ResourceExhausted,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1471,6 +1477,22 @@ func TestVolumePoolAPIError(t *testing.T) {
 			name:     "no body: code from the HTTP status",
 			err:      &googleapi.Error{Code: http.StatusNotFound},
 			wantCode: codes.NotFound,
+		},
+		{
+			name:     "too many requests without a body",
+			err:      &googleapi.Error{Code: http.StatusTooManyRequests},
+			wantCode: codes.ResourceExhausted,
+		},
+		{
+			// For example, a proxy's error page.
+			name:     "too many requests with an HTML body",
+			err:      &googleapi.Error{Code: http.StatusTooManyRequests, Body: "<html><body>Too many requests</body></html>"},
+			wantCode: codes.ResourceExhausted,
+		},
+		{
+			name:     "forbidden without a body",
+			err:      &googleapi.Error{Code: http.StatusForbidden},
+			wantCode: codes.PermissionDenied,
 		},
 		{
 			name:     "unknown HTTP status",
