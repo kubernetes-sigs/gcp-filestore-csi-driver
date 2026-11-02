@@ -89,7 +89,10 @@ type PoolVolume struct {
 }
 
 // Lifecycle states of a volume pool volume, as reported by the Filestore API.
-// Only HOT volumes have a mount point.
+// The API reports a mount point only for HOT volumes and for older volumes
+// without a recorded state, which it reports as STATE_UNSPECIFIED. A volume
+// whose instance is being recovered is STATE_UNSPECIFIED too, but has no mount
+// point.
 const (
 	VolumePoolVolumeStateUnspecified = "STATE_UNSPECIFIED"
 	VolumePoolVolumeStateCreating    = "CREATING"
