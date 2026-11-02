@@ -187,7 +187,11 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 		klog.Errorf("Failed to delete Volume Pool volume %q: %v", volumeID, err)
-		return nil, volumePoolError(err)
+		err = volumePoolError(err)
+		if isVolumePoolVolumeBusy(err) {
+			return nil, status.Error(codes.Aborted, status.Convert(err).Message())
+		}
+		return nil, err
 	}
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
@@ -392,6 +396,9 @@ func (s *controllerServer) handleCreateVolumePoolSnapshot(ctx context.Context, r
 			return existingVolumePoolSnapshot(existing, volumeID, sourceVolume)
 		}
 		klog.Errorf("Failed to create snapshot %q of Volume Pool volume %q: %v", req.GetName(), volumeID, err)
+		if isVolumePoolVolumeBusy(err) {
+			return nil, status.Error(codes.Aborted, status.Convert(err).Message())
+		}
 		return nil, err
 	}
 	klog.Infof("Created snapshot %q of Volume Pool volume %q", backup.Name, volumeID)
@@ -513,6 +520,21 @@ func isVolumePoolNotFound(err error) bool {
 		return false
 	}
 	return file.IsNotFoundErr(err) || status.Code(volumePoolError(err)) == codes.NotFound
+}
+
+// isVolumePoolVolumeBusy reports whether err, a gRPC status error from a
+// volume pool call, is the API's FailedPrecondition for a volume that another
+// operation, such as a backup, a restore or a freeze, holds. That clears when
+// the other operation ends, so the CSI answer is Aborted ("operation pending
+// for volume"). The API's answers carry no machine-readable reason, so the
+// message is matched; if its wording changes, the error stays
+// FailedPrecondition.
+func isVolumePoolVolumeBusy(err error) bool {
+	if status.Code(err) != codes.FailedPrecondition {
+		return false
+	}
+	msg := strings.ToLower(status.Convert(err).Message())
+	return strings.Contains(msg, "another operation is in progress") || strings.Contains(msg, "in use by another operation")
 }
 
 // splitVolumePoolName splits a volume pool name,

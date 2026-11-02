@@ -604,10 +604,30 @@ func TestCreateSnapshot_VolumePool(t *testing.T) {
 			req: snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
 		},
 		{
-			name: "the API reports that the volume is busy",
+			name: "the API reports that another operation holds the volume",
 			setup: func(_ *controllerServer, fs *volumePoolTestService) {
 				fs.createBackup = func(context.Context, *file.BackupInfo) (*filev1beta1.Backup, error) {
-					return nil, status.Error(codes.FailedPrecondition, "volume is currently in use by another operation")
+					return nil, status.Error(codes.FailedPrecondition, `create backup projects/test-project/locations/us-central1/backups/snap-1 of volume projects/test-project/locations/us-central1/volumePools/my-pool/volumes/src-vol: Volume "src-vol" is currently in use by another operation`)
+				}
+			},
+			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
+			wantCode: codes.Aborted,
+		},
+		{
+			name: "the backup operation fails because another operation holds the volume",
+			setup: func(_ *controllerServer, fs *volumePoolTestService) {
+				fs.createBackup = func(context.Context, *file.BackupInfo) (*filev1beta1.Backup, error) {
+					return nil, status.Error(codes.FailedPrecondition, `operation projects/test-project/locations/us-central1/operations/op-1 failed: volume "projects/test-project/locations/us-central1/volumePools/my-pool/volumes/src-vol" is currently in use by another operation`)
+				}
+			},
+			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
+			wantCode: codes.Aborted,
+		},
+		{
+			name: "the API does not back up volumes",
+			setup: func(_ *controllerServer, fs *volumePoolTestService) {
+				fs.createBackup = func(context.Context, *file.BackupInfo) (*filev1beta1.Backup, error) {
+					return nil, status.Error(codes.FailedPrecondition, "create backup projects/test-project/locations/us-central1/backups/snap-1 of volume projects/test-project/locations/us-central1/volumePools/my-pool/volumes/src-vol: Volume Clone operations is unsupported.")
 				}
 			},
 			req:      snapshotRequest(testSnapshotName, testSourceVolumeID, backupParams),
@@ -1566,12 +1586,16 @@ func TestCreateSnapshot_VolumePoolResourceTags(t *testing.T) {
 }
 
 func TestDeleteVolume_VolumePoolErrors(t *testing.T) {
+	const busy = `volume "src-vol" cannot be deleted: another operation is in progress on it`
 	tests := []struct {
 		name     string
 		err      error
 		wantCode codes.Code
 	}{
-		{name: "volume is busy", err: status.Error(codes.FailedPrecondition, "delete volume: volume is busy"), wantCode: codes.FailedPrecondition},
+		// The other operation's end clears it, so the caller should retry.
+		{name: "another operation holds the volume", err: status.Error(codes.FailedPrecondition, `delete volume "projects/test-project/locations/us-central1/volumePools/my-pool/volumes/src-vol": `+busy), wantCode: codes.Aborted},
+		{name: "another operation holds the volume, API error", err: &googleapi.Error{Code: http.StatusBadRequest, Message: busy, Body: fmt.Sprintf(`{"error": {"code": 400, "message": %q, "status": "FAILED_PRECONDITION"}}`, busy)}, wantCode: codes.Aborted},
+		{name: "volume can't be deleted in its state", err: status.Error(codes.FailedPrecondition, `delete volume "projects/test-project/locations/us-central1/volumePools/my-pool/volumes/src-vol": cannot delete volume "src-vol" in state COLD`), wantCode: codes.FailedPrecondition},
 		{name: "API error with a canonical code", err: googleAPIError(http.StatusBadRequest, "FAILED_PRECONDITION"), wantCode: codes.FailedPrecondition},
 		{name: "volume does not exist", err: status.Error(codes.NotFound, "delete volume: not found"), wantCode: codes.OK},
 		{name: "API error NOT_FOUND", err: googleAPIError(http.StatusNotFound, "NOT_FOUND"), wantCode: codes.OK},
