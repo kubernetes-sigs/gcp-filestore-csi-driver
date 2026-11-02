@@ -19,6 +19,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"maps"
 	"net/http"
 	"strings"
 	"testing"
@@ -465,6 +466,22 @@ func backupFromOtherProject(fs *volumePoolTestService) func(context.Context, str
 	}
 }
 
+// backupInState returns a getBackup override that reports each backup of the
+// fake in state, such as CREATING. The fake's own backup is left unchanged.
+func backupInState(fs *volumePoolTestService, state string) func(context.Context, string) (*file.Backup, error) {
+	return func(ctx context.Context, name string) (*file.Backup, error) {
+		backup, err := fs.Service.GetBackup(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		inner := *backup.Backup
+		inner.State = state
+		other := *backup
+		other.Backup = &inner
+		return &other, nil
+	}
+}
+
 func expectCode(t *testing.T, err error, want codes.Code) {
 	t.Helper()
 	if got := status.Code(err); got != want {
@@ -823,6 +840,8 @@ func TestCreateVolumeFromSnapshot_VolumePool(t *testing.T) {
 		// restores should have been started in total, including any in setup.
 		wantIP       string
 		wantRestores int
+		// File service calls that CreateVolume must not make.
+		wantNoCalls []string
 	}{
 		{
 			name:         "restores the snapshot into a new volume",
@@ -1029,6 +1048,51 @@ func TestCreateVolumeFromSnapshot_VolumePool(t *testing.T) {
 			wantCode: codes.InvalidArgument,
 		},
 		{
+			name: "snapshot is still being created",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.getBackup = backupInState(fs, "CREATING")
+			},
+			req:         restoreRequest(testRestoredVolume, testBackupName),
+			wantCode:    codes.Unavailable,
+			wantNoCalls: []string{"GetVolumePoolVolume", "CreateVolumePoolVolumeFromSource"},
+		},
+		{
+			name: "snapshot is being finalized",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.getBackup = backupInState(fs, "FINALIZING")
+			},
+			req:         restoreRequest(testRestoredVolume, testBackupName),
+			wantCode:    codes.Unavailable,
+			wantNoCalls: []string{"GetVolumePoolVolume", "CreateVolumePoolVolumeFromSource"},
+		},
+		{
+			name: "snapshot of a volume in another volume pool is still being created",
+			setup: func(t *testing.T, cs *controllerServer, fs *volumePoolTestService) {
+				otherPool := "projects/test-project/locations/us-central1/volumePools/other-pool"
+				if _, err := fs.Service.CreateVolumePoolVolume(ctx, otherPool, "other-vol"); err != nil {
+					t.Fatalf("failed to create volume: %v", err)
+				}
+				_, err := cs.CreateSnapshot(ctx, snapshotRequest("snap-other", "volumepool://test-project/us-central1/other-pool/volumes/other-vol?ip=10.1.1.1", nil))
+				expectCode(t, err, codes.OK)
+				fs.getBackup = backupInState(fs, "CREATING")
+			},
+			req:      restoreRequest(testRestoredVolume, "projects/test-project/locations/us-central1/backups/snap-other"),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			// A backup that is being deleted can't be restored, but a retry
+			// must still return the volume that was restored from it.
+			name: "a volume with the requested name exists, and the snapshot is being deleted",
+			setup: func(t *testing.T, cs *controllerServer, fs *volumePoolTestService) {
+				_, err := cs.CreateVolume(ctx, restoreRequest(testRestoredVolume, testBackupName))
+				expectCode(t, err, codes.OK)
+				fs.getBackup = backupInState(fs, "DELETING")
+			},
+			req:          restoreRequest(testRestoredVolume, testBackupName),
+			wantIP:       "10.1.1.2",
+			wantRestores: 1,
+		},
+		{
 			name: "restored volume is not HOT",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				fs.createFromSource = func(_ context.Context, parentPool, volumeID, _ string) (*file.PoolVolume, error) {
@@ -1091,8 +1155,14 @@ func TestCreateVolumeFromSnapshot_VolumePool(t *testing.T) {
 				tc.setup(t, cs, fs)
 			}
 
+			before := maps.Clone(fs.calls)
 			resp, err := cs.CreateVolume(ctx, tc.req)
 			expectCode(t, err, tc.wantCode)
+			for _, call := range tc.wantNoCalls {
+				if got := fs.calls[call] - before[call]; got != 0 {
+					t.Errorf("CreateVolume called %s %d times, want 0", call, got)
+				}
+			}
 			if tc.wantCode != codes.OK {
 				return
 			}

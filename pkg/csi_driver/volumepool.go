@@ -283,10 +283,18 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 	return poolVol, nil
 }
 
-// checkVolumePoolSourceBackup checks that backupName exists and is a backup of
-// a volume in the volume pool poolPath. The API only restores a backup into the
-// volume pool of the backup's source volume; checking here gives a clearer
-// error than the API does.
+// checkVolumePoolSourceBackup checks that backupName exists, is a backup of a
+// volume in the volume pool poolPath, and is not still being created. The API
+// only restores a READY backup into the volume pool of the backup's source
+// volume; checking here gives a clearer error than the API does.
+//
+// A backup that is still being created or finalized gives Unavailable: it
+// becomes READY by itself, and the same request then succeeds, whereas the API
+// answers it with INVALID_ARGUMENT. Other states are left to the API. This
+// check runs before the volume lookup, so a retried restore whose volume
+// already exists must still succeed after the backup is deleted; a backup never
+// goes back to CREATING or FINALIZING, so no volume can have been restored from
+// one yet.
 func (s *controllerServer) checkVolumePoolSourceBackup(ctx context.Context, poolPath, backupName string) error {
 	backup, err := s.config.fileService.GetBackup(ctx, backupName)
 	if err != nil {
@@ -297,6 +305,9 @@ func (s *controllerServer) checkVolumePoolSourceBackup(ctx context.Context, pool
 	}
 	if sourcePool, _, err := splitVolumePoolVolumeName(backup.SourceVolume); err != nil || !sameVolumePoolResource(sourcePool, poolPath) {
 		return status.Errorf(codes.InvalidArgument, "snapshot %q was not taken from a volume in volume pool %q (source volume %q)", backupName, poolPath, backup.SourceVolume)
+	}
+	if state := backup.Backup.State; state == "CREATING" || state == "FINALIZING" {
+		return status.Errorf(codes.Unavailable, "source snapshot %q is not ready yet: its state is %s", backupName, state)
 	}
 	return nil
 }
