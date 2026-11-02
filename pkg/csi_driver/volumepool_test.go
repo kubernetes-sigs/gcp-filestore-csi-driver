@@ -339,6 +339,7 @@ type volumePoolTestService struct {
 	getVolume        func(ctx context.Context, name string) (*file.PoolVolume, error)
 	getBackup        func(ctx context.Context, name string) (*file.Backup, error)
 	deleteVolume     func(ctx context.Context, name string) error
+	createVolume     func(ctx context.Context, parentPool, volumeID string) (*file.PoolVolume, error)
 	createFromSource func(ctx context.Context, parentPool, volumeID, backupName string) (*file.PoolVolume, error)
 	createBackup     func(ctx context.Context, info *file.BackupInfo) (*filev1beta1.Backup, error)
 	calls            map[string]int
@@ -381,6 +382,9 @@ func (s *volumePoolTestService) GetVolumePoolVolume(ctx context.Context, name st
 
 func (s *volumePoolTestService) CreateVolumePoolVolume(ctx context.Context, parentPool, volumeID string) (*file.PoolVolume, error) {
 	s.calls["CreateVolumePoolVolume"]++
+	if s.createVolume != nil {
+		return s.createVolume(ctx, parentPool, volumeID)
+	}
 	return s.Service.CreateVolumePoolVolume(ctx, parentPool, volumeID)
 }
 
@@ -1168,6 +1172,113 @@ func TestCreateVolume_VolumePoolExistingVolume(t *testing.T) {
 				t.Errorf("CreateVolumePoolVolume called %d times, want 1", got)
 			}
 		})
+	}
+}
+
+// TestCreateVolume_VolumePoolVolumeState checks that CreateVolume returns only
+// a volume that can be mounted. The same check applies however the volume was
+// found: it already existed, it was created empty or restored from a snapshot,
+// or another request created it first.
+func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
+	ctx := context.Background()
+	const (
+		newVol  = "new-vol"
+		mountIP = "10.1.1.9"
+	)
+
+	states := []struct {
+		name       string
+		state      string
+		mountPoint bool
+		wantCode   codes.Code
+	}{
+		{name: "HOT", state: file.VolumePoolVolumeStateHot, mountPoint: true},
+		{name: "unspecified", state: file.VolumePoolVolumeStateUnspecified, mountPoint: true},
+		{name: "no state reported", state: "", mountPoint: true},
+		// For example, the volume's instance is being recovered.
+		{name: "unspecified without a mount point", state: file.VolumePoolVolumeStateUnspecified, wantCode: codes.Aborted},
+		{name: "HOT without a mount point", state: file.VolumePoolVolumeStateHot, wantCode: codes.Aborted},
+		{name: "CREATING", state: file.VolumePoolVolumeStateCreating, wantCode: codes.Aborted},
+		{name: "WARM", state: file.VolumePoolVolumeStateWarm, wantCode: codes.FailedPrecondition},
+		{name: "COLD", state: file.VolumePoolVolumeStateCold, wantCode: codes.FailedPrecondition},
+	}
+	paths := []struct {
+		name    string
+		restore bool
+		// setup makes the file service return vol(name) for the requested
+		// volume on this path.
+		setup func(fs *volumePoolTestService, vol func(name string) *file.PoolVolume)
+	}{
+		{
+			name: "existing volume",
+			setup: func(fs *volumePoolTestService, vol func(string) *file.PoolVolume) {
+				fs.getVolume = func(_ context.Context, name string) (*file.PoolVolume, error) {
+					return vol(name), nil
+				}
+			},
+		},
+		{
+			name: "new empty volume",
+			setup: func(fs *volumePoolTestService, vol func(string) *file.PoolVolume) {
+				fs.createVolume = func(_ context.Context, parentPool, volumeID string) (*file.PoolVolume, error) {
+					return vol(parentPool + "/volumes/" + volumeID), nil
+				}
+			},
+		},
+		{
+			name:    "restored volume",
+			restore: true,
+			setup: func(fs *volumePoolTestService, vol func(string) *file.PoolVolume) {
+				fs.createFromSource = func(_ context.Context, parentPool, volumeID, _ string) (*file.PoolVolume, error) {
+					return vol(parentPool + "/volumes/" + volumeID), nil
+				}
+			},
+		},
+		{
+			name: "volume created by another request first",
+			setup: func(fs *volumePoolTestService, vol func(string) *file.PoolVolume) {
+				fs.getVolume = notFoundOnce(func(_ context.Context, name string) (*file.PoolVolume, error) {
+					return vol(name), nil
+				})
+				fs.createVolume = func(_ context.Context, _, volumeID string) (*file.PoolVolume, error) {
+					return nil, status.Errorf(codes.AlreadyExists, "volume %s already exists", volumeID)
+				}
+			},
+		},
+	}
+
+	for _, p := range paths {
+		for _, st := range states {
+			t.Run(p.name+"/"+st.name, func(t *testing.T) {
+				cs, fs := newVolumePoolTestController(t)
+				req := &csi.CreateVolumeRequest{
+					Name:       newVol,
+					Parameters: map[string]string{paramKeyVolumePool: testVolumePool},
+				}
+				if p.restore {
+					_, err := cs.CreateSnapshot(ctx, snapshotRequest(testSnapshotName, testSourceVolumeID, nil))
+					expectCode(t, err, codes.OK)
+					req = restoreRequest(newVol, testBackupName)
+				}
+				p.setup(fs, func(name string) *file.PoolVolume {
+					vol := &file.PoolVolume{Name: name, State: st.state}
+					if st.mountPoint {
+						vol.IpAddress = mountIP
+						vol.MountName = "vol_" + newVol
+					}
+					return vol
+				})
+
+				resp, err := cs.CreateVolume(ctx, req)
+				expectCode(t, err, st.wantCode)
+				if st.wantCode != codes.OK {
+					return
+				}
+				if want := buildVolumePoolVolumeID(testVolumePool, newVol, mountIP); resp.GetVolume().GetVolumeId() != want {
+					t.Errorf("VolumeId = %q, want %q", resp.GetVolume().GetVolumeId(), want)
+				}
+			})
+		}
 	}
 }
 

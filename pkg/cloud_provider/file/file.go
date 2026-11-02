@@ -1564,6 +1564,9 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
+// CreateVolumePoolVolume creates the empty volume volumeID in parentPool and
+// returns it. A volume without a mount point, such as a WARM one, is returned
+// too, with its state: the caller decides whether it can be used.
 func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
 	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
 
@@ -1591,10 +1594,6 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	var vol VolumePoolVolume
 	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
 		return nil, fmt.Errorf("failed to decode CreateVolume response: %w", err)
-	}
-
-	if vol.MountPoint == nil {
-		return nil, fmt.Errorf("volume %q created without mount details information", vol.Name)
 	}
 
 	return vol.toPoolVolume(), nil

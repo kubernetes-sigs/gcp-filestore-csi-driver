@@ -924,6 +924,19 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 			},
 		},
 		{
+			// The driver, not the file service, decides what to do with it.
+			name:         "volume without a mount point is returned with its state",
+			responseCode: http.StatusOK,
+			responseBody: &VolumePoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+			expected: &PoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+		},
+		{
 			name:         "api error response",
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,

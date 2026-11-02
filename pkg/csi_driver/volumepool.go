@@ -124,6 +124,10 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 			return nil, err
 		}
 	}
+	// Check the volume however it was found: existing, new or restored.
+	if err := checkVolumePoolVolumeMountable(poolVol); err != nil {
+		return nil, err
+	}
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
@@ -205,19 +209,12 @@ func volumePoolSourceBackup(src *csi.VolumeContentSource) (string, error) {
 	return id, nil
 }
 
-// lookupVolumePoolVolume returns the volume named volumeName, or nil if it does
-// not exist. If the volume exists but cannot be mounted, it returns Aborted
-// while the volume is being created, so that the caller retries, and
-// FailedPrecondition in any other state.
+// lookupVolumePoolVolume returns the volume named volumeName, whatever its
+// state, or nil if it does not exist.
 //
-// A WARM or COLD volume keeps failing with FailedPrecondition, and the CO never
-// gets a volume ID that it could delete: the volume must be unfrozen or deleted
-// out of band. This can only happen if a volume with the requested name was
-// frozen after an earlier attempt created it.
-//
-// An existing HOT volume is returned without checking which snapshot, if any,
-// it was restored from, because the API does not record it. The risk is low:
-// the CO uses a unique name for each volume, such as the PVC's UID.
+// An existing volume is returned without checking which snapshot, if any, it
+// was restored from, because the API does not record it. The risk is low: the
+// CO uses a unique name for each volume, such as the PVC's UID.
 func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeName string) (*file.PoolVolume, error) {
 	vol, err := s.config.fileService.GetVolumePoolVolume(ctx, volumeName)
 	if err != nil {
@@ -227,27 +224,21 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 		}
 		return nil, err
 	}
-	if vol.State == file.VolumePoolVolumeStateCreating {
-		return nil, status.Errorf(codes.Aborted, "volume %q is still being created", volumeName)
-	}
-	if !isVolumePoolVolumeHot(vol) {
-		return nil, status.Errorf(codes.FailedPrecondition, "volume %q already exists but cannot be mounted: its state is %q", volumeName, vol.State)
-	}
 	return vol, nil
 }
 
 // createVolumePoolVolume creates the volume name in poolPath, restoring it from
 // backupName if that is set. If another request created the volume first, it
-// returns that volume instead.
+// returns that volume instead. The volume is returned whatever its state.
 func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name, backupName string) (*file.PoolVolume, error) {
 	var poolVol *file.PoolVolume
 	var err error
 	if backupName != "" {
-		poolVol, err = s.restoreVolumePoolVolume(ctx, poolPath, name, backupName)
+		poolVol, err = s.config.fileService.CreateVolumePoolVolumeFromSource(ctx, poolPath, name, backupName)
 	} else {
 		poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
-		err = volumePoolError(err)
 	}
+	err = volumePoolError(err)
 	if err == nil {
 		return poolVol, nil
 	}
@@ -284,21 +275,6 @@ func (s *controllerServer) checkVolumePoolSourceBackup(ctx context.Context, pool
 		return status.Errorf(codes.InvalidArgument, "snapshot %q was not taken from a volume in volume pool %q (source volume %q)", backupName, poolPath, backup.SourceVolume)
 	}
 	return nil
-}
-
-// restoreVolumePoolVolume creates the volume name in poolPath from the backup
-// backupName, which checkVolumePoolSourceBackup has checked.
-func (s *controllerServer) restoreVolumePoolVolume(ctx context.Context, poolPath, name, backupName string) (*file.PoolVolume, error) {
-	poolVol, err := s.config.fileService.CreateVolumePoolVolumeFromSource(ctx, poolPath, name, backupName)
-	if err != nil {
-		return nil, volumePoolError(err)
-	}
-	// The restore operation has finished, so the volume should be HOT. If it
-	// is not, return Aborted: a retry finds the volume and reports its state.
-	if !isVolumePoolVolumeHot(poolVol) {
-		return nil, status.Errorf(codes.Aborted, "restored volume %q cannot be mounted yet: its state is %q", poolVol.Name, poolVol.State)
-	}
-	return poolVol, nil
 }
 
 // handleCreateVolumePoolSnapshot creates a snapshot of a volume pool volume as a
@@ -428,9 +404,9 @@ func volumePoolSnapshotResponse(backup *filev1beta1.Backup, volumeID string) (*c
 	}, nil
 }
 
-// isVolumePoolVolumeHot reports whether vol is HOT, the only state in which a
-// volume can be mounted. A volume from an API version that does not report
-// states counts as HOT if it has a mount point.
+// isVolumePoolVolumeHot reports whether vol is HOT and has a mount point, so
+// that it can be mounted. A volume whose state is unspecified, or from an API
+// version that does not report states, counts as HOT if it has a mount point.
 func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
 	switch vol.State {
 	case "", file.VolumePoolVolumeStateUnspecified, file.VolumePoolVolumeStateHot:
@@ -438,6 +414,35 @@ func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
 	default:
 		return false
 	}
+}
+
+// checkVolumePoolVolumeMountable returns nil if vol can be mounted, and
+// otherwise the error to return for it. The API reports a mount point only for
+// HOT and unspecified-state volumes.
+//
+// A COLD or WARM volume gives FailedPrecondition, because it stays so until it
+// is unfrozen or made HOT. The CO then gets no volume ID that it could delete,
+// so the volume must be unfrozen, made HOT or deleted out of band. That
+// happens if a volume with the requested name was frozen after an earlier
+// attempt created it, or if the API created or restored the volume WARM, which
+// it does when the volume's share denies all clients.
+//
+// A volume that is still being created, or that has no mount point for another
+// reason, gives Aborted, so that the caller retries until it has one. For
+// example, the API reports a volume whose instance is being recovered as
+// unspecified-state, without a mount point.
+func checkVolumePoolVolumeMountable(vol *file.PoolVolume) error {
+	switch {
+	case vol.State == file.VolumePoolVolumeStateCold:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is COLD; unfreeze it first", vol.Name)
+	case vol.State == file.VolumePoolVolumeStateWarm:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is WARM, which cannot be mounted; make it HOT first", vol.Name)
+	case vol.State == file.VolumePoolVolumeStateCreating:
+		return status.Errorf(codes.Aborted, "volume %q is still being created", vol.Name)
+	case !isVolumePoolVolumeHot(vol):
+		return status.Errorf(codes.Aborted, "volume %q has no mount point yet: its state is %q", vol.Name, vol.State)
+	}
+	return nil
 }
 
 // checkVolumePoolVolumeBackupable returns nil if a backup of vol can be
