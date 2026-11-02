@@ -1628,3 +1628,55 @@ func TestProcessExistingBackup_VolumePoolBackup(t *testing.T) {
 		})
 	}
 }
+
+// A 2xx status that a volume pool REST call doesn't accept gives Internal with
+// the status, instead of an error that wraps nil.
+func TestVolumePoolUnexpectedSuccessStatus(t *testing.T) {
+	const (
+		pool = "projects/test-project/locations/us-central1/volumePools/test-pool"
+		name = pool + "/volumes/vol-1"
+	)
+	for _, tc := range []struct {
+		name string
+		call func(ctx context.Context, m *gcfsServiceManager) error
+	}{
+		{name: "create volume", call: func(ctx context.Context, m *gcfsServiceManager) error {
+			_, err := m.CreateVolumePoolVolume(ctx, pool, "vol-1")
+			return err
+		}},
+		{name: "delete volume", call: func(ctx context.Context, m *gcfsServiceManager) error {
+			return m.DeleteVolumePoolVolume(ctx, name)
+		}},
+		{name: "get volume", call: func(ctx context.Context, m *gcfsServiceManager) error {
+			_, err := m.GetVolumePoolVolume(ctx, name)
+			return err
+		}},
+		{name: "create volume from backup", call: func(ctx context.Context, m *gcfsServiceManager) error {
+			_, err := m.CreateVolumePoolVolumeFromSource(ctx, pool, "vol-1", "projects/test-project/locations/us-central1/backups/snap-1")
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusAccepted)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+			manager := &gcfsServiceManager{fileService: fileService, httpClient: server.Client()}
+
+			err = tc.call(ctx, manager)
+			if code := status.Code(err); code != codes.Internal {
+				t.Errorf("error = %v (code %v), want code %v", err, code, codes.Internal)
+			}
+			if err == nil || !strings.Contains(err.Error(), "unexpected HTTP status 202") || strings.Contains(err.Error(), "%!") {
+				t.Errorf("error = %v, want a message with %q and no formatting error", err, "unexpected HTTP status 202")
+			}
+		})
+	}
+}

@@ -1594,7 +1594,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("create volume %q in volume pool %q", volumeID, parentPool))
+		return nil, volumePoolResponseError(resp, fmt.Sprintf("create volume %q in volume pool %q", volumeID, parentPool))
 	}
 
 	var vol VolumePoolVolume
@@ -1613,7 +1613,7 @@ func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("delete volume %q", name))
+		return volumePoolResponseError(resp, fmt.Sprintf("delete volume %q", name))
 	}
 	return nil
 }
@@ -1636,7 +1636,7 @@ func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("get volume %q", name))
+		return nil, volumePoolResponseError(resp, fmt.Sprintf("get volume %q", name))
 	}
 
 	var vol VolumePoolVolume
@@ -1678,7 +1678,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolumeFromSource(ctx context.
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, volumePoolAPIError(googleapi.CheckResponse(resp), fmt.Sprintf("create volume %q from backup %q", name, backupName))
+		return nil, volumePoolResponseError(resp, fmt.Sprintf("create volume %q from backup %q", name, backupName))
 	}
 
 	var op filev1beta1.Operation
@@ -1783,6 +1783,18 @@ func VolumePoolStatusError(err error) error {
 		return err
 	}
 	return StatusError(err)
+}
+
+// volumePoolResponseError returns the error for resp, the response to a volume
+// pool REST call, when the call doesn't accept its status. For an error status,
+// it is the API error, as in volumePoolAPIError. A 2xx status that the call
+// doesn't accept gives Internal: googleapi.CheckResponse returns nil for every
+// 2xx status, so there is no API error to report.
+func volumePoolResponseError(resp *http.Response, msg string) error {
+	if err := googleapi.CheckResponse(resp); err != nil {
+		return volumePoolAPIError(err, msg)
+	}
+	return status.Errorf(codes.Internal, "%s: unexpected HTTP status %d", msg, resp.StatusCode)
 }
 
 // volumePoolAPIError converts err, returned by a volume pool API call, into a gRPC
