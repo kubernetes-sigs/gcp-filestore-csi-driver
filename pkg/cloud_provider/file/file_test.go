@@ -1595,3 +1595,36 @@ func TestFakeCreateBackup_VolumePoolStates(t *testing.T) {
 		})
 	}
 }
+
+// A backup of a volume pool volume that has the requested snapshot name is a
+// snapshot with a different source, in both modes. Its source instance has no
+// "/shares/" part, which the multishare volume handle needs.
+func TestProcessExistingBackup_VolumePoolBackup(t *testing.T) {
+	backup := &Backup{
+		Backup: &filev1beta1.Backup{
+			Name:       "projects/test-project/locations/us-central1/backups/snap-1",
+			State:      "READY",
+			CreateTime: "2020-10-02T15:01:23Z",
+		},
+		SourceInstance: "projects/test-project/locations/us-central1/instances/pool-instance",
+		SourceShare:    "vol_123",
+		SourceVolume:   "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123",
+	}
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		volumeID string
+	}{
+		{name: "instance volume", mode: "modeInstance", volumeID: "modeInstance/us-central1-c/myinstance/myshare"},
+		{name: "multishare volume", mode: "modeMultishare", volumeID: "modeMultishare/us-central1/myinstance/myshare"},
+		// The volume handle that the backup's source instance and share give.
+		{name: "instance volume with the handle of the pool instance's share", mode: "modeInstance", volumeID: "modeInstance/us-central1/pool-instance/vol_123"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ProcessExistingBackup(context.Background(), backup, tc.volumeID, tc.mode)
+			if code := status.Code(err); code != codes.AlreadyExists {
+				t.Errorf("ProcessExistingBackup(%q, %q) error = %v (code %v), want code %v", tc.volumeID, tc.mode, err, code, codes.AlreadyExists)
+			}
+		})
+	}
+}

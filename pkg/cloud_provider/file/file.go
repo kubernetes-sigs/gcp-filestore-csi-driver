@@ -969,6 +969,12 @@ func StatusError(err error) error {
 
 // This function will process an existing backup
 func ProcessExistingBackup(ctx context.Context, backup *Backup, volumeID string, mode string) (*csi.Snapshot, error) {
+	// A backup of a volume pool volume is never the snapshot of an instance or
+	// multishare volume, and its source instance doesn't convert to their
+	// volume handles.
+	if backup.SourceVolume != "" {
+		return nil, status.Errorf(codes.AlreadyExists, "Backup already exists with a different source volume %s, input source volume %s", backup.SourceVolume, volumeID)
+	}
 	backupSourceCSIHandle, err := util.BackupVolumeSourceToCSIVolumeHandle(mode, backup.SourceInstance, backup.SourceShare)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "Cannot determine volume handle from back source instance %s, share %s", backup.SourceInstance, backup.SourceShare)
