@@ -1282,6 +1282,56 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 	}
 }
 
+// TestCreateVolume_VolumePoolParameter checks that CreateVolume refuses a
+// malformed volume-pool parameter before calling the API, and that a valid one
+// gives a volume ID that parses back to the same pool.
+func TestCreateVolume_VolumePoolParameter(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name     string
+		pool     string
+		wantCode codes.Code
+	}{
+		{name: "project number", pool: "projects/123456789/locations/us-central1/volumePools/my-pool"},
+		{name: "zone", pool: "projects/test-project/locations/us-central1-c/volumePools/my-pool"},
+		{name: "trailing slash", pool: testVolumePool + "/", wantCode: codes.InvalidArgument},
+		{name: "leading slash", pool: "/" + testVolumePool, wantCode: codes.InvalidArgument},
+		{name: "pool ID only", pool: "my-pool", wantCode: codes.InvalidArgument},
+		{name: "wrong collection name", pool: "projects/test-project/locations/us-central1/volumepools/my-pool", wantCode: codes.InvalidArgument},
+		{name: "no location", pool: "projects/test-project/volumePools/my-pool", wantCode: codes.InvalidArgument},
+		{name: "extra segment", pool: testVolumePool + "/volumes", wantCode: codes.InvalidArgument},
+		{name: "empty project", pool: "projects//locations/us-central1/volumePools/my-pool", wantCode: codes.InvalidArgument},
+		{name: "API URL", pool: "https://file.googleapis.com/v1beta1/" + testVolumePool, wantCode: codes.InvalidArgument},
+		// These have the right shape, but a volume ID can't hold them.
+		{name: "domain-scoped project", pool: "projects/google.com:test-project/locations/us-central1/volumePools/my-pool", wantCode: codes.InvalidArgument},
+		{name: "escaped character", pool: "projects/test-project/locations/us-central1/volumePools/my%2Dpool", wantCode: codes.InvalidArgument},
+		{name: "query character", pool: "projects/test-project/locations/us-central1/volumePools/my?pool", wantCode: codes.InvalidArgument},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cs, fs := newVolumePoolTestController(t)
+			req := &csi.CreateVolumeRequest{
+				Name:       "new-vol",
+				Parameters: map[string]string{paramKeyVolumePool: tc.pool},
+			}
+
+			resp, err := cs.CreateVolume(ctx, req)
+			expectCode(t, err, tc.wantCode)
+			if tc.wantCode != codes.OK {
+				if len(fs.calls) != 0 {
+					t.Errorf("file service calls = %v, want none", fs.calls)
+				}
+				return
+			}
+			id := resp.GetVolume().GetVolumeId()
+			if parent, volID, _, err := parseVolumePoolVolumeID(id); err != nil || parent != tc.pool || volID != "new-vol" {
+				t.Errorf("volume ID %q parses to pool %q, volume %q, error %v; want pool %q, volume %q", id, parent, volID, err, tc.pool, "new-vol")
+			}
+		})
+	}
+}
+
 func TestSplitVolumePoolVolumeName(t *testing.T) {
 	tests := []struct {
 		name       string

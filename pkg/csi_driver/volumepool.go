@@ -91,6 +91,9 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
 	}
+	if err := checkVolumePoolParameter(poolPath); err != nil {
+		return nil, err
+	}
 
 	klog.V(4).Infof("Creating Volume Pool volume: pool %q, requestID %q", poolPath, name)
 	backupName, err := volumePoolSourceBackup(req.GetVolumeContentSource())
@@ -189,6 +192,27 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
+}
+
+// checkVolumePoolParameter returns nil if pool, the value of the volume-pool
+// parameter, is a volume pool name that a volume ID can hold, and
+// InvalidArgument otherwise. Without this check, a malformed value reaches the
+// API, and if the API accepts it, CreateVolume returns a volume ID that
+// DeleteVolume can't parse, or doesn't recognize as a volume pool volume.
+//
+// The round trip through a volume ID also rejects values that have the right
+// shape but don't come back unchanged, such as a domain-scoped project ID
+// (google.com:my-project), whose colon the ID can't hold, or an escaped
+// character. So DeleteVolume and CreateSnapshot always see the pool, and lock
+// the key, that CreateVolume used.
+func checkVolumePoolParameter(pool string) error {
+	if _, _, err := splitVolumePoolName(pool); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid %s parameter %q: want projects/{project}/locations/{location}/volumePools/{pool}", paramKeyVolumePool, pool)
+	}
+	if parent, _, _, err := parseVolumePoolVolumeID(buildVolumePoolVolumeID(pool, "volume", "")); err != nil || parent != pool {
+		return status.Errorf(codes.InvalidArgument, "unsupported %s parameter %q: it can't be encoded in a volume ID; domain-scoped project IDs and escaped characters aren't supported", paramKeyVolumePool, pool)
+	}
+	return nil
 }
 
 // volumePoolSourceBackup returns the backup that a new volume pool volume is
