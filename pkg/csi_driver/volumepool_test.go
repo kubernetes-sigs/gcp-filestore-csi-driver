@@ -450,6 +450,21 @@ func notFoundOnce(next func(context.Context, string) (*file.PoolVolume, error)) 
 	}
 }
 
+// backupFromOtherProject returns a getBackup override that reports each backup
+// of the fake as taken from the volume with the same location, volume pool and
+// volume ID in the project other-project.
+func backupFromOtherProject(fs *volumePoolTestService) func(context.Context, string) (*file.Backup, error) {
+	return func(ctx context.Context, name string) (*file.Backup, error) {
+		backup, err := fs.Service.GetBackup(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		other := *backup
+		other.SourceVolume = strings.Replace(backup.SourceVolume, "projects/test-project/", "projects/other-project/", 1)
+		return &other, nil
+	}
+}
+
 func expectCode(t *testing.T, err error, want codes.Code) {
 	t.Helper()
 	if got := status.Code(err); got != want {
@@ -996,6 +1011,24 @@ func TestCreateVolumeFromSnapshot_VolumePool(t *testing.T) {
 			wantRestores: 1,
 		},
 		{
+			name: "snapshot of a volume pool with the same name in another project",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.getBackup = backupFromOtherProject(fs)
+			},
+			req:      restoreRequest(testRestoredVolume, testBackupName),
+			wantCode: codes.InvalidArgument,
+		},
+		{
+			name: "a volume with the requested name exists, but the snapshot is from a volume pool with the same name in another project",
+			setup: func(t *testing.T, cs *controllerServer, fs *volumePoolTestService) {
+				_, err := cs.CreateVolume(ctx, restoreRequest(testRestoredVolume, testBackupName))
+				expectCode(t, err, codes.OK)
+				fs.getBackup = backupFromOtherProject(fs)
+			},
+			req:      restoreRequest(testRestoredVolume, testBackupName),
+			wantCode: codes.InvalidArgument,
+		},
+		{
 			name: "restored volume is not HOT",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				fs.createFromSource = func(_ context.Context, parentPool, volumeID, _ string) (*file.PoolVolume, error) {
@@ -1366,6 +1399,37 @@ func TestSplitVolumePoolVolumeName(t *testing.T) {
 	}
 }
 
+// TestSameVolumePoolResource checks that projects are compared unless one name
+// has a project number and the other a project ID.
+func TestSameVolumePoolResource(t *testing.T) {
+	const volume = "locations/us-central1/volumePools/agents/volumes/v1"
+	tests := []struct {
+		name string
+		a, b string
+		want bool
+	}{
+		{name: "same project ID", a: "projects/team-prod/" + volume, b: "projects/team-prod/" + volume, want: true},
+		{name: "different project IDs", a: "projects/team-prod/" + volume, b: "projects/team-staging/" + volume},
+		{name: "project IDs with digits", a: "projects/team-2/" + volume, b: "projects/team-3/" + volume},
+		{name: "project number and project ID", a: "projects/123456789/" + volume, b: "projects/team-prod/" + volume, want: true},
+		{name: "project ID and project number", a: "projects/team-prod/" + volume, b: "projects/123456789/" + volume, want: true},
+		{name: "same project number", a: "projects/123456789/" + volume, b: "projects/123456789/" + volume, want: true},
+		{name: "different project numbers", a: "projects/123456789/" + volume, b: "projects/987654321/" + volume},
+		{name: "different volume", a: "projects/team-prod/" + volume, b: "projects/team-prod/locations/us-central1/volumePools/agents/volumes/v2"},
+		{name: "different volume pool, project number", a: "projects/123456789/" + volume, b: "projects/team-prod/locations/us-central1/volumePools/other/volumes/v1"},
+		{name: "different location", a: "projects/team-prod/" + volume, b: "projects/team-prod/locations/us-east1/volumePools/agents/volumes/v1"},
+		{name: "volume pools, project number and project ID", a: "projects/123456789/locations/us-central1/volumePools/agents", b: "projects/team-prod/locations/us-central1/volumePools/agents", want: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sameVolumePoolResource(tc.a, tc.b); got != tc.want {
+				t.Errorf("sameVolumePoolResource(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestVolumePoolsEnabled(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1511,6 +1575,18 @@ func TestCreateSnapshot_VolumePoolChecks(t *testing.T) {
 		if resp.GetSnapshot().GetSnapshotId() != testBackupName {
 			t.Errorf("SnapshotId = %q, want %q", resp.GetSnapshot().GetSnapshotId(), testBackupName)
 		}
+	})
+
+	t.Run("existing backup of a volume with the same name in another project", func(t *testing.T) {
+		cs, fs := newVolumePoolTestController(t)
+		fs.getBackup = func(context.Context, string) (*file.Backup, error) {
+			return &file.Backup{
+				Backup:       &filev1beta1.Backup{Name: testBackupName, State: "READY", CreateTime: "2020-10-02T15:01:23Z"},
+				SourceVolume: "projects/other-project/locations/us-central1/volumePools/my-pool/volumes/src-vol",
+			}, nil
+		}
+		_, err := cs.CreateSnapshot(ctx, snapshotRequest(testSnapshotName, testSourceVolumeID, nil))
+		expectCode(t, err, codes.AlreadyExists)
 	})
 
 	for _, tc := range []struct {

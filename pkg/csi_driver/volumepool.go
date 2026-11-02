@@ -531,20 +531,47 @@ func splitVolumePoolVolumeName(name string) (pool, volumeID string, err error) {
 
 // sameVolumePoolResource reports whether a and b, resource names such as
 // projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
-// name the same resource. The project is ignored, because the API can report a
-// project number where the driver uses the project ID.
+// name the same resource. The API can report a project number where the
+// driver uses the project ID, and the driver can't tell whether a number and
+// an ID name the same project. So the projects are compared only if both are
+// numbers or both are IDs.
 func sameVolumePoolResource(a, b string) bool {
-	return withoutProject(a) == withoutProject(b)
+	projectA, restA := cutProject(a)
+	projectB, restB := cutProject(b)
+	if restA != restB {
+		return false
+	}
+	if isProjectNumber(projectA) != isProjectNumber(projectB) {
+		return true
+	}
+	return projectA == projectB
 }
 
-// withoutProject returns name without its leading "projects/{project}/".
-func withoutProject(name string) string {
-	rest, ok := strings.CutPrefix(name, "projects/")
+// cutProject splits name into its project and the rest of the name after
+// "projects/{project}/". A name that doesn't start with a project has project
+// "".
+func cutProject(name string) (project, rest string) {
+	after, ok := strings.CutPrefix(name, "projects/")
 	if !ok {
-		return name
+		return "", name
 	}
-	if _, after, ok := strings.Cut(rest, "/"); ok {
-		return after
+	project, rest, ok = strings.Cut(after, "/")
+	if !ok {
+		return "", name
 	}
-	return name
+	return project, rest
+}
+
+// isProjectNumber reports whether project is a project number rather than a
+// project ID. A project ID starts with a letter.
+func isProjectNumber(project string) bool {
+	if project == "" {
+		return false
+	}
+	for _, r := range project {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
