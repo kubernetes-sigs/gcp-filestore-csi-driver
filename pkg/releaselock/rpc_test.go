@@ -289,6 +289,31 @@ func TestReleaseLockSharedDeadline(t *testing.T) {
 	}
 }
 
+// TestReleaseLockGetPortTimeout checks that a silent portmapper fails at the
+// GETPORT cap rather than waiting for the (longer) overall deadline.
+func TestReleaseLockGetPortTimeout(t *testing.T) {
+	if err := RegisterLockReleaseProcedure(); err != nil {
+		t.Fatalf("RegisterLockReleaseProcedure: %v", err)
+	}
+	const (
+		overall    = 5 * time.Second
+		getPortCap = 300 * time.Millisecond
+	)
+	pmapPort := listen(t, tarpitHandler)
+
+	c := &FileStoreRPCClient{portmapperPort: pmapPort, rpcTimeout: overall, getPortTimeout: getPortCap}
+	start := time.Now()
+	err := releaseLockWithBound(t, c)
+	elapsed := time.Since(start)
+	if err == nil || !strings.Contains(err.Error(), "portmapper GETPORT call") || !strings.Contains(err.Error(), "i/o timeout") {
+		t.Fatalf("ReleaseLock() = %v, want portmapper GETPORT i/o timeout", err)
+	}
+	// Without the cap this would take the full overall timeout (5s).
+	if limit := getPortCap + 2*time.Second; elapsed > limit {
+		t.Errorf("ReleaseLock took %v, want <= %v (GETPORT cap %v, overall %v)", elapsed, limit, getPortCap, overall)
+	}
+}
+
 // --- Raw wire-format checks, independent of sunrpc's procedure registry. ---
 
 // rpcCall is the decoded header and argument bytes of an ONC RPC call.
@@ -441,9 +466,12 @@ func TestFileStoreRPCClientDefaults(t *testing.T) {
 	if got := c.rpcTimeoutOrDefault(); got != defaultRPCTimeout {
 		t.Errorf("rpcTimeoutOrDefault() = %v, want %v", got, defaultRPCTimeout)
 	}
+	if got := c.getPortTimeoutOrDefault(); got != defaultGetPortTimeout {
+		t.Errorf("getPortTimeoutOrDefault() = %v, want %v", got, defaultGetPortTimeout)
+	}
 }
 
-func TestRegisterGetPortProcedureLazily(t *testing.T) {
+func TestGetPortProcedureID(t *testing.T) {
 	if err := registerGetPortProcedure(); err != nil {
 		t.Fatalf("registerGetPortProcedure: %v", err)
 	}
