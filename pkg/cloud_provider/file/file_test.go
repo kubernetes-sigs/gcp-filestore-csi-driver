@@ -1495,8 +1495,29 @@ func TestVolumePoolAPIError(t *testing.T) {
 			wantCode: codes.PermissionDenied,
 		},
 		{
-			name:     "unknown HTTP status",
-			err:      &googleapi.Error{Code: http.StatusBadGateway, Body: "bad gateway"},
+			// A front end that timed out answers with an HTML page.
+			name:     "bad gateway with an HTML body",
+			err:      &googleapi.Error{Code: http.StatusBadGateway, Body: "<!DOCTYPE html>\n<html><body>502. That's an error.</body></html>"},
+			wantCode: codes.Unavailable,
+		},
+		{
+			name:     "service unavailable without a body",
+			err:      &googleapi.Error{Code: http.StatusServiceUnavailable},
+			wantCode: codes.Unavailable,
+		},
+		{
+			name:     "gateway timeout with an HTML body",
+			err:      &googleapi.Error{Code: http.StatusGatewayTimeout, Body: "<html><body>Gateway Timeout</body></html>"},
+			wantCode: codes.Unavailable,
+		},
+		{
+			name:     "canonical status in the body wins over a gateway status",
+			err:      &googleapi.Error{Code: http.StatusBadGateway, Body: apiErrorBody(http.StatusBadGateway, "INTERNAL", "boom")},
+			wantCode: codes.Internal,
+		},
+		{
+			name:     "other HTTP status",
+			err:      &googleapi.Error{Code: http.StatusInternalServerError, Body: "internal error"},
 			wantCode: codes.Internal,
 		},
 		{
@@ -1539,6 +1560,11 @@ func TestVolumePoolStatusError(t *testing.T) {
 			wantCode: codes.AlreadyExists,
 		},
 		{name: "API error without a body", err: &googleapi.Error{Code: http.StatusNotFound}, wantCode: codes.NotFound},
+		{
+			name:     "front end error page",
+			err:      fmt.Errorf("create backup: %w", &googleapi.Error{Code: http.StatusBadGateway, Body: "<!DOCTYPE html>\n<html><body>502. That's an error.</body></html>"}),
+			wantCode: codes.Unavailable,
+		},
 		{name: "status error", err: status.Error(codes.Aborted, "busy"), wantCode: codes.Aborted},
 		{name: "context error", err: fmt.Errorf("get volume: %w", context.DeadlineExceeded), wantCode: codes.DeadlineExceeded},
 		{name: "other error", err: errors.New("boom"), wantCode: codes.Internal},

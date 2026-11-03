@@ -1832,12 +1832,22 @@ func volumePoolAPIError(err error, msg string) error {
 
 // volumePoolAPICode returns the gRPC code for an API error: the canonical code
 // in its body if there is one, or else a code derived from the HTTP status.
+//
+// A front end that times out, or can't reach the backend, answers 502, 503 or
+// 504 with an HTML page instead of an API error. These give Unavailable, not
+// Internal: the backend may still process the request, and the CSI sidecars
+// treat Unavailable as an operation that may still be in progress, but
+// Internal as one that has ended.
 func volumePoolAPICode(apiErr *googleapi.Error) codes.Code {
 	if code, ok := canonicalCode(apiErr); ok {
 		return code
 	}
 	if code, ok := userErrorCodeMap[apiErr.Code]; ok {
 		return code
+	}
+	switch apiErr.Code {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return codes.Unavailable
 	}
 	return codes.Internal
 }
