@@ -51,9 +51,9 @@ const (
 	// Filestore server cannot block the caller forever. The server-side
 	// RELEASE_ALL_LOCKS handler takes a fixed ~2.1s.
 	defaultRPCTimeout = 30 * time.Second
-	// getPortTimeout bounds the portmapper GETPORT lookup, a trivial call,
-	// within the overall ReleaseLock deadline.
-	getPortTimeout = 5 * time.Second
+	// defaultGetPortTimeout bounds the portmapper GETPORT lookup, a trivial
+	// call, within the overall ReleaseLock deadline.
+	defaultGetPortTimeout = 5 * time.Second
 )
 
 type FileStoreRPCClient struct {
@@ -63,6 +63,9 @@ type FileStoreRPCClient struct {
 	// rpcTimeout overrides defaultRPCTimeout. Zero means the default. Only set
 	// by tests.
 	rpcTimeout time.Duration
+	// getPortTimeout overrides defaultGetPortTimeout. Zero means the default.
+	// Only set by tests.
+	getPortTimeout time.Duration
 }
 
 func (c *FileStoreRPCClient) portmapperPortOrDefault() string {
@@ -77,6 +80,13 @@ func (c *FileStoreRPCClient) rpcTimeoutOrDefault() time.Duration {
 		return c.rpcTimeout
 	}
 	return defaultRPCTimeout
+}
+
+func (c *FileStoreRPCClient) getPortTimeoutOrDefault() time.Duration {
+	if c.getPortTimeout > 0 {
+		return c.getPortTimeout
+	}
+	return defaultGetPortTimeout
 }
 
 type releaseLockResponse struct {
@@ -135,13 +145,13 @@ func registerGetPortProcedure() error {
 // getPort queries the portmapper on hostIP for the NLM (program
 // pmapProgramNumber, version pmapProgramVersion) TCP port.
 // Unlike sunrpc.PmapGetPort, the dial and the RPC exchange are bounded by
-// getPortTimeout and by the caller's deadline, whichever comes first, so an
-// unresponsive server cannot block the caller forever.
+// the GETPORT timeout and by the caller's deadline, whichever comes first, so
+// an unresponsive server cannot block the caller forever.
 func (c *FileStoreRPCClient) getPort(hostIP string, deadline time.Time) (uint32, error) {
 	if err := registerGetPortProcedure(); err != nil {
 		return 0, err
 	}
-	if d := time.Now().Add(getPortTimeout); d.Before(deadline) {
+	if d := time.Now().Add(c.getPortTimeoutOrDefault()); d.Before(deadline) {
 		deadline = d
 	}
 
