@@ -1,4 +1,4 @@
-# Substrate CSIDriverConfig Custom Resource (ate.dev/v1alpha1).
+# Substrate CSIDriverConfig Custom Resource (ate.dev/v1).
 #
 # Key Features & Rationale:
 # 1. driverName: filestore.csi.storage.gke.io
@@ -12,8 +12,9 @@
 #    - Points Substrate node worker processes (ateom-gvisor) to the local node CSI socket for
 #      performing NodePublishVolume / NodeUnpublishVolume operations on worker nodes.
 
-# TODO: Update apiVersion from alpha (ate.dev/v1alpha1) based on future Substrate releases.
-apiVersion: ate.dev/v1alpha1
+# Substrate v1.0.0-rc.1 and later serve only ate.dev/v1; Substrate v0.6.0 and
+# earlier serve only ate.dev/v1alpha1. The schema is otherwise the same.
+apiVersion: ate.dev/v1
 kind: CSIDriverConfig
 metadata:
   name: filestore.csi.storage.gke.io
