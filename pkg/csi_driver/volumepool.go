@@ -23,10 +23,13 @@ import (
 	"strings"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
+	cloud "sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
 const (
@@ -58,7 +61,7 @@ func parseVolumePoolVolumeID(volumeID string) (parent, volID, ipAddress string, 
 	}
 
 	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 4 || parts[2] != "volumes" {
+	if len(parts) != 4 || parts[2] != "volumes" || u.Host == "" || parts[0] == "" || parts[1] == "" || parts[3] == "" {
 		return "", "", "", fmt.Errorf("invalid composite volume ID path: %s", volumeID)
 	}
 
@@ -77,22 +80,64 @@ func isVolumePoolVolumeID(volumeID string) bool {
 	return strings.HasPrefix(volumeID, volumePoolURLPrefix)
 }
 
+// volumePoolsEnabled reports whether the Volume Pools feature is enabled.
+func (s *controllerServer) volumePoolsEnabled() bool {
+	f := s.config.features
+	return f != nil && f.FeatureVolumePools != nil && f.FeatureVolumePools.Enabled
+}
+
 func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req *csi.CreateVolumeRequest, poolPath string) (*csi.CreateVolumeResponse, error) {
 	name := req.GetName()
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
 	}
+	if err := checkVolumePoolParameter(poolPath); err != nil {
+		return nil, err
+	}
 
 	klog.V(4).Infof("Creating Volume Pool volume: pool %q, requestID %q", poolPath, name)
-	poolVol, err := s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
+	backupName, err := volumePoolSourceBackup(req.GetVolumeContentSource())
 	if err != nil {
-		klog.Errorf("Failed to create Volume Pool volume in pool %s: %v", poolPath, err)
-		return nil, file.StatusError(err)
+		return nil, err
+	}
+
+	volumeName := fmt.Sprintf("%s/volumes/%s", poolPath, name)
+	if acquired := s.config.volumeLocks.TryAcquire(volumeName); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeName)
+	}
+	defer s.config.volumeLocks.Release(volumeName)
+
+	// Check the source snapshot first, as the instance and multishare paths
+	// do, so that a missing snapshot, or one taken in another volume pool, is
+	// reported even if a volume with the requested name already exists.
+	if backupName != "" {
+		if err := s.checkVolumePoolSourceBackup(ctx, poolPath, backupName); err != nil {
+			return nil, err
+		}
+	}
+
+	// Look the volume up first, so that a retried request returns the volume
+	// that an earlier attempt created. Creating first, and looking up only on
+	// ALREADY_EXISTS, would save a call, but the API's CreateVolume looks for a
+	// free share before it notices that the name exists: a retry in a full
+	// volume pool would get RESOURCE_EXHAUSTED instead of its volume.
+	poolVol, err := s.lookupVolumePoolVolume(ctx, volumeName)
+	if err != nil {
+		return nil, err
+	}
+	if poolVol == nil {
+		if poolVol, err = s.createVolumePoolVolume(ctx, poolPath, name, backupName); err != nil {
+			return nil, err
+		}
+	}
+	// Check the volume however it was found: existing, new or restored.
+	if err := checkVolumePoolVolumeMountable(poolVol); err != nil {
+		return nil, err
 	}
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
-	klog.Infof("Successfully created Volume Pool volume: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	klog.Infof("Volume Pool volume is ready: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
 
 	fileProtocol := v3FileProtocol
 	if protocol, ok := req.GetParameters()[paramFileProtocol]; ok {
@@ -110,6 +155,7 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 				attrVolume:       poolVol.MountName,
 				attrFileProtocol: fileProtocol,
 			},
+			ContentSource: req.GetVolumeContentSource(),
 		},
 	}
 
@@ -132,16 +178,436 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 	klog.V(4).Infof("Parsed release parameters: parent=%q, volID=%q, ipAddress=%q", parent, volID, ipAddress)
 
 	name := fmt.Sprintf("%s/volumes/%s", parent, volID)
+	if acquired := s.config.volumeLocks.TryAcquire(name); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, name)
+	}
+	defer s.config.volumeLocks.Release(name)
+
 	err = s.config.fileService.DeleteVolumePoolVolume(ctx, name)
 	if err != nil {
-		if file.IsNotFoundErr(err) {
+		if isVolumePoolNotFound(err) {
 			klog.Warningf("Volume Pool volume %q not found, returning success", volumeID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 		klog.Errorf("Failed to delete Volume Pool volume %q: %v", volumeID, err)
-		return nil, file.StatusError(err)
+		err = volumePoolError(err)
+		if isVolumePoolVolumeBusy(err) {
+			return nil, status.Error(codes.Aborted, status.Convert(err).Message())
+		}
+		return nil, err
 	}
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
+}
+
+// checkVolumePoolParameter returns nil if pool, the value of the volume-pool
+// parameter, is a volume pool name that a volume ID can hold, and
+// InvalidArgument otherwise. Without this check, a malformed value reaches the
+// API, and if the API accepts it, CreateVolume returns a volume ID that
+// DeleteVolume can't parse, or doesn't recognize as a volume pool volume.
+//
+// The round trip through a volume ID also rejects values that have the right
+// shape but don't come back unchanged, such as a domain-scoped project ID
+// (google.com:my-project), whose colon the ID can't hold, or an escaped
+// character. So DeleteVolume and CreateSnapshot always see the pool, and lock
+// the key, that CreateVolume used.
+func checkVolumePoolParameter(pool string) error {
+	if _, _, err := splitVolumePoolName(pool); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid %s parameter %q: want projects/{project}/locations/{location}/volumePools/{pool}", paramKeyVolumePool, pool)
+	}
+	if parent, _, _, err := parseVolumePoolVolumeID(buildVolumePoolVolumeID(pool, "volume", "")); err != nil || parent != pool {
+		return status.Errorf(codes.InvalidArgument, "unsupported %s parameter %q: it can't be encoded in a volume ID; domain-scoped project IDs and escaped characters aren't supported", paramKeyVolumePool, pool)
+	}
+	return nil
+}
+
+// volumePoolSourceBackup returns the backup that a new volume pool volume is
+// restored from, or "" for an empty volume. Volume pool volumes can only be
+// restored from backups; cloning another volume is not supported.
+func volumePoolSourceBackup(src *csi.VolumeContentSource) (string, error) {
+	if src == nil {
+		return "", nil
+	}
+	snapshot := src.GetSnapshot()
+	if snapshot == nil {
+		return "", status.Error(codes.InvalidArgument, "volume pool volumes can only be created from a snapshot; cloning a volume is not supported")
+	}
+	id := snapshot.GetSnapshotId()
+	if isBackup, err := util.IsBackupHandle(id); err != nil || !isBackup {
+		return "", status.Errorf(codes.InvalidArgument, "unsupported volume content source %q: volume pool volumes can only be restored from backups", id)
+	}
+	return id, nil
+}
+
+// lookupVolumePoolVolume returns the volume named volumeName, whatever its
+// state, or nil if it does not exist.
+//
+// An existing volume is returned without checking which snapshot, if any, it
+// was restored from, because the API does not record it. The risk is low: the
+// CO uses a unique name for each volume, such as the PVC's UID.
+func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeName string) (*file.PoolVolume, error) {
+	vol, err := s.config.fileService.GetVolumePoolVolume(ctx, volumeName)
+	if err != nil {
+		err = volumePoolError(err)
+		if status.Code(err) == codes.NotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return vol, nil
+}
+
+// createVolumePoolVolume creates the volume name in poolPath, restoring it from
+// backupName if that is set. If another request created the volume first, it
+// returns that volume instead. The volume is returned whatever its state.
+func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name, backupName string) (*file.PoolVolume, error) {
+	var poolVol *file.PoolVolume
+	var err error
+	if backupName != "" {
+		poolVol, err = s.config.fileService.CreateVolumePoolVolumeFromSource(ctx, poolPath, name, backupName)
+	} else {
+		poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
+	}
+	err = volumePoolError(err)
+	if err == nil {
+		return poolVol, nil
+	}
+	if status.Code(err) != codes.AlreadyExists {
+		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
+		return nil, err
+	}
+
+	volumeName := fmt.Sprintf("%s/volumes/%s", poolPath, name)
+	klog.Infof("Volume Pool volume %q was created by another request, looking it up", volumeName)
+	poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
+	if err != nil {
+		return nil, err
+	}
+	if poolVol == nil {
+		return nil, status.Errorf(codes.Aborted, "volume %q was reported to exist but was not found", volumeName)
+	}
+	return poolVol, nil
+}
+
+// checkVolumePoolSourceBackup checks that backupName exists, is a backup of a
+// volume in the volume pool poolPath, and is not still being created. The API
+// only restores a READY backup into the volume pool of the backup's source
+// volume; checking here gives a clearer error than the API does.
+//
+// A backup that is still being created or finalized gives Unavailable: it
+// becomes READY by itself, and the same request then succeeds, whereas the API
+// answers it with INVALID_ARGUMENT. Other states are left to the API. This
+// check runs before the volume lookup, so a retried restore whose volume
+// already exists must still succeed after the backup is deleted; a backup never
+// goes back to CREATING or FINALIZING, so no volume can have been restored from
+// one yet.
+func (s *controllerServer) checkVolumePoolSourceBackup(ctx context.Context, poolPath, backupName string) error {
+	backup, err := s.config.fileService.GetBackup(ctx, backupName)
+	if err != nil {
+		if isVolumePoolNotFound(err) {
+			return status.Errorf(codes.NotFound, "source snapshot %q not found", backupName)
+		}
+		return volumePoolError(err)
+	}
+	if sourcePool, _, err := splitVolumePoolVolumeName(backup.SourceVolume); err != nil || !sameVolumePoolResource(sourcePool, poolPath) {
+		return status.Errorf(codes.InvalidArgument, "snapshot %q was not taken from a volume in volume pool %q (source volume %q)", backupName, poolPath, backup.SourceVolume)
+	}
+	if state := backup.Backup.State; state == "CREATING" || state == "FINALIZING" {
+		return status.Errorf(codes.Unavailable, "source snapshot %q is not ready yet: its state is %s", backupName, state)
+	}
+	return nil
+}
+
+// handleCreateVolumePoolSnapshot creates a snapshot of a volume pool volume as a
+// Filestore backup of that volume.
+func (s *controllerServer) handleCreateVolumePoolSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	volumeID := req.GetSourceVolumeId()
+	parent, volID, _, err := parseVolumePoolVolumeID(volumeID)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse composite volume ID %q: %v", volumeID, err)
+	}
+	project, location, err := splitVolumePoolName(parent)
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "failed to parse composite volume ID %q: %v", volumeID, err)
+	}
+	sourceVolume := fmt.Sprintf("%s/volumes/%s", parent, volID)
+
+	params := req.GetParameters()
+	if params != nil {
+		if _, err := util.IsSnapshotTypeSupported(params); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+	backupURI, region, err := file.CreateBackupURI(location, project, req.GetName(), "")
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	// Backups of volume pool volumes are kept in the volume pool's region.
+	if backupLocation := util.GetBackupLocation(params); backupLocation != "" && backupLocation != region {
+		return nil, status.Errorf(codes.InvalidArgument, "snapshot location %q must be the volume pool's region %q", backupLocation, region)
+	}
+	// Check the labels before any API call, as the other snapshot paths do.
+	labels, err := extractBackupLabels(params, s.config.extraVolumeLabels, s.config.driver.config.Name, req.GetName())
+	if err != nil {
+		return nil, status.Errorf(codes.InvalidArgument, "invalid labels for snapshot %q: %v", req.GetName(), err)
+	}
+
+	// Lock the volume's resource name, as CreateVolume and DeleteVolume do, so
+	// that operations on the same volume are serialized.
+	if acquired := s.config.volumeLocks.TryAcquire(sourceVolume); !acquired {
+		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, sourceVolume)
+	}
+	defer s.config.volumeLocks.Release(sourceVolume)
+
+	existing, err := s.config.fileService.GetBackup(ctx, backupURI)
+	if err == nil {
+		return existingVolumePoolSnapshot(existing, volumeID, sourceVolume)
+	}
+	if !isVolumePoolNotFound(err) {
+		return nil, volumePoolError(err)
+	}
+
+	vol, err := s.config.fileService.GetVolumePoolVolume(ctx, sourceVolume)
+	if err != nil {
+		return nil, volumePoolError(err)
+	}
+	if err := checkVolumePoolVolumeBackupable(vol); err != nil {
+		return nil, err
+	}
+
+	backup, err := s.config.fileService.CreateBackup(ctx, &file.BackupInfo{
+		Name:           req.GetName(),
+		SourceVolumeId: volumeID,
+		SourceVolume:   sourceVolume,
+		BackupURI:      backupURI,
+		Project:        project,
+		Location:       region,
+		Labels:         labels,
+	})
+	if err != nil {
+		err = volumePoolError(err)
+		if status.Code(err) == codes.AlreadyExists {
+			// The backup was created after the lookup above, for example by an
+			// earlier attempt whose request the API processed after the client
+			// gave up. Handle it like a backup that already existed.
+			klog.Infof("Snapshot %q of Volume Pool volume %q was created by another request, looking it up", req.GetName(), volumeID)
+			existing, getErr := s.config.fileService.GetBackup(ctx, backupURI)
+			if getErr != nil {
+				return nil, volumePoolError(getErr)
+			}
+			return existingVolumePoolSnapshot(existing, volumeID, sourceVolume)
+		}
+		klog.Errorf("Failed to create snapshot %q of Volume Pool volume %q: %v", req.GetName(), volumeID, err)
+		if isVolumePoolVolumeBusy(err) {
+			return nil, status.Error(codes.Aborted, status.Convert(err).Message())
+		}
+		return nil, err
+	}
+	klog.Infof("Created snapshot %q of Volume Pool volume %q", backup.Name, volumeID)
+
+	// Resource manager tags are not attached, as they are not attached to
+	// volume pool volumes either. The backup is created in the volume pool's
+	// project, which can differ from the project that the tag manager works
+	// in. Log requested tags so that they are not dropped silently.
+	if tags, ok := params[cloud.ParameterKeyResourceTags]; ok {
+		klog.Warningf("Resource tags %q of snapshot %q are not attached: backups of Volume Pool volumes do not support resource tags", tags, req.GetName())
+	}
+	return volumePoolSnapshotResponse(backup, volumeID)
+}
+
+// existingVolumePoolSnapshot returns the snapshot for backup, which already
+// exists with the requested name, if it was taken from sourceVolume.
+func existingVolumePoolSnapshot(backup *file.Backup, volumeID, sourceVolume string) (*csi.CreateSnapshotResponse, error) {
+	if !sameVolumePoolResource(backup.SourceVolume, sourceVolume) {
+		return nil, status.Errorf(codes.AlreadyExists, "backup %q already exists with a different source (volume %q, instance %q); requested source volume %q", backup.Backup.Name, backup.SourceVolume, backup.SourceInstance, sourceVolume)
+	}
+	switch backup.Backup.State {
+	case "READY":
+	case "CREATING", "FINALIZING":
+		return nil, status.Errorf(codes.DeadlineExceeded, "backup %q is not ready yet, current state %s", backup.Backup.Name, backup.Backup.State)
+	default:
+		return nil, status.Errorf(codes.Internal, "backup %q is not ready, current state %s", backup.Backup.Name, backup.Backup.State)
+	}
+	return volumePoolSnapshotResponse(backup.Backup, volumeID)
+}
+
+func volumePoolSnapshotResponse(backup *filev1beta1.Backup, volumeID string) (*csi.CreateSnapshotResponse, error) {
+	creationTime, err := util.ParseTimestamp(backup.CreateTime)
+	if err != nil {
+		return nil, err
+	}
+	return &csi.CreateSnapshotResponse{
+		Snapshot: &csi.Snapshot{
+			// SizeBytes is left unset, which means unknown: a volume backup's
+			// capacity_gb does not describe the volume's size.
+			SnapshotId:     backup.Name,
+			SourceVolumeId: volumeID,
+			CreationTime:   creationTime,
+			ReadyToUse:     true,
+		},
+	}, nil
+}
+
+// isVolumePoolVolumeHot reports whether vol is HOT and has a mount point, so
+// that it can be mounted. A volume whose state is unspecified, or from an API
+// version that does not report states, counts as HOT if it has a mount point.
+func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
+	switch vol.State {
+	case "", file.VolumePoolVolumeStateUnspecified, file.VolumePoolVolumeStateHot:
+		return vol.IpAddress != "" && vol.MountName != ""
+	default:
+		return false
+	}
+}
+
+// checkVolumePoolVolumeMountable returns nil if vol can be mounted, and
+// otherwise the error to return for it. The API reports a mount point only for
+// HOT and unspecified-state volumes.
+//
+// A COLD or WARM volume gives FailedPrecondition, because it stays so until it
+// is unfrozen or made HOT. The CO then gets no volume ID that it could delete,
+// so the volume must be unfrozen, made HOT or deleted out of band. That
+// happens if a volume with the requested name was frozen after an earlier
+// attempt created it, or if the API created or restored the volume WARM, which
+// it does when the volume's share denies all clients.
+//
+// A volume that is still being created, or that has no mount point for another
+// reason, gives Aborted, so that the caller retries until it has one. For
+// example, the API reports a volume whose instance is being recovered as
+// unspecified-state, without a mount point.
+func checkVolumePoolVolumeMountable(vol *file.PoolVolume) error {
+	switch {
+	case vol.State == file.VolumePoolVolumeStateCold:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is COLD; unfreeze it first", vol.Name)
+	case vol.State == file.VolumePoolVolumeStateWarm:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is WARM, which cannot be mounted; make it HOT first", vol.Name)
+	case vol.State == file.VolumePoolVolumeStateCreating:
+		return status.Errorf(codes.Aborted, "volume %q is still being created", vol.Name)
+	case !isVolumePoolVolumeHot(vol):
+		return status.Errorf(codes.Aborted, "volume %q has no mount point yet: its state is %q", vol.Name, vol.State)
+	}
+	return nil
+}
+
+// checkVolumePoolVolumeBackupable returns nil if a backup of vol can be
+// requested, and otherwise the error to return for it. The API backs up HOT,
+// WARM and unspecified-state volumes, and refuses the others with
+// FAILED_PRECONDITION, which is passed on. But it answers a COLD volume, which
+// has no share, with a misleading INTERNAL, so a COLD volume gives
+// FailedPrecondition here; and a volume that is still being created may have
+// no share yet either, so it gives Aborted, and the caller retries until the
+// volume is HOT. The mount point doesn't matter for a backup.
+func checkVolumePoolVolumeBackupable(vol *file.PoolVolume) error {
+	switch vol.State {
+	case file.VolumePoolVolumeStateCold:
+		return status.Errorf(codes.FailedPrecondition, "volume %q is COLD; unfreeze it before snapshotting it", vol.Name)
+	case file.VolumePoolVolumeStateCreating:
+		return status.Errorf(codes.Aborted, "volume %q cannot be snapshotted yet: it is still being created", vol.Name)
+	}
+	return nil
+}
+
+// volumePoolError returns err, which a file service call returned, as a gRPC
+// status error with the API's canonical code. See file.VolumePoolStatusError.
+func volumePoolError(err error) error {
+	return file.VolumePoolStatusError(err)
+}
+
+// isVolumePoolNotFound reports whether err, which a file service call
+// returned, means that the resource does not exist: either its code is
+// NotFound, or it is an API error with reason notFound, which the instance code
+// also checks for.
+func isVolumePoolNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	return file.IsNotFoundErr(err) || status.Code(volumePoolError(err)) == codes.NotFound
+}
+
+// isVolumePoolVolumeBusy reports whether err, a gRPC status error from a
+// volume pool call, is the API's FailedPrecondition for a volume that another
+// operation, such as a backup, a restore or a freeze, holds. That clears when
+// the other operation ends, so the CSI answer is Aborted ("operation pending
+// for volume"). The API's answers carry no machine-readable reason, so the
+// message is matched; if its wording changes, the error stays
+// FailedPrecondition.
+func isVolumePoolVolumeBusy(err error) bool {
+	if status.Code(err) != codes.FailedPrecondition {
+		return false
+	}
+	msg := strings.ToLower(status.Convert(err).Message())
+	return strings.Contains(msg, "another operation is in progress") || strings.Contains(msg, "in use by another operation")
+}
+
+// splitVolumePoolName splits a volume pool name,
+// projects/{project}/locations/{location}/volumePools/{pool}, into its project
+// and location.
+func splitVolumePoolName(pool string) (project, location string, err error) {
+	parts := strings.Split(pool, "/")
+	if len(parts) != 6 || parts[0] != "projects" || parts[2] != "locations" || parts[4] != "volumePools" || parts[1] == "" || parts[3] == "" || parts[5] == "" {
+		return "", "", fmt.Errorf("invalid volume pool name %q", pool)
+	}
+	return parts[1], parts[3], nil
+}
+
+// splitVolumePoolVolumeName splits a volume name,
+// projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
+// into the volume pool name and the volume ID.
+func splitVolumePoolVolumeName(name string) (pool, volumeID string, err error) {
+	pool, volumeID, found := strings.Cut(name, "/volumes/")
+	if !found || volumeID == "" || strings.Contains(volumeID, "/") {
+		return "", "", fmt.Errorf("invalid volume name %q", name)
+	}
+	if _, _, err := splitVolumePoolName(pool); err != nil {
+		return "", "", fmt.Errorf("invalid volume name %q", name)
+	}
+	return pool, volumeID, nil
+}
+
+// sameVolumePoolResource reports whether a and b, resource names such as
+// projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
+// name the same resource. The API can report a project number where the
+// driver uses the project ID, and the driver can't tell whether a number and
+// an ID name the same project. So the projects are compared only if both are
+// numbers or both are IDs.
+func sameVolumePoolResource(a, b string) bool {
+	projectA, restA := cutProject(a)
+	projectB, restB := cutProject(b)
+	if restA != restB {
+		return false
+	}
+	if isProjectNumber(projectA) != isProjectNumber(projectB) {
+		return true
+	}
+	return projectA == projectB
+}
+
+// cutProject splits name into its project and the rest of the name after
+// "projects/{project}/". A name that doesn't start with a project has project
+// "".
+func cutProject(name string) (project, rest string) {
+	after, ok := strings.CutPrefix(name, "projects/")
+	if !ok {
+		return "", name
+	}
+	project, rest, ok = strings.Cut(after, "/")
+	if !ok {
+		return "", name
+	}
+	return project, rest
+}
+
+// isProjectNumber reports whether project is a project number rather than a
+// project ID. A project ID starts with a letter.
+func isProjectNumber(project string) bool {
+	if project == "" {
+		return false
+	}
+	for _, r := range project {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
