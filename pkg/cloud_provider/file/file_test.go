@@ -267,6 +267,60 @@ func TestCreateInstance_PerformanceConfig(t *testing.T) {
 	}
 }
 
+func TestDeleteBackupAPIError(t *testing.T) {
+	backupID := "projects/proj/locations/loc/backups/backup-1"
+	tests := []struct {
+		name       string
+		httpStatus int
+		apiStatus  string
+		wantCode   codes.Code
+	}{
+		{
+			name:       "permission denied",
+			httpStatus: http.StatusForbidden,
+			apiStatus:  "PERMISSION_DENIED",
+			wantCode:   codes.PermissionDenied,
+		},
+		{
+			name:       "too many requests",
+			httpStatus: http.StatusTooManyRequests,
+			apiStatus:  "RESOURCE_EXHAUSTED",
+			wantCode:   codes.ResourceExhausted,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			// The API refuses the delete call, so no operation comes back.
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodDelete || r.URL.Path != "/v1beta1/"+backupID {
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.httpStatus)
+				fmt.Fprintf(w, `{"error":{"code":%d,"message":"delete refused","status":%q}}`, tc.httpStatus, tc.apiStatus)
+			}))
+			defer ts.Close()
+
+			ctx := context.Background()
+			svc, err := filev1beta1.NewService(ctx, option.WithEndpoint(ts.URL+"/"), option.WithHTTPClient(ts.Client()))
+			if err != nil {
+				t.Fatalf("failed to create file service: %v", err)
+			}
+			mgr := &gcfsServiceManager{backupService: filev1beta1.NewProjectsLocationsBackupsService(svc)}
+
+			err = mgr.DeleteBackup(ctx, backupID)
+			if err == nil {
+				t.Fatalf("expected an error, got nil")
+			}
+			// DeleteSnapshot passes the error to StatusError, so the API error must stay wrapped.
+			if got := status.Code(StatusError(err)); got != tc.wantCode {
+				t.Errorf("expected code %v, got %v (error: %v)", tc.wantCode, got, err)
+			}
+		})
+	}
+}
+
 func TestCloudInstanceToServiceInstance_PerformanceConfig(t *testing.T) {
 	inst := &filev1beta1.Instance{
 		Name:       fmt.Sprintf("projects/%s/locations/%s/instances/%s", "proj", "loc", "name"),
