@@ -131,6 +131,9 @@ func main() {
 			klog.Fatalf("failed to parse resource tags provided in command line: %v", err)
 		}
 		tagMgr.SetResourceTags(tags)
+		if *featureVolumePools && len(tags) > 0 {
+			klog.Warning("Resource tags from --resource-tags are not attached to Volume Pool volumes or their backups")
+		}
 	} else {
 		if *nodeID == "" {
 			klog.Fatalf("nodeid cannot be empty for node service")
