@@ -692,6 +692,16 @@ func (s CreateProjectMetadata) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// CreateSemanticTagBindingMetadata: Metadata for the
+// `CreateSemanticTagBinding` long-running operation.
+type CreateSemanticTagBindingMetadata struct {
+}
+
+// CreateSemanticTagValueMetadata: Runtime operation information for creating a
+// `SemanticTagValue`.
+type CreateSemanticTagValueMetadata struct {
+}
+
 // CreateTagBindingMetadata: Runtime operation information for creating a
 // TagValue.
 type CreateTagBindingMetadata struct {
@@ -730,6 +740,16 @@ type DeleteOrganizationMetadata struct {
 // DeleteProjectMetadata: A status object which is used as the `metadata` field
 // for the Operation returned by `DeleteProject`.
 type DeleteProjectMetadata struct {
+}
+
+// DeleteSemanticTagBindingMetadata: Metadata for the
+// `DeleteSemanticTagBinding` long-running operation.
+type DeleteSemanticTagBindingMetadata struct {
+}
+
+// DeleteSemanticTagValueMetadata: Runtime operation information for deleting a
+// `SemanticTagValue`.
+type DeleteSemanticTagValueMetadata struct {
 }
 
 // DeleteTagBindingMetadata: Runtime operation information for deleting a
@@ -1726,6 +1746,16 @@ type Project struct {
 	//   "DELETE_IN_PROGRESS" - This lifecycle state is no longer used and not
 	// returned by the API.
 	LifecycleState string `json:"lifecycleState,omitempty"`
+	// ManagementType: Output only. The type of Management Project. This field is
+	// only populated if `is_management_project` is `true`.
+	//
+	// Possible values:
+	//   "MANAGEMENT_TYPE_UNSPECIFIED" - Unspecified type.
+	//   "SELF_MANAGED" - The Management Project is a self-managed project that
+	// constitutes its own boundary.
+	//   "HUB" - The Management Project is a hub project that manages resources
+	// across a boundary.
+	ManagementType string `json:"managementType,omitempty"`
 	// Name: The optional user-assigned display name of the Project. When present
 	// it must be between 4 to 30 characters. Allowed characters are: lowercase and
 	// uppercase letters, numbers, hyphen, single-quote, double-quote, space, and
