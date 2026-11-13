@@ -444,6 +444,7 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 
 	network := defaultNetwork
 	connectMode := directPeering
+	pscEndpointProject := ""
 	kmsKeyName := ""
 
 	storageClass, err := recon.scLister.Get(instanceInfo.Spec.StorageClassName)
@@ -465,6 +466,8 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
 				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q , %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
 			}
+		case ParamPscEndpointProject:
+			pscEndpointProject = v
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		case ParamReservedIPV4CIDR, ParamReservedIPRange:
@@ -474,6 +477,10 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 		default:
 			klog.Errorf("Ignoring invalid parameter %q", k)
 		}
+	}
+
+	if connectMode != privateServiceConnect && pscEndpointProject != "" {
+		return nil, status.Errorf(codes.InvalidArgument, "%s parameter can only be used with PRIVATE_SERVICE_CONNECT", ParamPscEndpointProject)
 	}
 
 	clusterLocation := recon.cloud.Zone
@@ -497,8 +504,9 @@ func (recon *MultishareReconciler) generateNewMultishareInstance(instanceInfo *v
 		Location:      instanceRegion,
 		Tier:          enterpriseTier,
 		Network: file.Network{
-			Name:        network,
-			ConnectMode: connectMode,
+			Name:               network,
+			ConnectMode:        connectMode,
+			PscEndpointProject: pscEndpointProject,
 		},
 		KmsKeyName:  kmsKeyName,
 		Labels:      labels,
