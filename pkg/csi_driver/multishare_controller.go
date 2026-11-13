@@ -572,6 +572,7 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 	tier := enterpriseTier
 	network := defaultNetwork
 	connectMode := directPeering
+	pscEndpointProject := ""
 	reservedIPRange := ""
 	reservedIPV4CIDR := ""
 	kmsKeyName := ""
@@ -587,6 +588,8 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
 				return nil, status.Errorf(codes.InvalidArgument, "connect mode can only be one of %q, %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
 			}
+		case ParamPscEndpointProject:
+			pscEndpointProject = v
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		// Ensure we don't flag the nfsExportOptions param as invalid. Value will be used when creating a new share
@@ -621,6 +624,13 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 			"reserved IP range parameters cannot be used with PRIVATE_SERVICE_CONNECT",
 		)
 	}
+	if connectMode != privateServiceConnect && pscEndpointProject != "" {
+		return nil, status.Errorf(
+			codes.InvalidArgument,
+			"%s parameter can only be used with PRIVATE_SERVICE_CONNECT",
+			ParamPscEndpointProject,
+		)
+	}
 
 	if tier != enterpriseTier {
 		return nil, status.Errorf(codes.InvalidArgument, "tier %q not supported for multishare volumes", tier)
@@ -649,8 +659,9 @@ func (m *MultishareController) generateNewMultishareInstance(instanceName string
 		Location:      region,
 		Tier:          tier,
 		Network: file.Network{
-			Name:        network,
-			ConnectMode: connectMode,
+			Name:               network,
+			ConnectMode:        connectMode,
+			PscEndpointProject: pscEndpointProject,
 		},
 		KmsKeyName:  kmsKeyName,
 		Labels:      labels,
