@@ -144,10 +144,11 @@ type Volume struct {
 }
 
 type Network struct {
-	Name            string
-	ConnectMode     string
-	ReservedIpRange string
-	Ip              string
+	Name               string
+	ConnectMode        string
+	ReservedIpRange    string
+	Ip                 string
+	PscEndpointProject string
 }
 
 type Backup struct {
@@ -320,6 +321,7 @@ func (manager *gcfsServiceManager) CreateInstance(ctx context.Context, obj *Serv
 				Modes:           []string{"MODE_IPV4"},
 				ReservedIpRange: obj.Network.ReservedIpRange,
 				ConnectMode:     obj.Network.ConnectMode,
+				PscConfig:       buildPscConfig(obj.Network.PscEndpointProject),
 			},
 		},
 		KmsKeyName: obj.KmsKeyName,
@@ -430,10 +432,11 @@ func cloudInstanceToServiceInstance(instance *filev1beta1.Instance) (*ServiceIns
 			SizeBytes: util.GbToBytes(instance.FileShares[0].CapacityGb),
 		},
 		Network: Network{
-			Name:            instance.Networks[0].Network,
-			Ip:              ip,
-			ReservedIpRange: instance.Networks[0].ReservedIpRange,
-			ConnectMode:     instance.Networks[0].ConnectMode,
+			Name:               instance.Networks[0].Network,
+			Ip:                 ip,
+			ReservedIpRange:    instance.Networks[0].ReservedIpRange,
+			ConnectMode:        instance.Networks[0].ConnectMode,
+			PscEndpointProject: extractPscEndpointProject(instance.Networks[0]),
 		},
 		KmsKeyName:        instance.KmsKeyName,
 		Labels:            instance.Labels,
@@ -1105,6 +1108,7 @@ func (manager *gcfsServiceManager) StartCreateMultishareInstanceOp(ctx context.C
 				Modes:           []string{"MODE_IPV4"},
 				ReservedIpRange: instance.Network.ReservedIpRange,
 				ConnectMode:     instance.Network.ConnectMode,
+				PscConfig:       buildPscConfig(instance.Network.PscEndpointProject),
 			},
 		},
 		CapacityGb:    util.BytesToGb(instance.CapacityBytes),
@@ -1378,10 +1382,11 @@ func cloudInstanceToMultishareInstance(instance *filev1beta1multishare.Instance)
 		Name:     name,
 		Tier:     instance.Tier,
 		Network: Network{
-			Name:            instance.Networks[0].Network,
-			Ip:              ip,
-			ReservedIpRange: instance.Networks[0].ReservedIpRange,
-			ConnectMode:     instance.Networks[0].ConnectMode,
+			Name:               instance.Networks[0].Network,
+			Ip:                 ip,
+			ReservedIpRange:    instance.Networks[0].ReservedIpRange,
+			ConnectMode:        instance.Networks[0].ConnectMode,
+			PscEndpointProject: extractPscEndpointProject(instance.Networks[0]),
 		},
 		KmsKeyName:         instance.KmsKeyName,
 		Labels:             instance.Labels,
@@ -1492,6 +1497,22 @@ func extractNfsShareExportOptions(options []*NfsExportOptions, network string) [
 			})
 	}
 	return filerOpts
+}
+
+func buildPscConfig(endpointProject string) *filev1beta1.PscConfig {
+	if endpointProject == "" {
+		return nil
+	}
+	return &filev1beta1.PscConfig{
+		EndpointProject: endpointProject,
+	}
+}
+
+func extractPscEndpointProject(networkConfig *filev1beta1.NetworkConfig) string {
+	if networkConfig == nil || networkConfig.PscConfig == nil {
+		return ""
+	}
+	return networkConfig.PscConfig.EndpointProject
 }
 
 const (

@@ -917,6 +917,25 @@ func TestListMatchedInstances(t *testing.T) {
 					Tier:       enterpriseTier,
 					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
 				},
+				{
+					Name:     "test-instance-6",
+					Project:  testProject,
+					Location: testRegion,
+					Labels: map[string]string{
+						util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+						TagKeyClusterLocation:                  testLocation,
+						TagKeyClusterName:                      testClusterName,
+					},
+					Network: file.Network{
+						ReservedIpRange:    "10.0.0.0/21",
+						ConnectMode:        directPeering,
+						Name:               testVPCNetwork,
+						Ip:                 "10.0.0.2",
+						PscEndpointProject: "other-project",
+					},
+					Tier:       enterpriseTier,
+					KmsKeyName: "projects/test-project/locations/us-central1/keyRings/test-cmek-key-ring/cryptoKeys/test-cmek-key",
+				},
 			},
 			expectedList: []*file.MultishareInstance{
 				{
