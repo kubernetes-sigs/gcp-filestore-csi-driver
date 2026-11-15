@@ -92,6 +92,7 @@ const (
 	ParamReservedIPV4CIDR          = "reserved-ipv4-cidr"
 	ParamReservedIPRange           = "reserved-ip-range"
 	ParamConnectMode               = "connect-mode"
+	ParamPscEndpointProject        = "psc-endpoint-project"
 	paramMultishare                = "multishare"
 	ParamInstanceEncryptionKmsKey  = "instance-encryption-kms-key"
 	ParamMultishareInstanceScLabel = "instance-storageclass-label"
@@ -750,6 +751,7 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 	var nfsExportOptions []*file.NfsExportOptions
 	network := defaultNetwork
 	connectMode := directPeering
+	pscEndpointProject := ""
 	reservedIPRange := ""
 	reservedIPV4CIDR := ""
 	kmsKeyName := ""
@@ -783,6 +785,8 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 			if connectMode != directPeering && connectMode != privateServiceAccess && connectMode != privateServiceConnect {
 				return nil, fmt.Errorf("connect mode can only be one of %q, %q or %q", directPeering, privateServiceAccess, privateServiceConnect)
 			}
+		case ParamPscEndpointProject:
+			pscEndpointProject = v
 		case ParamInstanceEncryptionKmsKey:
 			kmsKeyName = v
 		case ParamReservedIPV4CIDR:
@@ -806,6 +810,12 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		(reservedIPRange != "" || reservedIPV4CIDR != "") {
 		return nil, fmt.Errorf(
 			"reserved IP range parameters cannot be used with PRIVATE_SERVICE_CONNECT",
+		)
+	}
+	if connectMode != privateServiceConnect && pscEndpointProject != "" {
+		return nil, fmt.Errorf(
+			"%s parameter can only be used with PRIVATE_SERVICE_CONNECT",
+			ParamPscEndpointProject,
 		)
 	}
 
@@ -835,8 +845,9 @@ func (s *controllerServer) generateNewFileInstance(name string, capBytes int64, 
 		Location: location,
 		Tier:     tier,
 		Network: file.Network{
-			Name:        network,
-			ConnectMode: connectMode,
+			Name:               network,
+			ConnectMode:        connectMode,
+			PscEndpointProject: pscEndpointProject,
 		},
 		Volume: file.Volume{
 			Name:      newInstanceVolume,

@@ -1061,3 +1061,175 @@ func TestExtractNfsShareExportOptionsSetsSourceNetwork(t *testing.T) {
 		t.Errorf("got network %q, want %q", got[0].Network, network)
 	}
 }
+
+func TestBuildPscConfig(t *testing.T) {
+	cases := []struct {
+		name            string
+		endpointProject string
+		want            *filev1beta1.PscConfig
+	}{
+		{
+			name:            "empty endpoint project",
+			endpointProject: "",
+			want:            nil,
+		},
+		{
+			name:            "with endpoint project",
+			endpointProject: "service-proj",
+			want: &filev1beta1.PscConfig{
+				EndpointProject: "service-proj",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildPscConfig(tc.endpointProject)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("buildPscConfig(%q) returned unexpected diff (-want +got):\n%s", tc.endpointProject, diff)
+			}
+		})
+	}
+}
+
+func TestExtractPscEndpointProject(t *testing.T) {
+	cases := []struct {
+		name          string
+		networkConfig *filev1beta1.NetworkConfig
+		want          string
+	}{
+		{
+			name:          "nil NetworkConfig",
+			networkConfig: nil,
+			want:          "",
+		},
+		{
+			name: "nil PscConfig",
+			networkConfig: &filev1beta1.NetworkConfig{
+				Network:     "net",
+				ConnectMode: "DIRECT_PEERING",
+			},
+			want: "",
+		},
+		{
+			name: "empty EndpointProject",
+			networkConfig: &filev1beta1.NetworkConfig{
+				Network:     "net",
+				ConnectMode: "PRIVATE_SERVICE_CONNECT",
+				PscConfig:   &filev1beta1.PscConfig{},
+			},
+			want: "",
+		},
+		{
+			name: "with EndpointProject",
+			networkConfig: &filev1beta1.NetworkConfig{
+				Network:     "net",
+				ConnectMode: "PRIVATE_SERVICE_CONNECT",
+				PscConfig: &filev1beta1.PscConfig{
+					EndpointProject: "service-proj",
+				},
+			},
+			want: "service-proj",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := extractPscEndpointProject(tc.networkConfig); got != tc.want {
+				t.Errorf("extractPscEndpointProject() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestCloudInstanceToServiceInstance_PscEndpointProject(t *testing.T) {
+	cases := []struct {
+		name      string
+		pscConfig *filev1beta1.PscConfig
+		want      string
+	}{
+		{
+			name:      "nil PscConfig",
+			pscConfig: nil,
+			want:      "",
+		},
+		{
+			name: "with EndpointProject",
+			pscConfig: &filev1beta1.PscConfig{
+				EndpointProject: "service-proj",
+			},
+			want: "service-proj",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			inst := &filev1beta1.Instance{
+				Name:       "projects/proj/locations/loc/instances/name",
+				Tier:       "tier",
+				FileShares: []*filev1beta1.FileShareConfig{{Name: "vol", CapacityGb: 10}},
+				Networks: []*filev1beta1.NetworkConfig{
+					{
+						Network:     "net",
+						ConnectMode: "PRIVATE_SERVICE_CONNECT",
+						PscConfig:   tc.pscConfig,
+					},
+				},
+			}
+
+			si, err := cloudInstanceToServiceInstance(inst)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if si.Network.PscEndpointProject != tc.want {
+				t.Errorf("got PscEndpointProject %q, want %q", si.Network.PscEndpointProject, tc.want)
+			}
+		})
+	}
+}
+
+func TestCloudInstanceToMultishareInstance_PscEndpointProject(t *testing.T) {
+	cases := []struct {
+		name      string
+		pscConfig *filev1beta1.PscConfig
+		want      string
+	}{
+		{
+			name:      "nil PscConfig",
+			pscConfig: nil,
+			want:      "",
+		},
+		{
+			name: "with EndpointProject",
+			pscConfig: &filev1beta1.PscConfig{
+				EndpointProject: "service-proj",
+			},
+			want: "service-proj",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			inst := &filev1beta1.Instance{
+				Name: "projects/proj/locations/loc/instances/name",
+				Tier: "ENTERPRISE",
+				Networks: []*filev1beta1.NetworkConfig{
+					{
+						Network:     "net",
+						ConnectMode: "PRIVATE_SERVICE_CONNECT",
+						IpAddresses: []string{"1.2.3.4"},
+						PscConfig:   tc.pscConfig,
+					},
+				},
+			}
+
+			mi, err := cloudInstanceToMultishareInstance(inst)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if mi.Network.PscEndpointProject != tc.want {
+				t.Errorf("got PscEndpointProject %q, want %q", mi.Network.PscEndpointProject, tc.want)
+			}
+		})
+	}
+}

@@ -740,6 +740,52 @@ func TestGenerateNewMultishareInstance(t *testing.T) {
 			expectErr: true,
 		},
 		{
+			name:         "valid private service connect params with psc-endpoint-project",
+			instanceName: testInstanceName,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					ParamConnectMode:               privateServiceConnect,
+					ParamPscEndpointProject:        "service-project",
+					ParameterKeyLabels:             "a=b,c=d",
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+			},
+			expectedInstance: &file.MultishareInstance{
+				Project:       "test-project",
+				Location:      "us-central1",
+				Name:          testInstanceName,
+				CapacityBytes: util.MinMultishareInstanceSizeBytes,
+				Network: file.Network{
+					Name:               "default",
+					ConnectMode:        privateServiceConnect,
+					PscEndpointProject: "service-project",
+				},
+				Tier:       enterpriseTier,
+				KmsKeyName: "",
+				Labels: map[string]string{
+					"a":                                    "b",
+					"c":                                    "d",
+					tagKeyCreatedBy:                        "test-driver",
+					TagKeyClusterLocation:                  testRegion,
+					TagKeyClusterName:                      testClusterName,
+					util.ParamMultishareInstanceScLabelKey: testInstanceScPrefix,
+				},
+				Protocol: v3FileProtocol,
+			},
+		},
+		{
+			name:         "psc-endpoint-project without private service connect",
+			instanceName: testInstanceName,
+			req: &csi.CreateVolumeRequest{
+				Parameters: map[string]string{
+					ParamConnectMode:               privateServiceAccess,
+					ParamPscEndpointProject:        "service-project",
+					ParamMultishareInstanceScLabel: testInstanceScPrefix,
+				},
+			},
+			expectErr: true,
+		},
+		{
 			name:         "private service connect with reserved IPv4 CIDR",
 			instanceName: testInstanceName,
 			req: &csi.CreateVolumeRequest{
