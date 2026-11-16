@@ -742,6 +742,11 @@ func TestCodeForError(t *testing.T) {
 			expectedErrCode: util.ErrCodePtr(codes.ResourceExhausted),
 		},
 		{
+			name:            "apierror.APIError  wrapped 409 http error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusConflict}),
+			expectedErrCode: util.ErrCodePtr(codes.AlreadyExists),
+		},
+		{
 			name:            "apierror.APIError  wrapped 400 http error",
 			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusBadRequest}),
 			expectedErrCode: util.ErrCodePtr(codes.InvalidArgument),
@@ -790,6 +795,16 @@ func TestCodeForError(t *testing.T) {
 			name:            "wrapped 404 googleapi error",
 			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusNotFound}),
 			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "409 googleapi error",
+			err:             &googleapi.Error{Code: http.StatusConflict},
+			expectedErrCode: util.ErrCodePtr(codes.AlreadyExists),
+		},
+		{
+			name:            "wrapped 409 googleapi error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusConflict}),
+			expectedErrCode: util.ErrCodePtr(codes.AlreadyExists),
 		},
 		{
 			name:            "status error with Aborted error code",
@@ -877,6 +892,11 @@ func TestIsUserError(t *testing.T) {
 			name:            "NOT_FOUND error",
 			err:             fmt.Errorf("got error: NOT_FOUND"),
 			expectedErrCode: util.ErrCodePtr(codes.NotFound),
+		},
+		{
+			name:            "ALREADY_EXISTS error",
+			err:             fmt.Errorf("got error: ALREADY_EXISTS"),
+			expectedErrCode: util.ErrCodePtr(codes.AlreadyExists),
 		},
 	}
 
