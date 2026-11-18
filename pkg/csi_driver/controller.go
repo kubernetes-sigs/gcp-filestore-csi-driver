@@ -252,7 +252,7 @@ func (s *controllerServer) CreateVolume(ctx context.Context, req *csi.CreateVolu
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	klog.V(5).Infof("Using capacity bytes %q for volume %q", capBytes, name)
+	klog.V(5).Infof("Using capacity bytes %d for volume %q", capBytes, name)
 
 	mutableParams := req.GetMutableParameters()
 	newFiler, err := s.generateNewFileInstance(name, capBytes, req.GetParameters(), mutableParams, req.GetAccessibilityRequirements())
