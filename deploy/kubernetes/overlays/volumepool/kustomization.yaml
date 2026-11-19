@@ -10,4 +10,4 @@ namespace: gcp-filestore-csi-driver
 images:
 - name: registry.k8s.io/cloud-provider-gcp/gcp-filestore-csi-driver
   newName: gcr.io/gke-release/gcp-filestore-csi-driver
-  digest: sha256:a85eae676f5e6a82a3606762cc5e3adcf3f3c99c31f399c2dbde47abcd4ef39b
+  digest: sha256:a85eae676f5e6a82a3606762cc5e3adcf3f3c99c31f399c2dbde47abcd4ef39b # v1.14.3-gke.3
