@@ -25,7 +25,7 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
        --location=<CLUSTER_LOCATION> \
        --update-addons=GcpFilestoreCsiDriver=DISABLED
    ```
-3. **VolumePool Setup**: Ensure your GCP Project is allowlisted for Filestore VolumePools and that you have precreated a VolumePool instance in your target location before continuing. On the backend, a reconciler provisions pre-warmed shares on this VolumePool which are then instantly claimed by the GCP Filestore CSI driver for your Substrate workloads. You can reach out to the Filestore Control Plane team for allowlisting and creation.
+3. **VolumePool Setup**: Ensure your GCP Project is allowlisted for Filestore VolumePools and that you have precreated a VolumePool instance in your target location before continuing. On the backend, a reconciler provisions pre-warmed shares on this VolumePool which are then instantly claimed by the GCP Filestore CSI driver for your Substrate workloads (for volumes of the VolumePool's default volume quota; see [Volume Size](#-volume-size)). You can reach out to the Filestore Control Plane team for allowlisting and creation.
 
 4. **IAM Permissions Requirement**: The user or automation executing the deployment script *must* have the permissions to create Service Accounts and assign IAM bindings in the target GCP Project (e.g. `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`, or broadly `roles/owner`).
 
@@ -83,3 +83,14 @@ The included `deploy.sh` script completely automates the installation, validates
    ```
 
 *(Note: If you skip `deploy.sh`, you will need to manually render and apply `examples/kubernetes/substrate/storageclass.yaml.tmpl` to provision micro-volumes from a VolumePool).*
+
+---
+
+## 📏 Volume Size
+
+The driver creates each volume with the capacity that it is asked for, a PVC's storage request or the capacity in an actor's external volume template, rounded up to a whole MiB. Substrate and Kubernetes always ask for a capacity.
+
+- A volume can be from 100 MiB to 100 GiB. The driver refuses, with `OutOfRange`, requests of 99 MiB or less (anything larger is rounded up to at least 100 MiB) and of more than 100 GiB.
+- Use binary units, such as `1Gi` or `500Mi`. Decimal units are rounded up to a whole MiB: `1G` gets a volume of 954 MiB, and `100M` (95.4 MiB) is refused.
+- A volume whose capacity differs from the VolumePool's default volume quota (1024 MiB unless the VolumePool sets another) takes longer to create, because the pre-warmed share that it claims is resized. It also needs your GCP Project to be allowlisted for volume quota updates: without it, creating the volume fails with the message `Volume Quota Update API is not enabled`. If the share can't grow to the requested capacity, creating the volume fails with `ResourceExhausted`.
+- To keep volume creation fast, ask the Filestore Control Plane team to create the VolumePool with a default volume quota that matches the capacity that your volumes ask for.

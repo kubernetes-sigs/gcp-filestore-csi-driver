@@ -8,4 +8,8 @@ spec:
   storageClassName: volume-pool-sc
   resources:
     requests:
-      storage: 10Gi
+      # Capacities other than the VolumePool's default volume quota (1024 MiB
+      # unless the VolumePool sets another) take longer to create, and need the
+      # project to be allowlisted for volume quota updates. See "Volume Size" in
+      # deploy/kubernetes/overlays/substrate/README.md.
+      storage: 1Gi
