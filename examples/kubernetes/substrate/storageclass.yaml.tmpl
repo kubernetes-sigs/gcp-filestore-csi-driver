@@ -1,7 +1,9 @@
 # Sample StorageClass for GKE Substrate integration with GCP Filestore VolumePools.
 #
 # VolumePools (FiFA Fast Availability) provide sub-second dynamic volume claims from
-# pre-warmed Filestore multi-share instances.
+# pre-warmed Filestore multi-share instances, for volumes of the VolumePool's
+# default volume quota. Volumes of other capacities take longer to create; see
+# "Volume Size" in deploy/kubernetes/overlays/substrate/README.md.
 #
 # Usage (Automated):
 #   Use the deployment script to dynamically render and apply this template:

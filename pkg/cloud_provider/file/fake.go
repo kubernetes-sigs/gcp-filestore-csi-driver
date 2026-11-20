@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -37,6 +38,9 @@ const (
 	defaultTier       = "BASIC_HDD"
 	defaultCapacityGb = 1024
 	defaultNetwork    = "default"
+	// defaultVolumePoolQuotaMib is the quota that the fake gives a volume pool
+	// volume created without a quota, like the API's default volume quota.
+	defaultVolumePoolQuotaMib = 1024
 )
 
 type fakeServiceManager struct {
@@ -538,7 +542,17 @@ func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Opera
 	return !val.ReportRunning, nil
 }
 
-func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+// CreateVolumePoolVolume creates a volume with a quota of quotaMib MiB, or of
+// defaultVolumePoolQuotaMib if quotaMib is 0, and refuses the quotas that the
+// API refuses. Unlike the API, which returns ALREADY_EXISTS, it returns a
+// volume that already exists as it is.
+func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, quotaMib int64) (*PoolVolume, error) {
+	if quotaMib != 0 && (quotaMib < MinVolumePoolVolumeQuotaMib || quotaMib > MaxVolumePoolVolumeQuotaMib) {
+		return nil, &googleapi.Error{
+			Code:    http.StatusBadRequest,
+			Message: fmt.Sprintf("quota_mib must be between %d and %d", MinVolumePoolVolumeQuotaMib, MaxVolumePoolVolumeQuotaMib),
+		}
+	}
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
@@ -555,10 +569,14 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 		}
 	}
 
+	if quotaMib == 0 {
+		quotaMib = defaultVolumePoolQuotaMib
+	}
 	vol := &PoolVolume{
 		Name:      volumeURI,
 		IpAddress: "10.1.1.1",
 		MountName: fmt.Sprintf("vol_%s", volumeID),
+		QuotaMib:  quotaMib,
 	}
 	manager.allocatedVolumes[volumeURI] = vol
 	return vol, nil

@@ -82,6 +82,9 @@ type PoolVolume struct {
 	Name      string
 	IpAddress string
 	MountName string
+	// QuotaMib is the volume's quota: the most data, in MiB, that can be
+	// written to it. It is 0 if the API did not report a quota.
+	QuotaMib int64
 }
 
 type VolumePoolMountPoint struct {
@@ -93,7 +96,18 @@ type VolumePoolVolume struct {
 	Name        string                `json:"name,omitempty"`
 	Description string                `json:"description,omitempty"`
 	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
+	// QuotaMib is the volume's quota in MiB. Like every protobuf int64 field,
+	// the API encodes it as a JSON string.
+	QuotaMib int64 `json:"quotaMib,omitempty,string"`
 }
+
+// MinVolumePoolVolumeQuotaMib and MaxVolumePoolVolumeQuotaMib are the smallest
+// and largest quotas, in MiB, that the API accepts for a volume pool volume:
+// 100 MiB and 100 GiB. They mirror the API's checks, and must change with them.
+const (
+	MinVolumePoolVolumeQuotaMib = 100
+	MaxVolumePoolVolumeQuotaMib = 100 * 1024
+)
 
 type MultishareInstance struct {
 	Project            string
@@ -213,7 +227,7 @@ type Service interface {
 	IsOpDone(op *filev1beta1multishare.Operation) (bool, error)
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	// Volume pool ops
-	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
+	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, quotaMib int64) (*PoolVolume, error)
 	DeleteVolumePoolVolume(ctx context.Context, name string) error
 }
 
@@ -1546,7 +1560,10 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
-func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+// CreateVolumePoolVolume creates the volume volumeID in the volume pool
+// parentPool, with a quota of quotaMib MiB. If quotaMib is 0, no quota is sent,
+// and the volume gets the volume pool's default volume quota.
+func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string, quotaMib int64) (*PoolVolume, error) {
 	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
 
 	// We purposefully populate the Description field to bypass a Google API Gateway
@@ -1555,9 +1572,11 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	// the JSON marshaler emits `{}`. The GCP API Gateway drops empty JSON brackets
 	// entirely, leading to a gRPC `nil` pointer for the Volume, which triggers:
 	// "INVALID_ARGUMENT: missing volume specification".
-	// Providing this description guarantees the gRPC `Volume` object is instantiated.
+	// Providing this description guarantees the gRPC `Volume` object is instantiated,
+	// also when no quota is sent.
 	reqBody := &VolumePoolVolume{
 		Description: "Provisioned by GCP Filestore CSI driver",
+		QuotaMib:    quotaMib,
 	}
 
 	resp, err := manager.executeRESTRequest(ctx, http.MethodPost, endpointURI, reqBody)
@@ -1583,6 +1602,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 		Name:      vol.Name,
 		IpAddress: vol.MountPoint.IpAddress,
 		MountName: vol.MountPoint.MountName,
+		QuotaMib:  vol.QuotaMib,
 	}, nil
 }
 
