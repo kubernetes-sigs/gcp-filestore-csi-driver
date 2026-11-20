@@ -33,3 +33,4 @@ spec:
         - "--nodeid=$(KUBE_NODE_NAME)"
         - "--controller=true"
         - "--feature-volume-pools=true"
+        - "--feature-volume-pool-quota=true"

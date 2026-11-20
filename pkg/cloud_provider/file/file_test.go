@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	filev1beta1 "google.golang.org/api/file/v1beta1"
 	"google.golang.org/api/option"
@@ -846,6 +850,24 @@ func TestCodeForError(t *testing.T) {
 			expectedErrCode: util.ErrCodePtr(codes.NotFound),
 		},
 		{
+			name:            "504 googleapi error",
+			err:             &googleapi.Error{Code: http.StatusGatewayTimeout, Message: "Deadline exceeded."},
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name:            "wrapped 504 googleapi error",
+			err:             fmt.Errorf("got error: %w", &googleapi.Error{Code: http.StatusGatewayTimeout, Message: "Deadline exceeded."}),
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
+			name: "googleapi.Error that wraps apierror.APIError of 504 http kind",
+			err: getGoogleAPIWrappedError(&googleapi.Error{
+				Code:    http.StatusGatewayTimeout,
+				Message: "Deadline exceeded.",
+			}),
+			expectedErrCode: util.ErrCodePtr(codes.DeadlineExceeded),
+		},
+		{
 			name:            "status error with Aborted error code",
 			err:             status.Error(codes.Aborted, "aborted error"),
 			expectedErrCode: util.ErrCodePtr(codes.Aborted),
@@ -951,33 +973,104 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
 	volID := "vol-123"
 
+	volName := fmt.Sprintf("%s/volumes/%s", parentPool, volID)
+
 	tests := []struct {
 		name         string
+		quotaMib     int64
 		responseCode int
-		responseBody *VolumePoolVolume
-		expectErr    bool
-		expected     *PoolVolume
+		responseBody string
+		// expectedRequestQuota is the quotaMib that the request must carry,
+		// or "" for none. Like every protobuf int64 field, it is a JSON
+		// string.
+		expectedRequestQuota string
+		// If noResponse is set, the API doesn't respond until the call gives
+		// up, which it does after a short deadline.
+		noResponse bool
+		// wantCode is the code that StatusError gives the error that
+		// CreateVolumePoolVolume must return, and wantErrMessage a part of
+		// the error's message, such as the API's error message, that it must
+		// keep.
+		wantCode       codes.Code
+		wantErrMessage string
+		expected       *PoolVolume
 	}{
 		{
-			name:         "successful create VolumePool volume",
+			name:         "volume pool's default quota",
 			responseCode: http.StatusOK,
-			responseBody: &VolumePoolVolume{
-				Name: fmt.Sprintf("%s/volumes/%s", parentPool, volID),
-				MountPoint: &VolumePoolMountPoint{
-					IpAddress: "10.0.0.1",
-					MountName: "vol_123",
-				},
-			},
-			expected: &PoolVolume{
-				Name:      fmt.Sprintf("%s/volumes/%s", parentPool, volID),
-				IpAddress: "10.0.0.1",
-				MountName: "vol_123",
-			},
+			responseBody: fmt.Sprintf(`{"name": %q, "mountPoint": {"ipAddress": "10.0.0.1", "mountName": "vol_123"}, "quotaMib": "1024"}`, volName),
+			expected:     &PoolVolume{Name: volName, IpAddress: "10.0.0.1", MountName: "vol_123", QuotaMib: 1024},
 		},
 		{
-			name:         "api error response",
-			responseCode: http.StatusBadRequest,
-			expectErr:    true,
+			name:                 "requested quota",
+			quotaMib:             5120,
+			responseCode:         http.StatusOK,
+			responseBody:         fmt.Sprintf(`{"name": %q, "mountPoint": {"ipAddress": "10.0.0.1", "mountName": "vol_123"}, "quotaMib": "5120"}`, volName),
+			expectedRequestQuota: `"5120"`,
+			expected:             &PoolVolume{Name: volName, IpAddress: "10.0.0.1", MountName: "vol_123", QuotaMib: 5120},
+		},
+		{
+			name:                 "response without a quota",
+			quotaMib:             5120,
+			responseCode:         http.StatusOK,
+			responseBody:         fmt.Sprintf(`{"name": %q, "mountPoint": {"ipAddress": "10.0.0.1", "mountName": "vol_123"}}`, volName),
+			expectedRequestQuota: `"5120"`,
+			expected:             &PoolVolume{Name: volName, IpAddress: "10.0.0.1", MountName: "vol_123"},
+		},
+		{
+			name:                 "api error response",
+			quotaMib:             5120,
+			responseCode:         http.StatusBadRequest,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.InvalidArgument,
+		},
+		// Error responses in the API's format, and the codes that the CO gets
+		// for them.
+		{
+			name:                 "volume quota updates not enabled",
+			quotaMib:             5120,
+			responseCode:         http.StatusBadRequest,
+			responseBody:         `{"error": {"code": 400, "message": "Volume Quota Update API is not enabled", "status": "FAILED_PRECONDITION"}}`,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.InvalidArgument,
+			wantErrMessage:       "Volume Quota Update API is not enabled",
+		},
+		{
+			name:                 "resource exhausted",
+			quotaMib:             5120,
+			responseCode:         http.StatusTooManyRequests,
+			responseBody:         `{"error": {"code": 429, "message": "Resource has been exhausted (e.g. check quota).", "status": "RESOURCE_EXHAUSTED"}}`,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.ResourceExhausted,
+			wantErrMessage:       "Resource has been exhausted (e.g. check quota).",
+		},
+		{
+			name:                 "volume already exists",
+			quotaMib:             5120,
+			responseCode:         http.StatusConflict,
+			responseBody:         `{"error": {"code": 409, "message": "Requested entity already exists", "status": "ALREADY_EXISTS"}}`,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.Internal,
+			wantErrMessage:       "Requested entity already exists",
+		},
+		// A resize makes the API slower to respond. Both a server-side 504
+		// timeout and a client-side deadline map to DeadlineExceeded.
+		{
+			name:                 "server deadline exceeded",
+			quotaMib:             5120,
+			responseCode:         http.StatusGatewayTimeout,
+			responseBody:         `{"error": {"code": 504, "message": "Deadline exceeded.", "status": "DEADLINE_EXCEEDED"}}`,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.DeadlineExceeded,
+			wantErrMessage:       "Deadline exceeded.",
+		},
+		{
+			name:                 "no response before the deadline",
+			quotaMib:             5120,
+			noResponse:           true,
+			expectedRequestQuota: `"5120"`,
+			wantCode:             codes.DeadlineExceeded,
+			wantErrMessage:       "context deadline exceeded",
 		},
 	}
 
@@ -995,15 +1088,38 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 					t.Errorf("expected volumeId %q, got %q", volID, r.URL.Query().Get("volumeId"))
 				}
 
-				if tc.responseBody != nil {
-					var reqBody VolumePoolVolume
-					if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-						t.Errorf("failed to decode request body: %v", err)
+				raw, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("failed to read request body: %v", err)
+				}
+				var body map[string]json.RawMessage
+				if err := json.Unmarshal(raw, &body); err != nil {
+					t.Errorf("failed to decode request body %s: %v", raw, err)
+				}
+				// The description keeps the request body from being empty
+				// when no quota is sent, so the body is the same as before
+				// quotas were sent.
+				if tc.quotaMib == 0 {
+					if want := `{"description":"Provisioned by GCP Filestore CSI driver"}`; string(raw) != want {
+						t.Errorf("request body = %s, want %s", raw, want)
 					}
+				} else if keys := slices.Sorted(maps.Keys(body)); !slices.Equal(keys, []string{"description", "quotaMib"}) {
+					t.Errorf("request body = %s, want only a description and quotaMib", raw)
+				}
+				if got, want := string(body["description"]), `"Provisioned by GCP Filestore CSI driver"`; got != want {
+					t.Errorf("request body = %s, want description = %s", raw, want)
+				}
+				if got := string(body["quotaMib"]); got != tc.expectedRequestQuota {
+					t.Errorf("request body = %s, want quotaMib = %s", raw, tc.expectedRequestQuota)
 				}
 
+				if tc.noResponse {
+					// Hold the request until the caller gives up.
+					<-r.Context().Done()
+					return
+				}
 				w.WriteHeader(tc.responseCode)
-				json.NewEncoder(w).Encode(tc.responseBody)
+				fmt.Fprint(w, tc.responseBody)
 			}))
 			defer server.Close()
 
@@ -1019,10 +1135,16 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 				httpClient:  server.Client(),
 			}
 
-			resp, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID)
-			if tc.expectErr {
-				if err == nil {
-					t.Errorf("expected error, got nil")
+			callCtx := ctx
+			if tc.noResponse {
+				var cancel context.CancelFunc
+				callCtx, cancel = context.WithTimeout(ctx, 100*time.Millisecond)
+				defer cancel()
+			}
+			resp, err := manager.CreateVolumePoolVolume(callCtx, parentPool, volID, tc.quotaMib)
+			if tc.wantCode != codes.OK {
+				if st := status.Convert(StatusError(err)); st.Code() != tc.wantCode || !strings.Contains(st.Message(), tc.wantErrMessage) {
+					t.Errorf("CreateVolumePoolVolume() error = %v (code %v), want code %v and a message containing %q", err, st.Code(), tc.wantCode, tc.wantErrMessage)
 				}
 				return
 			}
@@ -1031,6 +1153,47 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 			}
 			if diff := cmp.Diff(resp, tc.expected); diff != "" {
 				t.Errorf("unexpected volume pool: %s", diff)
+			}
+		})
+	}
+}
+
+// TestFakeCreateVolumePoolVolume_Quota checks that the fake creates volume pool
+// volumes with the requested quota, or with the API's default volume quota, and
+// refuses the quotas that the API refuses.
+func TestFakeCreateVolumePoolVolume_Quota(t *testing.T) {
+	const pool = "projects/test-project/locations/us-central1/volumePools/test-pool"
+	for _, tc := range []struct {
+		name         string
+		quotaMib     int64
+		wantQuotaMib int64
+		wantErr      bool
+	}{
+		{name: "no quota", quotaMib: 0, wantQuotaMib: 1024},
+		{name: "minimum quota", quotaMib: MinVolumePoolVolumeQuotaMib, wantQuotaMib: 100},
+		{name: "maximum quota", quotaMib: MaxVolumePoolVolumeQuotaMib, wantQuotaMib: 102400},
+		{name: "below the minimum quota", quotaMib: MinVolumePoolVolumeQuotaMib - 1, wantErr: true},
+		{name: "above the maximum quota", quotaMib: MaxVolumePoolVolumeQuotaMib + 1, wantErr: true},
+		{name: "negative quota", quotaMib: -1, wantErr: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := NewFakeService()
+			if err != nil {
+				t.Fatalf("NewFakeService() error = %v", err)
+			}
+			vol, err := s.CreateVolumePoolVolume(context.Background(), pool, "vol-1", tc.quotaMib)
+			if tc.wantErr {
+				const wantMessage = "quota_mib must be between 100 and 102400"
+				if code := status.Code(StatusError(err)); code != codes.InvalidArgument || !strings.Contains(err.Error(), wantMessage) {
+					t.Errorf("CreateVolumePoolVolume(quota %d) error = %v (code %v), want code %v and a message containing %q", tc.quotaMib, err, code, codes.InvalidArgument, wantMessage)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreateVolumePoolVolume(quota %d) error = %v", tc.quotaMib, err)
+			}
+			if vol.QuotaMib != tc.wantQuotaMib {
+				t.Errorf("CreateVolumePoolVolume(quota %d) QuotaMib = %d, want %d", tc.quotaMib, vol.QuotaMib, tc.wantQuotaMib)
 			}
 		})
 	}
