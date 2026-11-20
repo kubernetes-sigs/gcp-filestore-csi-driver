@@ -182,3 +182,42 @@ Run this on a test cluster only. `rotation_test_patch.yaml` sets `maxExpirationS
    kubectl -n gcp-filestore-csi-driver get deployment gcp-filestore-csi-controller \
        -o jsonpath='{.spec.template.spec.volumes[?(@.name=="servicedns-certs")].projected.sources[0].podCertificate.maxExpirationSeconds}'
    ```
+
+---
+
+## 🗂️ StorageClass & NFS Mount Options
+
+Agent Substrate reads only `StorageClass.provisioner` and `StorageClass.parameters`, and ignores the top-level `StorageClass.mountOptions` field. Set NFS client mount options for Substrate volumes in `parameters.mount-options`.
+
+### Driver defaults
+
+When a VolumePool NFSv3 volume has no mount options (neither `parameters.mount-options` nor `mountOptions`), the CSI driver mounts it with:
+
+```
+vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288,wsize=524288
+```
+
+These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. Driver releases before this change default to only `vers=3,proto=tcp,mountproto=tcp`. NFSv4.1 volumes get no defaults.
+
+### Substrate StorageClass template
+
+`deploy.sh` and `examples/kubernetes/substrate/storageclass.yaml.tmpl` set these options for dedicated single-actor workspaces, where only one node mounts a volume at a time:
+
+```yaml
+parameters:
+  volume-pool: "projects/<PROJECT_ID>/locations/<LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
+  mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
+```
+
+`nolock` keeps file locks local to the node, and `actimeo=60` caches file attributes for 60 seconds. Don't reuse this StorageClass for volumes that several nodes mount at the same time (shared `ReadWriteMany` volumes); create a separate StorageClass without `nolock` and `actimeo=60` for those.
+
+When you write your own `parameters.mount-options`:
+
+* Any value replaces all of the driver defaults, so list every option you want.
+* Write one comma-separated string with no spaces. Don't fold it with a YAML `>` or `|` block scalar.
+
+### Changing the StorageClass
+
+StorageClass `parameters` can't be changed after the StorageClass is created. To change the mount options, delete the StorageClass and create it again. Existing volumes keep the options they were created with; new volumes get the new options. While the StorageClass is deleted, creating actors or volumes that use it fails.
+
+If the StorageClass already exists with different parameters (for example, it was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` leaves it unchanged, prints a warning with the commands to delete and re-create it, and finishes the rest of the deployment.

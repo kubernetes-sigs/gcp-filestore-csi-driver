@@ -636,14 +636,39 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 }
 
 // volumePoolNFSv3DefaultMountOptions returns the mount options applied to VolumePool
-// NFSv3 volumes when the user specifies none. Pinning vers=3 and TCP for both the NFS
-// and MOUNT protocols skips mount.nfs version/transport negotiation, which otherwise
-// stalls for ~3s on a UDP portmapper/mountd timeout, because today's VolumePool
-// instances serve only NFSv3. Volumes provisioned with protocol NFS_V4_1 are left
-// alone (see shouldApplyVolumePoolNFSv3DefaultMountOptions). A new slice is returned
-// on every call so callers may modify it freely.
+// NFSv3 volumes when the user specifies none, for every access mode:
+//   - vers=3, proto=tcp, mountproto=tcp, port=2049, mountport=2050: VolumePool
+//     instances serve only NFSv3, with NFS on port 2049 and MOUNT on port 2050.
+//     Pinning the version and TCP for both protocols skips mount.nfs version and
+//     transport negotiation, which otherwise stalls for about 3s on a UDP
+//     portmapper/mountd timeout; pinning the ports also skips the rpcbind
+//     lookups for them.
+//   - nconnect=8: let the client open up to 8 TCP connections to the server
+//     instead of one (see nfs(5)). How connections are shared between mounts of
+//     the same server depends on the client kernel, so a node that already has
+//     mounts of the server may not open new connections for another mount.
+//   - rsize=524288, wsize=524288: 512 KiB read and write RPC payloads.
+//
+// The defaults leave out nolock and actimeo, which are only safe when one node
+// mounts the volume at a time. The access mode doesn't guarantee that: the
+// CSIDriver has attachRequired: false, so a ReadWriteOnce volume can be mounted
+// on two nodes during a rolling update. Users who know a volume is mounted by
+// one node at a time can set those options explicitly.
+//
+// Volumes provisioned with protocol NFS_V4_1 are left alone (see
+// shouldApplyVolumePoolNFSv3DefaultMountOptions). A new slice is returned on every
+// call so callers may modify it freely.
 func volumePoolNFSv3DefaultMountOptions() []string {
-	return []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+	return []string{
+		"vers=3",
+		"proto=tcp",
+		"mountproto=tcp",
+		"port=2049",
+		"mountport=2050",
+		"nconnect=8",
+		"rsize=524288",
+		"wsize=524288",
+	}
 }
 
 // shouldApplyVolumePoolNFSv3DefaultMountOptions reports whether the VolumePool NFSv3

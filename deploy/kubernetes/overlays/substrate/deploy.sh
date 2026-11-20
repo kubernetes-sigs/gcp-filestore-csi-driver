@@ -184,10 +184,39 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
     fi
     STORAGECLASS_NAME="${USER_SC_NAME:-substrate-volumepool-sc}"
   fi
-  echo "📦 Creating StorageClass '${STORAGECLASS_NAME}'..."
-  sed -e "s|<PROJECT_ID>|${PROJECT_ID}|g" \
+  SC_MANIFEST="$(sed -e "s|<PROJECT_ID>|${PROJECT_ID}|g" \
       -e "s|<LOCATION>|${VOLUMEPOOL_LOCATION}|g" \
       -e "s|<VOLUMEPOOL_NAME>|${VOLUMEPOOL_NAME}|g" \
       -e "s|<STORAGECLASS_NAME>|${STORAGECLASS_NAME}|g" \
-      "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl" | kubectl apply -f -
+      "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl")"
+
+  # StorageClass provisioner and parameters can't be changed after creation, so
+  # applying a template whose parameters changed (for example new mount options)
+  # over an existing StorageClass fails. Compare them first, and warn instead of
+  # failing: the rest of the deployment has already been applied.
+  SC_FIELDS_TEMPLATE='{{.provisioner}}{{"\n"}}{{range $k, $v := .parameters}}{{$k}}={{$v}}{{"\n"}}{{end}}'
+  if kubectl get storageclass "${STORAGECLASS_NAME}" >/dev/null 2>&1; then
+    WANT_SC_FIELDS="$(printf '%s\n' "${SC_MANIFEST}" | kubectl patch --local -f - --type=merge -p '{}' -o go-template="${SC_FIELDS_TEMPLATE}")"
+    HAVE_SC_FIELDS="$(kubectl get storageclass "${STORAGECLASS_NAME}" -o go-template="${SC_FIELDS_TEMPLATE}")"
+    if [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
+      echo "" >&2
+      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different parameters, so it was left unchanged." >&2
+      echo "   Current:" >&2
+      printf '%s\n' "${HAVE_SC_FIELDS}" | sed 's/^/     /' >&2
+      echo "   Template:" >&2
+      printf '%s\n' "${WANT_SC_FIELDS}" | sed 's/^/     /' >&2
+      echo "   StorageClass parameters can't be changed in place. To use the new parameters, delete and re-create it:" >&2
+      echo "     kubectl delete storageclass ${STORAGECLASS_NAME}" >&2
+      echo "     ./deploy/kubernetes/overlays/substrate/deploy.sh --project-id ${PROJECT_ID} --volumepool-location ${VOLUMEPOOL_LOCATION} --volumepool-name ${VOLUMEPOOL_NAME} --storageclass-name ${STORAGECLASS_NAME}" >&2
+      echo "   Existing volumes keep the mount options they were created with. While the StorageClass is" >&2
+      echo "   deleted, creating actors or volumes that use it fails, so re-create it right away." >&2
+      echo "" >&2
+    else
+      echo "📦 StorageClass '${STORAGECLASS_NAME}' already exists with the same parameters; applying it..."
+      printf '%s\n' "${SC_MANIFEST}" | kubectl apply -f -
+    fi
+  else
+    echo "📦 Creating StorageClass '${STORAGECLASS_NAME}'..."
+    printf '%s\n' "${SC_MANIFEST}" | kubectl apply -f -
+  fi
 fi

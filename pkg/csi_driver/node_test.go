@@ -21,6 +21,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -28,6 +30,7 @@ import (
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	corev1 "k8s.io/api/core/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apiError "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -36,6 +39,7 @@ import (
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/metadata"
 	lockrelease "sigs.k8s.io/gcp-filestore-csi-driver/pkg/releaselock"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
+	"sigs.k8s.io/yaml"
 )
 
 var (
@@ -348,6 +352,23 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
 			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "noatime,nodiratime"}},
+		},
+		{
+			name: "VolumePool volume with the Substrate template mount options in VolumeContext",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumePoolVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext: map[string]string{
+					attrIP:           "10.1.1.1",
+					attrVolume:       "vol1",
+					attrFileProtocol: v3FileProtocol,
+					attrMountOptions: substrateTemplateMountOptions,
+				},
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", substrateTemplateMountOptions}},
 		},
 		// TODO: Revisit this (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47).
 		// {
@@ -1224,28 +1245,143 @@ func TestShouldApplyVolumePoolNFSv3DefaultMountOptions(t *testing.T) {
 	}
 }
 
+// wantVolumePoolNFSv3DefaultMountOptions is the driver default for VolumePool
+// NFSv3 volumes without mount options, for every access mode.
+var wantVolumePoolNFSv3DefaultMountOptions = []string{
+	"vers=3",
+	"proto=tcp",
+	"mountproto=tcp",
+	"port=2049",
+	"mountport=2050",
+	"nconnect=8",
+	"rsize=524288",
+	"wsize=524288",
+}
+
+// substrateTemplateMountOptions is the parameters.mount-options value of the
+// Substrate StorageClass template: the driver defaults plus nolock and
+// actimeo=60 for dedicated single-actor workspaces.
+const substrateTemplateMountOptions = "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
+
 func TestVolumePoolNFSv3DefaultMountOptions(t *testing.T) {
-	want := []string{"vers=3", "proto=tcp", "mountproto=tcp"}
 	got := volumePoolNFSv3DefaultMountOptions()
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(wantVolumePoolNFSv3DefaultMountOptions, got); diff != "" {
 		t.Fatalf("volumePoolNFSv3DefaultMountOptions() mismatch (-want +got):\n%s", diff)
+	}
+	// nolock and actimeo are only safe when one node mounts the volume, which
+	// the access mode doesn't guarantee (attachRequired: false).
+	for _, opt := range got {
+		if opt == "nolock" || opt == "noac" || strings.HasPrefix(opt, "actimeo=") || strings.HasPrefix(opt, "acreg") || strings.HasPrefix(opt, "acdir") {
+			t.Errorf("default mount options contain %q, which is unsafe for volumes mounted on several nodes", opt)
+		}
 	}
 
 	// Mutating a returned slice must not affect later calls.
 	got[0] = "vers=4.1"
-	got = append(got, "nolock")
-	if diff := cmp.Diff(want, volumePoolNFSv3DefaultMountOptions()); diff != "" {
+	got = append(got, "nocto")
+	if diff := cmp.Diff(wantVolumePoolNFSv3DefaultMountOptions, volumePoolNFSv3DefaultMountOptions()); diff != "" {
 		t.Errorf("volumePoolNFSv3DefaultMountOptions() changed after caller mutation (-want +got):\n%s", diff)
 	}
 }
 
+func TestVolumePoolExampleStorageClasses(t *testing.T) {
+	repoRoot := filepath.Join("..", "..")
+	readFile := func(t *testing.T, rel ...string) string {
+		t.Helper()
+		path := filepath.Join(append([]string{repoRoot}, rel...)...)
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("failed to read %s: %v", path, err)
+		}
+		return string(raw)
+	}
+	// The template is the driver defaults with nolock after mountport=2050 and
+	// actimeo=60 at the end.
+	var templateOpts []string
+	for _, opt := range wantVolumePoolNFSv3DefaultMountOptions {
+		templateOpts = append(templateOpts, opt)
+		if opt == "mountport=2050" {
+			templateOpts = append(templateOpts, "nolock")
+		}
+	}
+	templateOpts = append(templateOpts, "actimeo=60")
+	if wantTemplateOpts := strings.Join(templateOpts, ","); wantTemplateOpts != substrateTemplateMountOptions {
+		t.Fatalf("substrateTemplateMountOptions %q is not the driver defaults plus nolock and actimeo=60 (%q)", substrateTemplateMountOptions, strings.Join(templateOpts, ","))
+	}
+
+	t.Run("Substrate StorageClass template sets the single-actor parameters.mount-options", func(t *testing.T) {
+		raw := readFile(t, "examples", "kubernetes", "substrate", "storageclass.yaml.tmpl")
+		rendered := strings.NewReplacer(
+			"<PROJECT_ID>", "demo-project",
+			"<LOCATION>", "us-central1",
+			"<VOLUMEPOOL_NAME>", "demo-pool",
+			"<STORAGECLASS_NAME>", "substrate-volumepool-sc",
+		).Replace(raw)
+
+		var sc storagev1.StorageClass
+		if err := yaml.Unmarshal([]byte(rendered), &sc); err != nil {
+			t.Fatalf("failed to unmarshal the rendered template: %v", err)
+		}
+		if len(sc.MountOptions) != 0 {
+			t.Errorf("Substrate StorageClass must not set top-level mountOptions (got %v); Substrate ignores mountOptions", sc.MountOptions)
+		}
+		if diff := cmp.Diff(substrateTemplateMountOptions, sc.Parameters[paramMountOptions]); diff != "" {
+			t.Errorf("parameters[%q] mismatch (-want +got):\n%s", paramMountOptions, diff)
+		}
+	})
+
+	t.Run("deploy.sh replaces every placeholder in the template", func(t *testing.T) {
+		script := readFile(t, "deploy", "kubernetes", "overlays", "substrate", "deploy.sh")
+		raw := readFile(t, "examples", "kubernetes", "substrate", "storageclass.yaml.tmpl")
+		// Apply deploy.sh's sed replacements, s|<NAME>|...|g, with dummy values.
+		subs := regexp.MustCompile(`s\|(<[A-Z_]+>)\|`).FindAllStringSubmatch(script, -1)
+		if len(subs) == 0 {
+			t.Fatal("found no placeholder replacements in deploy.sh")
+		}
+		rendered := raw
+		for _, m := range subs {
+			rendered = strings.ReplaceAll(rendered, m[1], "x")
+		}
+		// Only the manifest matters; the usage comments mention placeholders.
+		var manifest []string
+		for _, line := range strings.Split(rendered, "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") {
+				manifest = append(manifest, line)
+			}
+		}
+		if left := regexp.MustCompile(`<[A-Za-z_]+>`).FindAllString(strings.Join(manifest, "\n"), -1); len(left) > 0 {
+			t.Errorf("deploy.sh leaves placeholders %v in the template", left)
+		}
+	})
+
+	t.Run("README carries the template and default mount options", func(t *testing.T) {
+		readme := readFile(t, "deploy", "kubernetes", "overlays", "substrate", "README.md")
+		for _, want := range []string{substrateTemplateMountOptions, strings.Join(wantVolumePoolNFSv3DefaultMountOptions, ",")} {
+			if !strings.Contains(readme, want) {
+				t.Errorf("README.md doesn't contain %q", want)
+			}
+		}
+	})
+
+	t.Run("VolumePool StorageClass example sets the default mountOptions", func(t *testing.T) {
+		var sc storagev1.StorageClass
+		if err := yaml.Unmarshal([]byte(readFile(t, "examples", "kubernetes", "volumepool", "storageclass.yaml")), &sc); err != nil {
+			t.Fatalf("failed to unmarshal the example: %v", err)
+		}
+		if diff := cmp.Diff(wantVolumePoolNFSv3DefaultMountOptions, sc.MountOptions); diff != "" {
+			t.Errorf("mountOptions mismatch (-want +got):\n%s", diff)
+		}
+	})
+}
+
 func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 	expectedDevice := "10.1.1.1:/vol1"
-	defaultOpts := []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+	defaultOpts := wantVolumePoolNFSv3DefaultMountOptions
 
 	tests := []struct {
 		name              string
 		volumeID          string
+		accessMode        csi.VolumeCapability_AccessMode_Mode
 		mountFlags        []string
 		volumeContext     map[string]string
 		enableNFSv4       bool
@@ -1253,27 +1389,66 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 	}{
 		// Defaults are applied.
 		{
-			name:              "VolumePool NFS_V3, NFSv4 feature disabled: defaults applied",
+			name:              "VolumePool NFS_V3 single-node writer, NFSv4 feature disabled: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			expectedMountOpts: defaultOpts,
 		},
 		{
-			name:              "VolumePool NFS_V3, NFSv4 feature enabled: defaults applied",
+			name:              "VolumePool NFS_V3 single-node writer, NFSv4 feature enabled: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			enableNFSv4:       true,
 			expectedMountOpts: defaultOpts,
 		},
 		{
+			name:              "VolumePool NFS_V3 single-node reader: defaults applied",
+			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_READER_ONLY,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool NFS_V3 multi-node multi-writer (RWX): same defaults",
+			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool NFS_V3 multi-node reader-only (ROX): same defaults",
+			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_MULTI_NODE_READER_ONLY,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool NFS_V3 multi-node single-writer: same defaults",
+			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_MULTI_NODE_SINGLE_WRITER,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
+			expectedMountOpts: defaultOpts,
+		},
+		{
+			name:              "VolumePool NFS_V3 Substrate template options are passed through",
+			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: substrateTemplateMountOptions},
+			expectedMountOpts: []string{substrateTemplateMountOptions},
+		},
+		{
 			name:              "VolumePool protocol omitted, NFSv4 feature disabled: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
 			expectedMountOpts: defaultOpts,
 		},
 		{
 			name:              "VolumePool protocol omitted, NFSv4 feature enabled: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
 			enableNFSv4:       true,
 			expectedMountOpts: defaultOpts,
@@ -1281,12 +1456,14 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool lowercase nfs_v3: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: "nfs_v3"},
 			expectedMountOpts: defaultOpts,
 		},
 		{
 			name:              "VolumePool empty mount-options parameter: defaults applied",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: ""},
 			expectedMountOpts: defaultOpts,
 		},
@@ -1294,6 +1471,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool respects StorageClass.mountOptions (MountFlags)",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"vers=3", "nolock"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			expectedMountOpts: []string{"vers=3", "nolock"},
@@ -1301,12 +1479,14 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool respects StorageClass.parameters[mount-options] (attrMountOptions)",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: "nconnect=8,rsize=1048576,wsize=1048576"},
 			expectedMountOpts: []string{"nconnect=8,rsize=1048576,wsize=1048576"},
 		},
 		{
 			name:              "VolumePool respects both MountFlags and attrMountOptions",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"nolock"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol, attrMountOptions: "nconnect=8"},
 			expectedMountOpts: []string{"nolock", "nconnect=8"},
@@ -1314,6 +1494,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool protocol omitted respects MountFlags",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"hard"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
 			expectedMountOpts: []string{"hard"},
@@ -1321,6 +1502,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool NFS_V3 with NFSv4 feature enabled respects MountFlags",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"hard"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			enableNFSv4:       true,
@@ -1330,6 +1512,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool NFS_V4_1, NFSv4 feature enabled: no defaults",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
 			enableNFSv4:       true,
 			expectedMountOpts: []string{},
@@ -1337,12 +1520,14 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "VolumePool NFS_V4_1, NFSv4 feature disabled: no defaults",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
 			expectedMountOpts: []string{},
 		},
 		{
 			name:              "VolumePool NFS_V4_1 respects MountFlags",
 			volumeID:          testVolumePoolVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"vers=4.1"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v4_1FileProtocol},
 			enableNFSv4:       true,
@@ -1352,18 +1537,21 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "Instance volume, protocol omitted: no defaults",
 			volumeID:          testVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1"},
 			expectedMountOpts: []string{},
 		},
 		{
 			name:              "Instance volume, explicit NFS_V3: no defaults",
 			volumeID:          testVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			expectedMountOpts: []string{},
 		},
 		{
 			name:              "Instance volume, explicit NFS_V3, NFSv4 feature enabled: no defaults",
 			volumeID:          testVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			enableNFSv4:       true,
 			expectedMountOpts: []string{},
@@ -1371,6 +1559,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 		{
 			name:              "Instance volume respects MountFlags",
 			volumeID:          testVolumeID,
+			accessMode:        csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
 			mountFlags:        []string{"nolock"},
 			volumeContext:     map[string]string{attrIP: "10.1.1.1", attrVolume: "vol1", attrFileProtocol: v3FileProtocol},
 			expectedMountOpts: []string{"nolock"},
@@ -1394,7 +1583,7 @@ func TestNodeStageVolume_VolumePoolMountOptions(t *testing.T) {
 						},
 					},
 					AccessMode: &csi.VolumeCapability_AccessMode{
-						Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER,
+						Mode: tc.accessMode,
 					},
 				},
 				VolumeContext: tc.volumeContext,
