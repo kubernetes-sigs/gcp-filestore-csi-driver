@@ -102,7 +102,7 @@ build-webhook-image-and-push-linux-arm64: init-buildx
 	{                                                                                                                                                                \
 		set -e ;                                                                                                                                                         \
 		docker buildx build \
-		    --platform linux/amd64 \
+		    --platform linux/arm64 \
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/arm64 \

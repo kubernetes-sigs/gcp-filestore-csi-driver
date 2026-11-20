@@ -14,6 +14,7 @@
 
 FROM --platform=$BUILDPLATFORM golang:1.27.4 as builder
 
+ARG STAGINGVERSION
 ARG TARGETPLATFORM
 
 WORKDIR /go/src/sigs.k8s.io/gcp-filestore-csi-driver
