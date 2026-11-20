@@ -2,27 +2,20 @@ version: 2
 enable-beta-ecosystems: true
 updates:
 - package-ecosystem: "docker"
-  directory: "/"
+  directories:
+    - "/"
+    - "/cmd/webhook"
+    - "/cmd/lockrelease"
   schedule:
     interval: weekly
-  labels:
-    - "area/dependency"
-    - "release-note-none"
-    - "ok-to-test"
-    - "kind/cleanup"
-- package-ecosystem: "docker"
-  directory: "/cmd/webhook"
-  schedule:
-    interval: weekly
-  labels:
-    - "area/dependency"
-    - "release-note-none"
-    - "ok-to-test"
-    - "kind/cleanup"
-- package-ecosystem: "docker"
-  directory: "/cmd/lockrelease"
-  schedule:
-    interval: weekly
+  groups:
+    golang:
+      patterns:
+        - "golang*"
+    distroless:
+      patterns:
+        - "gcr.io/distroless*"
+        - "distroless*"
   labels:
     - "area/dependency"
     - "release-note-none"
