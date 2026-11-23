@@ -257,6 +257,7 @@ var userErrorCodeMap = map[int]codes.Code{
 	http.StatusBadRequest:      codes.InvalidArgument,
 	http.StatusTooManyRequests: codes.ResourceExhausted,
 	http.StatusNotFound:        codes.NotFound,
+	http.StatusConflict:        codes.AlreadyExists,
 }
 
 func NewGCFSService(version string, client *http.Client, primaryFilestoreServiceEndpoint, testFilestoreServiceEndpoint string) (Service, error) {
@@ -769,6 +770,7 @@ func IsNotFoundErr(err error) bool {
 // (2) http 403 Forbidden, returns grpc PermissionDenied,
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
+// (5) http 409 Conflict, returns grpc AlreadyExists
 func isUserOperationError(err error) *codes.Code {
 	// Upwrap the error
 	var apiErr *googleapi.Error
@@ -797,6 +799,9 @@ func containsUserErrStr(err error) *codes.Code {
 	}
 	if strings.Contains(err.Error(), "NOT_FOUND") {
 		return util.ErrCodePtr(codes.NotFound)
+	}
+	if strings.Contains(err.Error(), "ALREADY_EXISTS") {
+		return util.ErrCodePtr(codes.AlreadyExists)
 	}
 	return nil
 }
@@ -896,6 +901,7 @@ func isGoogleAPIError(err error) *codes.Code {
 // (2) http 403 Forbidden, returns grpc PermissionDenied,
 // (3) http 404 Not Found, returns grpc NotFound
 // (4) http 429 Too Many Requests, returns grpc ResourceExhausted
+// (5) http 409 Conflict, returns grpc AlreadyExists
 // The following errors are considered context errors:
 // (1) "context deadline exceeded", returns grpc DeadlineExceeded,
 // (2) "context canceled", returns grpc Canceled
