@@ -79,10 +79,28 @@ type Share struct {
 }
 
 type PoolVolume struct {
-	Name      string
+	Name string
+	// IpAddress and MountName are the volume's mount point. They are empty if
+	// the API reported no mount point, for example for a WARM volume.
 	IpAddress string
 	MountName string
+	// State is the volume's lifecycle state, such as VolumePoolVolumeStateHot.
+	// It is empty if the API did not report a state.
+	State string
 }
+
+// Lifecycle states of a volume pool volume, as reported by the Filestore API.
+// The API reports a mount point only for HOT volumes and for older volumes
+// without a recorded state, which it reports as STATE_UNSPECIFIED. A volume
+// whose instance is being recovered is STATE_UNSPECIFIED too, but has no mount
+// point.
+const (
+	VolumePoolVolumeStateUnspecified = "STATE_UNSPECIFIED"
+	VolumePoolVolumeStateCreating    = "CREATING"
+	VolumePoolVolumeStateHot         = "HOT"
+	VolumePoolVolumeStateWarm        = "WARM"
+	VolumePoolVolumeStateCold        = "COLD"
+)
 
 type VolumePoolMountPoint struct {
 	IpAddress string `json:"ipAddress,omitempty"`
@@ -93,6 +111,19 @@ type VolumePoolVolume struct {
 	Name        string                `json:"name,omitempty"`
 	Description string                `json:"description,omitempty"`
 	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
+	State       string                `json:"state,omitempty"`
+}
+
+func (v *VolumePoolVolume) toPoolVolume() *PoolVolume {
+	vol := &PoolVolume{
+		Name:  v.Name,
+		State: v.State,
+	}
+	if v.MountPoint != nil {
+		vol.IpAddress = v.MountPoint.IpAddress
+		vol.MountName = v.MountPoint.MountName
+	}
+	return vol
 }
 
 type MultishareInstance struct {
@@ -214,6 +245,7 @@ type Service interface {
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	// Volume pool ops
 	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
+	GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error)
 	DeleteVolumePoolVolume(ctx context.Context, name string) error
 }
 
@@ -769,6 +801,19 @@ func IsNotFoundErr(err error) bool {
 // so the HTTP code alone does not tell the two apart and the status field of
 // the JSON error body (https://google.aip.dev/193) is checked instead.
 func IsAbortedErr(err error) bool {
+	return isConflictWithStatus(err, "ABORTED")
+}
+
+// IsAlreadyExistsErr reports whether err is an HTTP 409 googleapi error whose
+// canonical status is ALREADY_EXISTS, for example a Volume Pool CreateVolume
+// call for a volume ID that already exists in the pool.
+func IsAlreadyExistsErr(err error) bool {
+	return isConflictWithStatus(err, "ALREADY_EXISTS")
+}
+
+// isConflictWithStatus reports whether err is an HTTP 409 googleapi error whose
+// JSON body has the given canonical status.
+func isConflictWithStatus(err error, canonicalStatus string) bool {
 	var googleErr *googleapi.Error
 	if !errors.As(err, &googleErr) || googleErr.Code != http.StatusConflict {
 		return false
@@ -781,7 +826,7 @@ func IsAbortedErr(err error) bool {
 	if jsonErr := json.Unmarshal([]byte(googleErr.Body), &reply); jsonErr != nil {
 		return false
 	}
-	return reply.Error.Status == "ABORTED"
+	return reply.Error.Status == canonicalStatus
 }
 
 // isUserError returns a pointer to the grpc error code that maps to the http
@@ -1597,16 +1642,30 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
 		return nil, fmt.Errorf("failed to decode CreateVolume response: %w", err)
 	}
+	// The volume is returned whatever its state; the caller checks that it
+	// can be mounted.
+	return vol.toPoolVolume(), nil
+}
 
-	if vol.MountPoint == nil {
-		return nil, fmt.Errorf("volume %q created without mount details information", vol.Name)
+// GetVolumePoolVolume gets the Volume Pool volume with the given resource name,
+// projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
+// whatever its state.
+func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	resp, err := manager.executeRESTRequest(ctx, http.MethodGet, name, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, googleapi.CheckResponse(resp)
 	}
 
-	return &PoolVolume{
-		Name:      vol.Name,
-		IpAddress: vol.MountPoint.IpAddress,
-		MountName: vol.MountPoint.MountName,
-	}, nil
+	var vol VolumePoolVolume
+	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
+		return nil, fmt.Errorf("failed to decode GetVolume response: %w", err)
+	}
+	return vol.toPoolVolume(), nil
 }
 
 func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {

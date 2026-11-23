@@ -921,6 +921,19 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 			},
 		},
 		{
+			// The caller checks whether the volume can be mounted.
+			name:         "WARM volume without mount point is returned",
+			responseCode: http.StatusOK,
+			responseBody: &VolumePoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+			expected: &PoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+		},
+		{
 			name:         "api error response",
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,
@@ -942,9 +955,15 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 				}
 
 				if tc.responseBody != nil {
-					var reqBody VolumePoolVolume
+					var reqBody map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 						t.Errorf("failed to decode request body: %v", err)
+					}
+					// The body only carries a description (see
+					// CreateVolumePoolVolume); fields such as state must
+					// never be sent.
+					if want := map[string]any{"description": "Provisioned by GCP Filestore CSI driver"}; !cmp.Equal(reqBody, want) {
+						t.Errorf("request body = %v, want %v", reqBody, want)
 					}
 				}
 
@@ -1327,6 +1346,7 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 		httpCode        int
 		canonicalStatus string
 		wantAborted     bool
+		wantExists      bool
 		wantStatusCode  codes.Code
 	}{
 		{
@@ -1341,7 +1361,9 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 			name:            "409 ALREADY_EXISTS",
 			httpCode:        http.StatusConflict,
 			canonicalStatus: "ALREADY_EXISTS",
-			wantStatusCode:  codes.Internal,
+			wantExists:      true,
+			// StatusError alone is unchanged; the driver gets the existing volume on IsAlreadyExistsErr.
+			wantStatusCode: codes.Internal,
 		},
 		{
 			name:            "429 RESOURCE_EXHAUSTED",
@@ -1382,6 +1404,10 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 					_, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID)
 					return err
 				},
+				"GetVolumePoolVolume": func() error {
+					_, err := manager.GetVolumePoolVolume(ctx, parentPool+"/volumes/"+volID)
+					return err
+				},
 				"DeleteVolumePoolVolume": func() error {
 					return manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/"+volID)
 				},
@@ -1394,9 +1420,134 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 				if got := IsAbortedErr(err); got != tc.wantAborted {
 					t.Errorf("%s: IsAbortedErr(%v) = %v, want %v", callName, err, got, tc.wantAborted)
 				}
+				if got := IsAlreadyExistsErr(err); got != tc.wantExists {
+					t.Errorf("%s: IsAlreadyExistsErr(%v) = %v, want %v", callName, err, got, tc.wantExists)
+				}
 				if got := status.Code(StatusError(err)); got != tc.wantStatusCode {
 					t.Errorf("%s: StatusError(%v) code = %v, want %v", callName, err, got, tc.wantStatusCode)
 				}
+			}
+		})
+	}
+}
+
+func TestIsAlreadyExistsErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+			want: true,
+		},
+		{
+			name: "wrapped 409 ALREADY_EXISTS",
+			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")}),
+			want: true,
+		},
+		{
+			name: "409 ABORTED",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", "contention")},
+		},
+		{
+			name: "409 without a status in the body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: `{"error":{"code":409,"message":"conflict"}}`},
+		},
+		{
+			name: "non-409 that claims ALREADY_EXISTS",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Body: volumePoolErrorBody(http.StatusBadRequest, "ALREADY_EXISTS", "exists")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAlreadyExistsErr(tc.err); got != tc.want {
+				t.Errorf("IsAlreadyExistsErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetVolumePoolVolume(t *testing.T) {
+	name := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
+
+	tests := []struct {
+		testName     string
+		responseCode int
+		responseBody string
+		expectErr    bool
+		expected     *PoolVolume
+	}{
+		{
+			testName:     "volume with mount point",
+			responseCode: http.StatusOK,
+			responseBody: `{"name":"` + name + `","state":"HOT","quotaMib":"1024","mountPoint":{"ipAddress":"10.0.0.1","mountName":"vol_123"}}`,
+			expected: &PoolVolume{
+				Name:      name,
+				IpAddress: "10.0.0.1",
+				MountName: "vol_123",
+				State:     VolumePoolVolumeStateHot,
+			},
+		},
+		{
+			// The caller checks whether the volume can be mounted.
+			testName:     "volume without mount point is returned",
+			responseCode: http.StatusOK,
+			responseBody: `{"name":"` + name + `","state":"WARM"}`,
+			expected:     &PoolVolume{Name: name, State: VolumePoolVolumeStateWarm},
+		},
+		{
+			testName:     "not found",
+			responseCode: http.StatusNotFound,
+			responseBody: volumePoolErrorBody(http.StatusNotFound, "NOT_FOUND", "volume not found"),
+			expectErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.testName, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := fmt.Sprintf("/v1beta1/%s", name)
+				if r.URL.Path != expectedPath {
+					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("expected method %s, got %s", http.MethodGet, r.Method)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.responseCode)
+				fmt.Fprint(w, tc.responseBody)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			got, err := manager.GetVolumePoolVolume(ctx, name)
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.expected, got); diff != "" {
+				t.Errorf("unexpected volume (-want +got):\n%s", diff)
 			}
 		})
 	}

@@ -544,15 +544,18 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}
 
 	volumeURI := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
-	if vol, exists := manager.allocatedVolumes[volumeURI]; exists {
-		return vol, nil
-	}
-
+	// Like Filestore, look for a free share before checking the name: a full
+	// pool fails with HTTP 429 even for an existing volume ID.
 	if strings.Contains(parentPool, "exhausted") {
 		return nil, &googleapi.Error{
 			Code:    429,
 			Message: "no available volumes in the pool",
 		}
+	}
+
+	// Like Filestore, fail with HTTP 409 ALREADY_EXISTS for an existing volume ID.
+	if _, exists := manager.allocatedVolumes[volumeURI]; exists {
+		return nil, fakeVolumePoolConflictError("ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
 	}
 
 	if strings.Contains(parentPool, FakeVolumePoolContended) {
@@ -570,6 +573,20 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	}
 	manager.allocatedVolumes[volumeURI] = vol
 	return vol, nil
+}
+
+func (manager *fakeServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	if strings.Contains(name, FakeVolumePoolGetForbidden) {
+		return nil, &googleapi.Error{Code: 403, Message: "permission denied"}
+	}
+	if vol, ok := manager.allocatedVolumes[name]; ok {
+		return vol, nil
+	}
+	return nil, &googleapi.Error{
+		Code:    404,
+		Message: fmt.Sprintf("volume %q not found", name),
+		Errors:  []googleapi.ErrorItem{{Reason: "notFound"}},
+	}
 }
 
 func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
@@ -595,8 +612,13 @@ const (
 	// does when concurrent calls contend for the same volume.
 	FakeVolumePoolContended = "contended"
 	// FakeVolumePoolAlreadyExists makes the fake CreateVolumePoolVolume on a
-	// pool whose name contains it fail with HTTP 409 ALREADY_EXISTS.
+	// pool whose name contains it fail with HTTP 409 ALREADY_EXISTS without
+	// recording the volume, so a following GetVolumePoolVolume returns
+	// HTTP 404, as if the volume was deleted in between.
 	FakeVolumePoolAlreadyExists = "already-exists"
+	// FakeVolumePoolGetForbidden makes the fake GetVolumePoolVolume on a volume
+	// whose name contains it fail with HTTP 403.
+	FakeVolumePoolGetForbidden = "get-forbidden"
 )
 
 // fakeVolumePoolConflictError returns an HTTP 409 googleapi error with the
