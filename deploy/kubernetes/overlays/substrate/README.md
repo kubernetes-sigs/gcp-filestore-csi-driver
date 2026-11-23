@@ -83,3 +83,10 @@ The included `deploy.sh` script completely automates the installation, validates
    ```
 
 *(Note: If you skip `deploy.sh`, you will need to manually render and apply `examples/kubernetes/substrate/storageclass.yaml.tmpl` to provision micro-volumes from a VolumePool).*
+
+---
+
+## 📊 Scale Testing & Operational Runbooks
+
+- **[Scale & Throughput Benchmark Suite](SCALE_TESTING.md)**: Comprehensive performance and stress test documentation (10 RPS to 200 RPS across 25,000 micro-volumes), controller replica scaling guidelines (e.g. 5 replicas for 100 RPS, 8–10 replicas for 200 RPS), hardware specifications (`c3-standard-44` nodes with Titanium DPU), and reproduction commands using `ghz` and [`generate_tier_payloads.sh`](generate_tier_payloads.sh).
+- **[VolumePool Pre-Provisioning & Reconciliation Guide](VOLUMEPOOL_SETUP.md)**: Production-tested runbook for pre-provisioning 25,000 volumes across 25 Regional Filestore instances with Substrate kernel overrides (`ELFSParamsOverrideForSubstrate`), storage quota budget management, public rate quota elevation, and graceful teardown.
