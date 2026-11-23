@@ -20,7 +20,9 @@ set -o pipefail
 
 PKG_ROOT=$(git rev-parse --show-toplevel)
 
-${PKG_ROOT}/hack/verify_gofmt.sh
-${PKG_ROOT}/hack/verify_govet.sh
-${PKG_ROOT}/hack/verify_dockerfiles.sh
-${PKG_ROOT}/hack/verify_dockerfiles_test.sh
+"${PKG_ROOT}/hack/verify_gofmt.sh"
+"${PKG_ROOT}/hack/verify_govet.sh"
+"${PKG_ROOT}/hack/verify_vendor.sh"
+"${PKG_ROOT}/hack/verify_vendor_test.sh"
+"${PKG_ROOT}/hack/verify_dockerfiles.sh"
+"${PKG_ROOT}/hack/verify_dockerfiles_test.sh"
