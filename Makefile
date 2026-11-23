@@ -16,6 +16,7 @@
 DRIVERBINARY=gcp-filestore-csi-driver
 WEBHOOKBINARY=gcp-filestore-csi-driver-webhook
 LOCKRELEASEBINARY=gcp-filestore-csi-driver-lockrelease
+DOCKER=DOCKER_CLI_EXPERIMENTAL=enabled docker
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
 $(info PWD is $(PWD))
 
@@ -111,9 +112,10 @@ build-webhook-image-and-push-linux-arm64: init-buildx
 	}
 
 build-and-push-webhook-multi-arch: build-webhook-image-and-push-linux-arm64 build-webhook-image-and-push-linux-amd64
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
+	$(DOCKER) manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	$(DOCKER) manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
+	# Log manifest for verification only; ignore transient read errors after push succeeds.
+	-$(DOCKER) manifest inspect $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the docker image for the core CSI driver.
 build-image-and-push: init-buildx
@@ -150,9 +152,10 @@ build-image-and-push-linux-arm64: init-buildx
 		}
 
 build-and-push-multi-arch: build-image-and-push-linux-arm64 build-image-and-push-linux-amd64
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
-	DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect $(STAGINGIMAGE):$(STAGINGVERSION)
+	$(DOCKER) manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	$(DOCKER) manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
+	# Log manifest for verification only; ignore transient read errors after push succeeds.
+	-$(DOCKER) manifest inspect $(STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the go binary for the CSI driver lock release controller.
 lockrelease:
