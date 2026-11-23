@@ -25,35 +25,46 @@ echo "Running verify_dockerfiles.sh unit tests"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
 
+sed_inplace() {
+  local expr="$1"
+  local file="$2"
+  sed -i.bak "${expr}" "${file}" && rm -f "${file}.bak"
+}
+
 setup_fixture() {
-  local dir="$1"
+  local fixture_dir="$1"
   mkdir -p \
-    "${dir}/hack" \
-    "${dir}/.github" \
-    "${dir}/cmd/lockrelease" \
-    "${dir}/cmd/webhook" \
-    "${dir}/vendor/example.com/dep" \
-    "${dir}/vendor/example.com/repl"
+    "${fixture_dir}/hack" \
+    "${fixture_dir}/.github" \
+    "${fixture_dir}/cmd/lockrelease" \
+    "${fixture_dir}/cmd/webhook" \
+    "${fixture_dir}/test/experimental"
 
-  cp "${VERIFY_SCRIPT}" "${dir}/hack/verify_dockerfiles.sh"
-  chmod +x "${dir}/hack/verify_dockerfiles.sh"
+  cp "${VERIFY_SCRIPT}" "${fixture_dir}/hack/verify_dockerfiles.sh"
+  chmod +x "${fixture_dir}/hack/verify_dockerfiles.sh"
 
-  cat > "${dir}/Dockerfile" << 'EOF'
+  cat > "${fixture_dir}/Dockerfile" << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.4 as builder
 FROM gke.gcr.io/debian-base:trixie-v1.0.1-gke.0 as deps
 EOF
 
-  cat > "${dir}/cmd/lockrelease/Dockerfile" << 'EOF'
+  cat > "${fixture_dir}/cmd/lockrelease/Dockerfile" << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.4 as builder
 FROM gcr.io/distroless/static
 EOF
 
-  cat > "${dir}/cmd/webhook/Dockerfile" << 'EOF'
+  cat > "${fixture_dir}/cmd/webhook/Dockerfile" << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.4 as builder
 FROM gcr.io/distroless/static
 EOF
 
-  cat > "${dir}/.github/dependabot.yml" << 'EOF'
+  # Non-Go Windows Dockerfile should be ignored by golang builder discovery.
+  cat > "${fixture_dir}/test/experimental/Dockerfile" << 'EOF'
+FROM mcr.microsoft.com/windows/servercore:1809 as core
+FROM mcr.microsoft.com/windows/nanoserver:1809
+EOF
+
+  cat > "${fixture_dir}/.github/dependabot.yml" << 'EOF'
 version: 2
 updates:
 - package-ecosystem: "docker"
@@ -61,65 +72,26 @@ updates:
     - "/"
     - "/cmd/webhook"
     - "/cmd/lockrelease"
-  schedule:
-    interval: weekly
   groups:
     golang:
       patterns:
         - "golang*"
-    distroless:
-      patterns:
-        - "gcr.io/distroless*"
-        - "distroless*"
+      group-by: dependency-name
+- package-ecosystem: gomod # not docker
+  directory: "/"
 EOF
 
-  cat > "${dir}/go.mod" << 'EOF'
+  cat > "${fixture_dir}/go.mod" << 'EOF'
 module example.com/testmod
 
 go 1.26.0
-
-require (
-	example.com/dep v1.0.0
-	example.com/repl v0.1.0
-)
-
-replace example.com/repl => example.com/repl v0.2.0
-EOF
-
-  cat > "${dir}/main.go" << 'EOF'
-package main
-
-import (
-	_ "example.com/dep"
-	_ "example.com/repl"
-)
-
-func main() {}
-EOF
-
-  cat > "${dir}/vendor/example.com/dep/dep.go" << 'EOF'
-package dep
-EOF
-
-  cat > "${dir}/vendor/example.com/repl/repl.go" << 'EOF'
-package repl
-EOF
-
-  cat > "${dir}/vendor/modules.txt" << 'EOF'
-# example.com/dep v1.0.0
-## explicit; go 1.26.0
-example.com/dep
-# example.com/repl v0.1.0 => example.com/repl v0.2.0
-## explicit; go 1.26.0
-example.com/repl
-# example.com/repl => example.com/repl v0.2.0
 EOF
 }
 
 expect_pass() {
-  local name="$1" dir="$2"
+  local name="$1" fixture_dir="$2"
   local out
-  if ! out="$("${dir}/hack/verify_dockerfiles.sh" 2>&1)"; then
+  if ! out="$("${fixture_dir}/hack/verify_dockerfiles.sh" 2>&1)"; then
     echo "FAIL [${name}]: expected pass, got failure:" >&2
     echo "${out}" >&2
     exit 1
@@ -127,9 +99,9 @@ expect_pass() {
 }
 
 expect_fail() {
-  local name="$1" dir="$2" substr="$3"
+  local name="$1" fixture_dir="$2" substr="$3"
   local out
-  if out="$("${dir}/hack/verify_dockerfiles.sh" 2>&1)"; then
+  if out="$("${fixture_dir}/hack/verify_dockerfiles.sh" 2>&1)"; then
     echo "FAIL [${name}]: expected failure containing '${substr}', but command succeeded" >&2
     exit 1
   fi
@@ -140,105 +112,150 @@ expect_fail() {
   fi
 }
 
-# 1. Baseline valid fixture passes.
-d="${TMP_ROOT}/base"
-setup_fixture "${d}"
-expect_pass "baseline" "${d}"
+# 1. Baseline valid fixture (including non-Go Windows Dockerfile and '# not docker' comment) passes.
+fixture_dir="${TMP_ROOT}/base"
+setup_fixture "${fixture_dir}"
+expect_pass "baseline" "${fixture_dir}"
 
 # 2. GoB Auto-VC digest syntax, multi-digit patch (1.27.10 >= 1.26), multi-line FROM with # comment,
-#    2-part go directive, toolchain, and unused versioned replace summary all pass.
-d="${TMP_ROOT}/gob_advanced"
-setup_fixture "${d}"
-cat > "${d}/Dockerfile" << 'EOF'
+#    2-part go directive, toolchain, single-quoted 'docker', and flow-style directories: [...] pass.
+fixture_dir="${TMP_ROOT}/gob_advanced"
+setup_fixture "${fixture_dir}"
+cat > "${fixture_dir}/Dockerfile" << 'EOF'
 FROM --platform=$BUILDPLATFORM \
   # Builder image managed by Auto-VC
   google-go.pkg.dev/golang:1.27.10@sha256:9ca562ec61672333bbf60fdccc6af039ff9aae1eeffecfc5402954674daadc5e as builder
 FROM gke.gcr.io/debian-base:forky-v1.0.0-gke.0@sha256:8ad64e1b223d9723dbcfc22aba22db08a711059dd761163c7ac0768a817d98fe as deps
 EOF
 for sub in cmd/lockrelease/Dockerfile cmd/webhook/Dockerfile; do
-  cat > "${d}/${sub}" << 'EOF'
+  cat > "${fixture_dir}/${sub}" << 'EOF'
 FROM --platform=$BUILDPLATFORM google-go.pkg.dev/golang:1.27.10@sha256:9ca562ec61672333bbf60fdccc6af039ff9aae1eeffecfc5402954674daadc5e as builder
 FROM gcr.io/distroless/static
 EOF
 done
-cat > "${d}/go.mod" << 'EOF'
+cat > "${fixture_dir}/.github/dependabot.yml" << 'EOF'
+version: 2
+updates:
+- package-ecosystem: 'docker'
+  directories: ["/", "/cmd/webhook", "/cmd/lockrelease"]
+- package-ecosystem: gomod # comment ending in docker
+  directory: "/"
+EOF
+cat > "${fixture_dir}/go.mod" << 'EOF'
 module example.com/testmod
 
 go 1.25
 
 toolchain go1.26.0
-
-require (
-	example.com/dep v1.0.0
-	example.com/repl v0.1.0
-)
-
-replace example.com/repl => example.com/repl v0.2.0
-replace example.com/unused v1.0.0 => example.com/unused v1.0.1
 EOF
-cat >> "${d}/vendor/modules.txt" << 'EOF'
-# example.com/unused v1.0.0 => example.com/unused v1.0.1
-EOF
-expect_pass "gob_multiline_versioned_replace" "${d}"
+expect_pass "gob_multiline_flow_dirs_single_quote" "${fixture_dir}"
 
 # 3. Builder version mismatch across Dockerfiles fails.
-d="${TMP_ROOT}/mismatch"
-setup_fixture "${d}"
-cat > "${d}/cmd/webhook/Dockerfile" << 'EOF'
+fixture_dir="${TMP_ROOT}/mismatch"
+setup_fixture "${fixture_dir}"
+cat > "${fixture_dir}/cmd/webhook/Dockerfile" << 'EOF'
 FROM --platform=$BUILDPLATFORM golang:1.27.3 as builder
 FROM gcr.io/distroless/static
 EOF
-expect_fail "builder_mismatch" "${d}" "golang builder tag mismatch"
+expect_fail "builder_mismatch" "${fixture_dir}" "golang builder tag mismatch"
 
-# 4. Builder version older than go.mod fails.
-d="${TMP_ROOT}/older_go"
-setup_fixture "${d}"
+# 4. Floating golang:latest and 2-part golang:1.27 builder tags fail.
+fixture_dir="${TMP_ROOT}/golang_latest"
+setup_fixture "${fixture_dir}"
 for df in Dockerfile cmd/lockrelease/Dockerfile cmd/webhook/Dockerfile; do
-  sed -i.bak 's/1\.27\.4/1.25.9/g' "${d}/${df}" && rm -f "${d}/${df}.bak"
+  sed_inplace 's/1\.27\.4/latest/g' "${fixture_dir}/${df}"
 done
-expect_fail "builder_older_than_gomod" "${d}" "older than go.mod 'go 1.26.0'"
+expect_fail "golang_latest" "${fixture_dir}" "unpinned or unparseable golang builder tag 'latest'"
 
-# 5. Builder version older than toolchain directive fails.
-d="${TMP_ROOT}/older_toolchain"
-setup_fixture "${d}"
-cat > "${d}/go.mod" << 'EOF'
+fixture_dir="${TMP_ROOT}/golang_two_part"
+setup_fixture "${fixture_dir}"
+for df in Dockerfile cmd/lockrelease/Dockerfile cmd/webhook/Dockerfile; do
+  sed_inplace 's/1\.27\.4/1.27/g' "${fixture_dir}/${df}"
+done
+expect_fail "golang_two_part" "${fixture_dir}" "must pin a full major.minor.patch version"
+
+# 5. Builder version older than go.mod fails with actionable guidance to bump all Dockerfiles.
+fixture_dir="${TMP_ROOT}/older_go"
+setup_fixture "${fixture_dir}"
+for df in Dockerfile cmd/lockrelease/Dockerfile cmd/webhook/Dockerfile; do
+  sed_inplace 's/1\.27\.4/1.25.9/g' "${fixture_dir}/${df}"
+done
+expect_fail "builder_older_than_gomod" "${fixture_dir}" "Bump FROM golang:<version> across all Linux Dockerfiles"
+
+# 6. Builder version older than toolchain directive fails.
+fixture_dir="${TMP_ROOT}/older_toolchain"
+setup_fixture "${fixture_dir}"
+cat > "${fixture_dir}/go.mod" << 'EOF'
 module example.com/testmod
 
 go 1.26.0
 
 toolchain go1.28rc1
-
-require (
-	example.com/dep v1.0.0
-	example.com/repl v0.1.0
-)
-
-replace example.com/repl => example.com/repl v0.2.0
 EOF
-expect_fail "builder_older_than_toolchain" "${d}" "older than go.mod 'toolchain go1.28rc1'"
+expect_fail "builder_older_than_toolchain" "${fixture_dir}" "older than go.mod 'toolchain go1.28rc1'"
 
-# 6. Debian bookworm, legacy v2.0.0, and floating latest tags all fail.
-for bad_tag in "bookworm-v1.0.8-gke.12" "v2.0.0" "latest"; do
-  d="${TMP_ROOT}/deb_${bad_tag}"
-  setup_fixture "${d}"
-  sed -i.bak "s/trixie-v1\.0\.1-gke\.0/${bad_tag}/g" "${d}/Dockerfile" && rm -f "${d}/Dockerfile.bak"
-  expect_fail "debian_${bad_tag}" "${d}" "disallowed or EOL Debian base image tag"
+# 7. EOL Debian (bookworm), floating suites (latest, stable, sid, testing), and legacy/bare tags fail.
+fixture_dir="${TMP_ROOT}/deb_bookworm"
+setup_fixture "${fixture_dir}"
+sed_inplace 's/trixie-v1\.0\.1-gke\.0/bookworm-v1.0.8-gke.12/g' "${fixture_dir}/Dockerfile"
+expect_fail "debian_bookworm" "${fixture_dir}" "EOL Debian base image tag"
+
+for floating_tag in "latest" "stable" "sid" "testing"; do
+  fixture_dir="${TMP_ROOT}/deb_${floating_tag}"
+  setup_fixture "${fixture_dir}"
+  sed_inplace "s/trixie-v1\.0\.1-gke\.0/${floating_tag}/g" "${fixture_dir}/Dockerfile"
+  expect_fail "debian_${floating_tag}" "${fixture_dir}" "floating Debian base image tag"
 done
 
-# 7. Missing directory in .github/dependabot.yml fails.
-d="${TMP_ROOT}/dep_missing_dir"
-setup_fixture "${d}"
-sed -i.bak '/cmd\/lockrelease/d' "${d}/.github/dependabot.yml" && rm -f "${d}/.github/dependabot.yml.bak"
-expect_fail "dependabot_missing_dir" "${d}" "missing '/cmd/lockrelease'"
+for unpinned_tag in "v2.0.0" "trixie"; do
+  fixture_dir="${TMP_ROOT}/deb_${unpinned_tag}"
+  setup_fixture "${fixture_dir}"
+  sed_inplace "s/trixie-v1\.0\.1-gke\.0/${unpinned_tag}/g" "${fixture_dir}/Dockerfile"
+  expect_fail "debian_${unpinned_tag}" "${fixture_dir}" "unpinned or legacy Debian base image tag"
+done
 
-# 8. Out-of-sync vendor/modules.txt fails.
-d="${TMP_ROOT}/vendor_drift"
-setup_fixture "${d}"
-sed -i.bak 's/v1\.0\.0/v1.0.1/g' "${d}/vendor/modules.txt" && rm -f "${d}/vendor/modules.txt.bak"
-expect_fail "vendor_modules_drift" "${d}" "do not match vendor/modules.txt"
+# 8. Old three-block dependabot.yml regression fails.
+fixture_dir="${TMP_ROOT}/dep_three_blocks"
+setup_fixture "${fixture_dir}"
+cat > "${fixture_dir}/.github/dependabot.yml" << 'EOF'
+version: 2
+updates:
+- package-ecosystem: "docker"
+  directory: "/"
+- package-ecosystem: "docker"
+  directory: "/cmd/webhook"
+- package-ecosystem: "docker"
+  directory: "/cmd/lockrelease"
+EOF
+expect_fail "dependabot_three_blocks" "${fixture_dir}" 'must define exactly 1 package-ecosystem: "docker" block (found 3)'
 
-# 9. Missing vendored .go source file fails (-deps -test).
-d="${TMP_ROOT}/missing_vendor_src"
-setup_fixture "${d}"
-rm -f "${d}/vendor/example.com/dep/dep.go"
-expect_fail "missing_vendor_go_file" "${d}" "example.com/dep"
+# 9. Missing directory in .github/dependabot.yml fails.
+fixture_dir="${TMP_ROOT}/dep_missing_dir"
+setup_fixture "${fixture_dir}"
+sed_inplace '/cmd\/lockrelease/d' "${fixture_dir}/.github/dependabot.yml"
+expect_fail "dependabot_missing_dir" "${fixture_dir}" "missing '/cmd/lockrelease'"
+
+# 10. Adding a fourth Dockerfile with a golang stage (tested in a git repo) flags both tag mismatch and missing dependabot dir.
+fixture_dir="${TMP_ROOT}/fourth_dockerfile"
+setup_fixture "${fixture_dir}"
+mkdir -p "${fixture_dir}/cmd/extra"
+cat > "${fixture_dir}/cmd/extra/Dockerfile" << 'EOF'
+FROM golang:1.27.4 as builder
+FROM gcr.io/distroless/static
+EOF
+git -C "${fixture_dir}" init -q
+expect_fail "fourth_dockerfile_missing_dependabot" "${fixture_dir}" "missing '/cmd/extra'"
+
+cat > "${fixture_dir}/cmd/extra/Dockerfile" << 'EOF'
+FROM golang:1.27.3 as builder
+FROM gcr.io/distroless/static
+EOF
+expect_fail "fourth_dockerfile_tag_mismatch" "${fixture_dir}" "golang builder tag mismatch"
+
+cat > "${fixture_dir}/cmd/extra/Dockerfile" << 'EOF'
+FROM golang:1.27.4 as builder
+FROM gcr.io/distroless/static
+EOF
+sed_inplace 's|- "/cmd/lockrelease"|- "/cmd/lockrelease"\
+    - "/cmd/extra"|' "${fixture_dir}/.github/dependabot.yml"
+expect_pass "fourth_dockerfile_valid" "${fixture_dir}"

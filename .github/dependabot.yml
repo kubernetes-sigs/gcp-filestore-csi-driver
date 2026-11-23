@@ -12,10 +12,7 @@ updates:
     golang:
       patterns:
         - "golang*"
-    distroless:
-      patterns:
-        - "gcr.io/distroless*"
-        - "distroless*"
+      group-by: dependency-name
   labels:
     - "area/dependency"
     - "release-note-none"
