@@ -18,11 +18,14 @@ package driver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"k8s.io/klog/v2"
@@ -77,6 +80,24 @@ func isVolumePoolVolumeID(volumeID string) bool {
 	return strings.HasPrefix(volumeID, volumePoolURLPrefix)
 }
 
+// volumePoolStatusError converts an error from a Volume Pool API call to a gRPC
+// status error. An HTTP 409 ABORTED (concurrent claims on the same pool volume)
+// becomes codes.Aborted, which tells the caller that an immediate retry can
+// succeed. Everything else, including HTTP 409 ALREADY_EXISTS, keeps the
+// mapping of file.StatusError, which the non-Volume Pool paths also use.
+func volumePoolStatusError(err error) error {
+	if file.IsAbortedErr(err) {
+		return status.Error(codes.Aborted, err.Error())
+	}
+	// googleapi.Error.Error() doesn't print the canonical status, so log the
+	// body of any other HTTP 409 to show why it wasn't treated as ABORTED.
+	var googleErr *googleapi.Error
+	if errors.As(err, &googleErr) && googleErr.Code == http.StatusConflict {
+		klog.Warningf("Volume Pool call failed with HTTP 409 that is not ABORTED, response body: %s", googleErr.Body)
+	}
+	return file.StatusError(err)
+}
+
 func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req *csi.CreateVolumeRequest, poolPath string) (*csi.CreateVolumeResponse, error) {
 	name := req.GetName()
 	if len(name) == 0 {
@@ -87,7 +108,7 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	poolVol, err := s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
 	if err != nil {
 		klog.Errorf("Failed to create Volume Pool volume in pool %s: %v", poolPath, err)
-		return nil, file.StatusError(err)
+		return nil, volumePoolStatusError(err)
 	}
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
@@ -139,7 +160,7 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 			return &csi.DeleteVolumeResponse{}, nil
 		}
 		klog.Errorf("Failed to delete Volume Pool volume %q: %v", volumeID, err)
-		return nil, file.StatusError(err)
+		return nil, volumePoolStatusError(err)
 	}
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)

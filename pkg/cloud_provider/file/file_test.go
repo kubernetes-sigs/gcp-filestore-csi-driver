@@ -1233,3 +1233,171 @@ func TestCloudInstanceToMultishareInstance_PscEndpointProject(t *testing.T) {
 		})
 	}
 }
+
+// volumePoolErrorBody returns a Filestore JSON error body (https://google.aip.dev/193).
+func volumePoolErrorBody(httpCode int, canonicalStatus, message string) string {
+	body, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    httpCode,
+			"message": message,
+			"status":  canonicalStatus,
+		},
+	})
+	return string(body)
+}
+
+func TestIsAbortedErr(t *testing.T) {
+	const contentionMsg = `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+		},
+		{
+			name: "non-googleapi error",
+			err:  fmt.Errorf("ABORTED"),
+		},
+		{
+			name: "409 ABORTED",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", contentionMsg)},
+			want: true,
+		},
+		{
+			name: "wrapped 409 ABORTED",
+			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", contentionMsg)}),
+			want: true,
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+		},
+		{
+			name: "409 without a status in the body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: `{"error":{"code":409,"message":"conflict"}}`},
+		},
+		{
+			name: "409 with a non-JSON body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: "conflict"},
+		},
+		{
+			name: "429 RESOURCE_EXHAUSTED",
+			err:  &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool")},
+		},
+		{
+			name: "non-409 that claims ABORTED",
+			err:  &googleapi.Error{Code: http.StatusInternalServerError, Body: volumePoolErrorBody(http.StatusInternalServerError, "ABORTED", "aborted")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAbortedErr(tc.err); got != tc.want {
+				t.Errorf("IsAbortedErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusErrorHTTPConflictUnchanged guards the shared mapping used by the
+// Basic, Zonal, Enterprise and multishare paths: an HTTP 409 still maps to
+// codes.Internal whatever its canonical status. Only the Volume Pool path maps
+// 409 ABORTED to codes.Aborted (see volumePoolStatusError in pkg/csi_driver).
+func TestStatusErrorHTTPConflictUnchanged(t *testing.T) {
+	for _, canonicalStatus := range []string{"ABORTED", "ALREADY_EXISTS"} {
+		err := &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, canonicalStatus, "conflict")}
+		if got := status.Code(StatusError(err)); got != codes.Internal {
+			t.Errorf("StatusError(409 %s) code = %v, want %v", canonicalStatus, got, codes.Internal)
+		}
+	}
+}
+
+// TestVolumePoolVolumeHTTPErrors checks the errors that CreateVolumePoolVolume
+// and DeleteVolumePoolVolume return for Filestore error responses, as parsed by
+// googleapi.CheckResponse.
+func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
+	volID := "vol-123"
+
+	tests := []struct {
+		name            string
+		httpCode        int
+		canonicalStatus string
+		wantAborted     bool
+		wantStatusCode  codes.Code
+	}{
+		{
+			name:            "409 ABORTED (pool contention)",
+			httpCode:        http.StatusConflict,
+			canonicalStatus: "ABORTED",
+			wantAborted:     true,
+			// StatusError alone is unchanged; the driver maps IsAbortedErr to codes.Aborted.
+			wantStatusCode: codes.Internal,
+		},
+		{
+			name:            "409 ALREADY_EXISTS",
+			httpCode:        http.StatusConflict,
+			canonicalStatus: "ALREADY_EXISTS",
+			wantStatusCode:  codes.Internal,
+		},
+		{
+			name:            "429 RESOURCE_EXHAUSTED",
+			httpCode:        http.StatusTooManyRequests,
+			canonicalStatus: "RESOURCE_EXHAUSTED",
+			wantStatusCode:  codes.ResourceExhausted,
+		},
+		{
+			name:            "400 INVALID_ARGUMENT",
+			httpCode:        http.StatusBadRequest,
+			canonicalStatus: "INVALID_ARGUMENT",
+			wantStatusCode:  codes.InvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.httpCode)
+				fmt.Fprint(w, volumePoolErrorBody(tc.httpCode, tc.canonicalStatus, "test error"))
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			calls := map[string]func() error{
+				"CreateVolumePoolVolume": func() error {
+					_, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID)
+					return err
+				},
+				"DeleteVolumePoolVolume": func() error {
+					return manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/"+volID)
+				},
+			}
+			for callName, call := range calls {
+				err := call()
+				if err == nil {
+					t.Fatalf("%s: expected error, got nil", callName)
+				}
+				if got := IsAbortedErr(err); got != tc.wantAborted {
+					t.Errorf("%s: IsAbortedErr(%v) = %v, want %v", callName, err, got, tc.wantAborted)
+				}
+				if got := status.Code(StatusError(err)); got != tc.wantStatusCode {
+					t.Errorf("%s: StatusError(%v) code = %v, want %v", callName, err, got, tc.wantStatusCode)
+				}
+			}
+		})
+	}
+}

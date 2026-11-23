@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/cloud_provider/file"
 	"sigs.k8s.io/gcp-filestore-csi-driver/pkg/util"
 )
 
@@ -44,6 +47,7 @@ func TestCreateVolume_VolumePool(t *testing.T) {
 		req                *csi.CreateVolumeRequest
 		featureEnabled     bool
 		expectErr          bool
+		expectCode         codes.Code // checked when expectErr is set and this is not codes.OK
 		expectDefaultBytes bool
 	}{
 		{
@@ -126,6 +130,33 @@ func TestCreateVolume_VolumePool(t *testing.T) {
 			},
 			featureEnabled: true,
 			expectErr:      true,
+			expectCode:     codes.ResourceExhausted,
+		},
+		{
+			name: "pool contention (HTTP 409 ABORTED) is retryable",
+			req: &csi.CreateVolumeRequest{
+				Name: "test-volumepool-contended",
+				Parameters: map[string]string{
+					paramKeyVolumePool: "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolContended + "-pool",
+				},
+				VolumeCapabilities: volumeCapabilities,
+			},
+			featureEnabled: true,
+			expectErr:      true,
+			expectCode:     codes.Aborted,
+		},
+		{
+			name: "HTTP 409 ALREADY_EXISTS keeps the default mapping",
+			req: &csi.CreateVolumeRequest{
+				Name: "test-volumepool-already-exists",
+				Parameters: map[string]string{
+					paramKeyVolumePool: "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolAlreadyExists + "-pool",
+				},
+				VolumeCapabilities: volumeCapabilities,
+			},
+			featureEnabled: true,
+			expectErr:      true,
+			expectCode:     codes.Internal,
 		},
 		{
 			name: "with mount options",
@@ -151,6 +182,11 @@ func TestCreateVolume_VolumePool(t *testing.T) {
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil response: %v", resp)
+				}
+				if tc.expectCode != codes.OK {
+					if got := status.Code(err); got != tc.expectCode {
+						t.Errorf("got error code %v, want %v (error: %v)", got, tc.expectCode, err)
+					}
 				}
 				return
 			}
@@ -205,6 +241,7 @@ func TestDeleteVolume_VolumePool(t *testing.T) {
 		preAllocate    bool
 		featureEnabled bool
 		expectErr      bool
+		expectCode     codes.Code // checked when expectErr is set and this is not codes.OK
 	}{
 		{
 			name:           "successful deletion of volume pool volume",
@@ -237,6 +274,13 @@ func TestDeleteVolume_VolumePool(t *testing.T) {
 			featureEnabled: true,
 			expectErr:      true,
 		},
+		{
+			name:           "contention (HTTP 409 ABORTED) is retryable",
+			volumeID:       "volumepool://test-project/us-central1/" + file.FakeVolumePoolContended + "-pool/volumes/test-vol?ip=10.1.1.1",
+			featureEnabled: true,
+			expectErr:      true,
+			expectCode:     codes.Aborted,
+		},
 	}
 
 	for _, tc := range tests {
@@ -260,6 +304,11 @@ func TestDeleteVolume_VolumePool(t *testing.T) {
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil response: %v", resp)
+				}
+				if tc.expectCode != codes.OK {
+					if got := status.Code(err); got != tc.expectCode {
+						t.Errorf("got error code %v, want %v (error: %v)", got, tc.expectCode, err)
+					}
 				}
 				return
 			}

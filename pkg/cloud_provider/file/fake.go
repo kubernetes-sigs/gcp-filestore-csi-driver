@@ -555,6 +555,14 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 		}
 	}
 
+	if strings.Contains(parentPool, FakeVolumePoolContended) {
+		return nil, fakeVolumePoolConflictError("ABORTED", `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`)
+	}
+
+	if strings.Contains(parentPool, FakeVolumePoolAlreadyExists) {
+		return nil, fakeVolumePoolConflictError("ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
+	}
+
 	vol := &PoolVolume{
 		Name:      volumeURI,
 		IpAddress: "10.1.1.1",
@@ -569,10 +577,42 @@ func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
 
+	if strings.Contains(name, FakeVolumePoolContended) {
+		return fakeVolumePoolConflictError("ABORTED", "Resource is in an invalid state for update")
+	}
+
 	if _, ok := manager.allocatedVolumes[name]; ok {
 		delete(manager.allocatedVolumes, name)
 		return nil
 	}
 
 	return nil
+}
+
+const (
+	// FakeVolumePoolContended makes the fake Volume Pool calls on a pool or
+	// volume whose name contains it fail with HTTP 409 ABORTED, as Filestore
+	// does when concurrent calls contend for the same volume.
+	FakeVolumePoolContended = "contended"
+	// FakeVolumePoolAlreadyExists makes the fake CreateVolumePoolVolume on a
+	// pool whose name contains it fail with HTTP 409 ALREADY_EXISTS.
+	FakeVolumePoolAlreadyExists = "already-exists"
+)
+
+// fakeVolumePoolConflictError returns an HTTP 409 googleapi error with the
+// given canonical status, shaped like googleapi.CheckResponse's result for a
+// Filestore JSON error body.
+func fakeVolumePoolConflictError(canonicalStatus, message string) error {
+	body, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    409,
+			"message": message,
+			"status":  canonicalStatus,
+		},
+	})
+	return &googleapi.Error{
+		Code:    409,
+		Message: message,
+		Body:    string(body),
+	}
 }

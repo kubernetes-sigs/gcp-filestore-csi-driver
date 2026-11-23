@@ -761,6 +761,29 @@ func IsNotFoundErr(err error) bool {
 	return false
 }
 
+// IsAbortedErr reports whether err is an HTTP 409 googleapi error whose
+// canonical status is ABORTED. The Filestore Volume Pool API returns this when
+// concurrent CreateVolume calls contend for the same free volume in a pool
+// ("Resource is in an invalid state for update: concurrency contention ...,
+// please retry"); a retry succeeds. HTTP 409 is also used for ALREADY_EXISTS,
+// so the HTTP code alone does not tell the two apart and the status field of
+// the JSON error body (https://google.aip.dev/193) is checked instead.
+func IsAbortedErr(err error) bool {
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) || googleErr.Code != http.StatusConflict {
+		return false
+	}
+	var reply struct {
+		Error struct {
+			Status string `json:"status"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(googleErr.Body), &reply); jsonErr != nil {
+		return false
+	}
+	return reply.Error.Status == "ABORTED"
+}
+
 // isUserError returns a pointer to the grpc error code that maps to the http
 // error code for the passed in user googleapi error. Returns nil if the
 // given error is not a googleapi error caused by the user. The following
