@@ -676,7 +676,8 @@ func (manager *gcfsServiceManager) CreateBackup(ctx context.Context, backupInfo 
 func (manager *gcfsServiceManager) DeleteBackup(ctx context.Context, backupId string) error {
 	opbackup, err := manager.backupService.Delete(backupId).Context(ctx).Do()
 	if err != nil {
-		return fmt.Errorf("for backup Id %s, delete backup operation %s failed: %w", backupId, opbackup.Name, err)
+		// opbackup is nil when the call fails, so don't read it here.
+		return fmt.Errorf("for backup Id %s, delete backup failed: %w", backupId, err)
 	}
 
 	klog.V(4).Infof("For backup Id %s, waiting for backup op %v to complete", backupId, opbackup.Name)
