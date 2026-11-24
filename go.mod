@@ -35,6 +35,7 @@ require (
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738
 	sigs.k8s.io/boskos v0.0.0-20201002225104-ae3497d24cd7
 	sigs.k8s.io/controller-runtime v0.12.1
+	sigs.k8s.io/yaml v1.4.0
 )
 
 require (
@@ -121,7 +122,6 @@ require (
 	k8s.io/test-infra v0.0.0-20201007205216-b54c51c3a44a // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.7.0 // indirect
-	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
 replace k8s.io/client-go => k8s.io/client-go v0.26.0

@@ -9,8 +9,9 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
 | Component | Manifest File | Rationale |
 | :--- | :--- | :--- |
 | **GKE Workload Identity** | `serviceaccount_patch.yaml` | Annotates `gcp-filestore-csi-controller-sa` with the GCP Service Account (`iam.gke.io/gcp-service-account`), eliminating static JSON key secrets. |
-| **Controller Patch** | `controller_patch.yaml` | 1. Sets `hostNetwork: false` so Workload Identity metadata server requests (`169.254.169.254`) succeed.<br>2. Deploys a privileged `envoy` mTLS proxy bridging TCP port `10000` to Unix domain socket `/csi/csi.sock`.<br>3. Adds label `role: controller-plugin`.<br>4. Enables `--feature-volume-pools=true`. |
+| **Controller Patch** | `controller_patch.yaml` | 1. Sets `hostNetwork: false` so Workload Identity metadata server requests (`169.254.169.254`) succeed.<br>2. Deploys a privileged `envoy` mTLS proxy bridging TCP port `10000` to Unix domain socket `/csi/csi.sock`, with the image pinned by tag and digest.<br>3. Adds label `role: controller-plugin`.<br>4. Enables `--feature-volume-pools=true`. |
 | **Node DaemonSet Patch** | `node_patch.yaml` | 1. Adds label `role: node-plugin`.<br>2. Mounts `/var/lib/ateom-gvisor` (Substrate up to release-0.2) and `/var/lib/ate` (Substrate release-0.3 and later) with `mountPropagation: Bidirectional` so NFS mounts are accessible to Substrate actors. |
+| **Envoy mTLS Config** | `envoy_configmap.yaml` | Envoy bootstrap plus two file-based SDS secrets: the serving certificate (`/run/servicedns/credential-bundle.pem`, a `podCertificate` projection) and the client CA bundle (`/run/podidentity-ca/trust-bundle.pem`, a `clusterTrustBundle` projection), with the client SAN pinned to `spiffe://cluster.local/ns/ate-system/sa/ate-api-server`. Kubelet rotates both in place, and Envoy reloads them through SDS `watched_directory` without a restart (see [Certificate rotation](#-certificate-rotation)). |
 | **gRPC Controller Service** | `service.yaml` | Creates `Service/csi-filestore-controller` (port `10000` -> targetPort `10000` over mTLS) selecting `app=gcp-filestore-csi-driver` and `role=controller-plugin`, guaranteeing traffic reaches only the controller. |
 | **Substrate Driver Config** | `csi_driver_config.yaml` | Registers the driver (`ate.dev/v1`, Substrate v1.0.0-rc.1 and later) with Substrate pointing to the internal cluster DNS gRPC endpoint. |
 
@@ -83,3 +84,101 @@ The included `deploy.sh` script completely automates the installation, validates
    ```
 
 *(Note: If you skip `deploy.sh`, you will need to manually render and apply `examples/kubernetes/substrate/storageclass.yaml.tmpl` to provision micro-volumes from a VolumePool).*
+
+---
+
+## 🔄 Certificate rotation
+
+The Envoy sidecar serves the controller pod's `servicedns.podcert.ate.dev/identity` certificate, which kubelet issues through a `podCertificate` projected volume. The certificate lives 24 hours by default (`maxExpirationSeconds` defaults to 86400); the Substrate signer asks kubelet to fetch a new one 30 minutes before it expires, and kubelet swaps it into `/run/servicedns` in place. The client CA bundle in `/run/podidentity-ca` is updated the same way when the cluster trust bundle changes.
+
+Envoy reloads a certificate on a `watched_directory` change only when the certificate is delivered through SDS, so `envoy_configmap.yaml` delivers both through file-based SDS (`sds_servicedns_cert.yaml` and `sds_podidentity_validation.yaml`, mounted at `/etc/envoy`). Don't move them back inline under `tls_certificates` or `validation_context`: Envoy would then read them only at startup and keep serving the old certificate after it expires, and every controller CSI call from `ate-api-server` (such as `CreateVolume` and `DeleteVolume`) would fail until the controller restarts.
+
+Only the certificate files in the projected volumes are reloaded live. `path_config_source` has no `watched_directory` on purpose: Envoy then reloads an SDS file only when something is renamed onto that exact path, and kubelet updates a ConfigMap volume by renaming `..data`, never the `sds_*.yaml` links. Like `envoy.yaml`, an edit to `csi-envoy-config` (including the client SAN pin) therefore takes effect only after `kubectl -n gcp-filestore-csi-driver rollout restart deployment/gcp-filestore-csi-controller`.
+
+### Upgrading an existing installation
+
+Installations deployed before this change keep the old configuration until the overlay is re-applied: re-run `deploy.sh`, or `kubectl apply -k deploy/kubernetes/overlays/substrate/` after rendering `serviceaccount_patch.yaml` (see [Option B](#option-b-manual-deployment-via-kustomize)). The controller pod rolls because the Envoy image reference changed, and the new pod starts with the SDS configuration. Applying only the ConfigMap doesn't roll the pod and doesn't fix a running Envoy, which read its configuration at startup. Until the overlay is re-applied, restart the controller before the served certificate's `notAfter` (more often than every 23 hours) to avoid the outage.
+
+To confirm that a running controller has the fix, check the SDS update counter. It is 0 on the old inline configuration and at least 2 (one per SDS secret) on the new one. If it's still 0 after re-applying, run `kubectl -n gcp-filestore-csi-driver rollout restart deployment/gcp-filestore-csi-controller`. With more than one replica, check each pod (`port-forward pod/<name>`).
+
+```bash
+kubectl -n gcp-filestore-csi-driver rollout status deployment/gcp-filestore-csi-controller
+kubectl -n gcp-filestore-csi-driver port-forward deployment/gcp-filestore-csi-controller 15000:15000 &
+PF_PID=$!; sleep 1
+curl -s localhost:15000/stats | grep ssl_context_update_by_sds
+kill "${PF_PID}"
+```
+
+### What to watch
+
+Read these from Envoy's admin API, with a port-forward as above:
+
+```bash
+curl -s localhost:15000/stats | grep -E 'ssl_context_update_by_sds|secrets_not_ready|^sds\.'
+```
+
+- `listener.0.0.0.0_10000.server_ssl_socket_factory.ssl_context_update_by_sds` goes up by one each time Envoy loads a new certificate or CA bundle: 2 at startup, then one per rotation. Use it, with `/certs`, to confirm rotations. `sds.*.update_success` and `last_updated` in `config_dump` count loads of the SDS files themselves; on v1.34.14 they keep their startup values when a certificate rotates.
+- `listener.0.0.0.0_10000.server_ssl_socket_factory.downstream_context_secrets_not_ready` above 0 means Envoy rejected handshakes because an SDS secret wasn't loaded. It only counts handshake attempts, so it stays 0 if no client connected. Envoy fails closed here but still reports itself live and ready, so don't rely on pod status alone.
+- `sds.servicedns_cert.update_rejected`, `sds.servicedns_cert.update_failure`, and the same two counters for `sds.podidentity_validation` count SDS file loads that failed (an unreadable or unparsable file, or an invalid secret).
+- `sds.servicedns_cert.key_rotation_failed` and `sds.podidentity_validation.key_rotation_failed` count rotations Envoy noticed but couldn't load; it keeps using the previous certificate or bundle.
+
+Known Envoy v1.34.14 behaviour, seen in local testing: if a certificate file is missing when Envoy starts and appears later, Envoy aborts (SIGABRT) and the container restarts. Kubelet writes both projected volumes before the container starts, so this isn't expected in the pod, and a normal start followed by rotations doesn't trigger it.
+
+`envoy_config_test.go` checks this structure, that the SDS secrets name the files the projected volumes provide, the volume mounts, `kustomization.yaml`, and the image pin. With `ENVOY_BINARY` set it also runs two tests against a real Envoy: `TestEnvoyValidate` runs `envoy --mode validate`, which checks the bootstrap only (it doesn't load the SDS secrets or certificate files), and `TestEnvoyReloadsRotatedFiles` starts Envoy on loopback, checks that both SDS secrets load, then rotates the certificate and the CA bundle the way kubelet does and checks that Envoy reloads each one. The binary extracted from the image is a Linux binary for your machine's architecture, so run this on Linux:
+
+```bash
+ENVOY_IMAGE=$(sed -n 's/^ *image: \(envoyproxy\/envoy:.*\)$/\1/p' deploy/kubernetes/overlays/substrate/controller_patch.yaml)
+docker create --name envoy-bin "${ENVOY_IMAGE}"
+docker cp envoy-bin:/usr/local/bin/envoy /tmp/envoy && docker rm envoy-bin
+ENVOY_BINARY=/tmp/envoy go test -mod=vendor -v ./deploy/kubernetes/overlays/substrate/
+```
+
+### Testing certificate rotation
+
+Run this on a test cluster only. `rotation_test_patch.yaml` sets `maxExpirationSeconds` on the servicedns certificate to 3600, the minimum the API server accepts. The signer then issues 1-hour certificates, and kubelet rotates them about 30 minutes after each is issued.
+
+1. Shorten the certificate lifetime. This rolls out a new controller pod. `POD` is the newest controller pod, so a pod that is still terminating isn't picked; with more than one replica, repeat the checks for each pod:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver patch deployment gcp-filestore-csi-controller \
+       --patch-file deploy/kubernetes/overlays/substrate/rotation_test_patch.yaml
+   kubectl -n gcp-filestore-csi-driver rollout status deployment/gcp-filestore-csi-controller
+   POD=$(kubectl -n gcp-filestore-csi-driver get pod -l app=gcp-filestore-csi-driver,role=controller-plugin \
+       --sort-by=.metadata.creationTimestamp -o jsonpath='{.items[-1:].metadata.name}')
+   ```
+2. Record the certificate Envoy serves on port `10000`. The Envoy image ships `openssl`, and Envoy sends its certificate before it asks for the client certificate, so no client certificate is needed to see it:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver exec "${POD}" -c envoy -- sh -c \
+       'openssl s_client -connect 127.0.0.1:10000 -alpn h2 </dev/null 2>/dev/null | openssl x509 -noout -serial -dates'
+   ```
+   It should match the certificate kubelet has written to the volume:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver exec "${POD}" -c envoy -- \
+       openssl x509 -in /run/servicedns/credential-bundle.pem -noout -serial -dates
+   ```
+3. Check what Envoy has loaded through its admin API. The admin API listens on loopback only and the image has no `curl`, so port-forward. Record the serial in `/certs` and the `ssl_context_update_by_sds` value:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver port-forward "pod/${POD}" 15000:15000 &
+   PF_PID=$!; sleep 1
+   curl -s localhost:15000/certs | grep -E '"serial_number"|"expiration_time"'
+   curl -s localhost:15000/stats | grep -E 'ssl_context_update_by_sds|secrets_not_ready|^sds\..*(update_rejected|update_failure|key_rotation_failed)'
+   kill "${PF_PID}"
+   ```
+4. Wait at least 1 hour (past the first certificate's `notAfter`) without restarting the pod, then repeat steps 2 and 3. The serial number must have changed, `notAfter` must be in the future, the serial Envoy serves must match the file, `ssl_context_update_by_sds` must have gone up by at least one per rotation, and the failure counters must still be 0. Don't use `last_updated` in `config_dump` for this; on v1.34.14 it doesn't change on rotation. The restart counts must not have changed:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver get pod "${POD}" \
+       -o jsonpath='{range .status.containerStatuses[*]}{.name}={.restartCount}{"\n"}{end}'
+   ```
+5. Confirm that `ate-api-server` can still reach the driver: create an actor with an external volume that uses your VolumePool StorageClass, check that it starts, then delete it. The controller logs should show the matching `CreateVolume` and `DeleteVolume` calls:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver logs "${POD}" -c gcp-filestore-driver --since=10m | grep -E 'CreateVolume|DeleteVolume'
+   ```
+6. Restore the default lifetime when done. This patch puts back the production `podCertificate` source from `controller_patch.yaml` (a strategic merge patch replaces the whole `sources` list) and rolls the pod again:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver patch deployment gcp-filestore-csi-controller --patch \
+       '{"spec":{"template":{"spec":{"volumes":[{"name":"servicedns-certs","projected":{"sources":[{"podCertificate":{"signerName":"servicedns.podcert.ate.dev/identity","keyType":"ECDSAP256","credentialBundlePath":"credential-bundle.pem"}}]}}]}}}}'
+   ```
+   Re-running `deploy.sh` or `kubectl apply -k deploy/kubernetes/overlays/substrate/` (which needs a rendered `serviceaccount_patch.yaml`) should also restore it, because `sources` is replaced as a whole. Either way, check that the field is gone; this prints nothing:
+   ```bash
+   kubectl -n gcp-filestore-csi-driver get deployment gcp-filestore-csi-controller \
+       -o jsonpath='{.spec.template.spec.volumes[?(@.name=="servicedns-certs")].projected.sources[0].podCertificate.maxExpirationSeconds}'
+   ```
