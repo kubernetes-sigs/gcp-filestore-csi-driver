@@ -16,6 +16,7 @@
 DRIVERBINARY=gcp-filestore-csi-driver
 WEBHOOKBINARY=gcp-filestore-csi-driver-webhook
 LOCKRELEASEBINARY=gcp-filestore-csi-driver-lockrelease
+DOCKER=DOCKER_CLI_EXPERIMENTAL=enabled docker
 $(info PULL_BASE_REF is $(PULL_BASE_REF))
 $(info PWD is $(PWD))
 
@@ -83,7 +84,7 @@ webhook-image: init-buildx
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
 			-f ./cmd/webhook/Dockerfile \
-			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) --push .; \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) --push --provenance=false .; \
 		}
 
 build-webhook-image-and-push-linux-amd64: init-buildx
@@ -95,7 +96,7 @@ build-webhook-image-and-push-linux-amd64: init-buildx
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
 			-f ./cmd/webhook/Dockerfile \
-			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push .; \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push --provenance=false .; \
 	}
 
 build-webhook-image-and-push-linux-arm64: init-buildx
@@ -107,12 +108,14 @@ build-webhook-image-and-push-linux-arm64: init-buildx
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/arm64 \
 			-f ./cmd/webhook/Dockerfile \
-			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push .; \
+			-t $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push --provenance=false .; \
 	}
 
 build-and-push-webhook-multi-arch: build-webhook-image-and-push-linux-arm64 build-webhook-image-and-push-linux-amd64
-	docker manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
-	docker manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
+	$(DOCKER) manifest create --amend $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION) $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	$(DOCKER) manifest push -p $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
+	# Log manifest for verification only; ignore transient read errors after push succeeds.
+	-$(DOCKER) manifest inspect $(WEBHOOK_STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the docker image for the core CSI driver.
 build-image-and-push: init-buildx
@@ -123,7 +126,7 @@ build-image-and-push: init-buildx
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
-			-t $(STAGINGIMAGE):$(STAGINGVERSION) --push .; \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION) --push --provenance=false .; \
 		}
 
 build-image-and-push-linux-amd64: init-buildx
@@ -134,7 +137,7 @@ build-image-and-push-linux-amd64: init-buildx
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
-			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push .; \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 --push --provenance=false .; \
 		}
 
 build-image-and-push-linux-arm64: init-buildx
@@ -145,12 +148,14 @@ build-image-and-push-linux-arm64: init-buildx
 			--build-arg STAGINGVERSION=$(STAGINGVERSION) \
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/arm64 \
-			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push .; \
+			-t $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64 --push --provenance=false .; \
 		}
 
 build-and-push-multi-arch: build-image-and-push-linux-arm64 build-image-and-push-linux-amd64
-	docker manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
-	docker manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
+	$(DOCKER) manifest create --amend $(STAGINGIMAGE):$(STAGINGVERSION) $(STAGINGIMAGE):$(STAGINGVERSION)_linux_amd64 $(STAGINGIMAGE):$(STAGINGVERSION)_linux_arm64
+	$(DOCKER) manifest push -p $(STAGINGIMAGE):$(STAGINGVERSION)
+	# Log manifest for verification only; ignore transient read errors after push succeeds.
+	-$(DOCKER) manifest inspect $(STAGINGIMAGE):$(STAGINGVERSION)
 
 # Build the go binary for the CSI driver lock release controller.
 lockrelease:
@@ -170,7 +175,7 @@ lockrelease-image: init-buildx
 			--build-arg BUILDPLATFORM=linux/amd64 \
 			--build-arg TARGETPLATFORM=linux/amd64 \
 			-f ./cmd/lockrelease/Dockerfile \
-			-t $(LOCKRELEASE_STAGINGIMAGE):$(STAGINGVERSION) --push .; \
+			-t $(LOCKRELEASE_STAGINGIMAGE):$(STAGINGVERSION) --push --provenance=false .; \
 		}
 
 # Build the go binary for the CSI driver.
@@ -206,10 +211,10 @@ test-k8s-integration:
 	go build -mod=vendor -o bin/k8s-integration-test ./test/k8s-integration
 
 init-buildx:
+	docker run --rm --privileged multiarch/qemu-user-static --reset --credential yes --persistent yes
 	# Ensure we use a builder that can leverage it (the default on linux will not)
 	-docker buildx rm multiarch-multiplatform-builder
-	docker buildx create --use --name=multiarch-multiplatform-builder
-	docker run --rm --privileged multiarch/qemu-user-static --reset --credential yes --persistent yes
+	docker buildx create --use --name=multiarch-multiplatform-builder --driver-opt network=host --driver-opt image=moby/buildkit:v0.20.0
 	# Register gcloud as a Docker credential helper.
 	# Required for "docker buildx build --push".
 	gcloud auth configure-docker --quiet
