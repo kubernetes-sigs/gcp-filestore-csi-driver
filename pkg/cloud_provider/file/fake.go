@@ -28,6 +28,7 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
 	"strings"
+	"sync"
 )
 
 const (
@@ -46,6 +47,7 @@ type fakeServiceManager struct {
 	createdMultishares        map[string]*Share
 	multishareops             []*filev1beta1multishare.Operation
 	allocatedVolumes          map[string]*PoolVolume // key: volumeURI
+	volumePoolMu              sync.Mutex             // guards allocatedVolumes
 }
 
 var _ Service = &fakeServiceManager{}
@@ -539,6 +541,8 @@ func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Opera
 }
 
 func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
@@ -546,11 +550,8 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	volumeURI := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
 	// Like Filestore, look for a free share before checking the name: a full
 	// pool fails with HTTP 429 even for an existing volume ID.
-	if strings.Contains(parentPool, "exhausted") {
-		return nil, &googleapi.Error{
-			Code:    429,
-			Message: "no available volumes in the pool",
-		}
+	if strings.Contains(parentPool, FakeVolumePoolExhausted) {
+		return nil, fakeVolumePoolError(429, "RESOURCE_EXHAUSTED", "no available volumes in the pool")
 	}
 
 	// Like Filestore, fail with HTTP 409 ALREADY_EXISTS for an existing volume ID.
@@ -562,64 +563,76 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 		return nil, fakeVolumePoolConflictError("ABORTED", `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`)
 	}
 
-	if strings.Contains(parentPool, FakeVolumePoolAlreadyExists) {
-		return nil, fakeVolumePoolConflictError("ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
-	}
-
 	vol := &PoolVolume{
 		Name:      volumeURI,
 		IpAddress: "10.1.1.1",
 		MountName: fmt.Sprintf("vol_%s", volumeID),
+		State:     VolumePoolVolumeStateHot,
 	}
 	manager.allocatedVolumes[volumeURI] = vol
-	return vol, nil
+	copied := *vol
+	return &copied, nil
 }
 
 func (manager *fakeServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
 	if strings.Contains(name, FakeVolumePoolGetForbidden) {
-		return nil, &googleapi.Error{Code: 403, Message: "permission denied"}
+		return nil, fakeVolumePoolError(403, "PERMISSION_DENIED", "permission denied")
 	}
 	if vol, ok := manager.allocatedVolumes[name]; ok {
-		return vol, nil
+		copied := *vol
+		return &copied, nil
 	}
-	return nil, &googleapi.Error{
-		Code:    404,
-		Message: fmt.Sprintf("volume %q not found", name),
-		Errors:  []googleapi.ErrorItem{{Reason: "notFound"}},
-	}
+	// Like Filestore, an AIP-193 error body without an error reason.
+	return nil, fakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
 }
 
 func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
-	if manager.allocatedVolumes == nil {
-		manager.allocatedVolumes = make(map[string]*PoolVolume)
-	}
-
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
 	if strings.Contains(name, FakeVolumePoolContended) {
 		return fakeVolumePoolConflictError("ABORTED", "Resource is in an invalid state for update")
 	}
-
-	if _, ok := manager.allocatedVolumes[name]; ok {
-		delete(manager.allocatedVolumes, name)
-		return nil
-	}
-
+	// Deleting a missing volume succeeds, as DeleteVolumePoolVolume treats
+	// HTTP 404 as success.
+	delete(manager.allocatedVolumes, name)
 	return nil
 }
 
 const (
-	// FakeVolumePoolContended makes the fake Volume Pool calls on a pool or
-	// volume whose name contains it fail with HTTP 409 ABORTED, as Filestore
-	// does when concurrent calls contend for the same volume.
+	// FakeVolumePoolContended makes the fake CreateVolumePoolVolume and
+	// DeleteVolumePoolVolume on a pool or volume whose name contains it fail
+	// with HTTP 409 ABORTED, as Filestore does when concurrent calls contend
+	// for the same volume. GetVolumePoolVolume is not affected.
 	FakeVolumePoolContended = "contended"
-	// FakeVolumePoolAlreadyExists makes the fake CreateVolumePoolVolume on a
-	// pool whose name contains it fail with HTTP 409 ALREADY_EXISTS without
-	// recording the volume, so a following GetVolumePoolVolume returns
-	// HTTP 404, as if the volume was deleted in between.
-	FakeVolumePoolAlreadyExists = "already-exists"
+	// FakeVolumePoolExhausted makes the fake CreateVolumePoolVolume on a pool
+	// whose name contains it fail with HTTP 429 RESOURCE_EXHAUSTED, even for
+	// an existing volume ID, as Filestore does for a full pool.
+	FakeVolumePoolExhausted = "exhausted"
 	// FakeVolumePoolGetForbidden makes the fake GetVolumePoolVolume on a volume
 	// whose name contains it fail with HTTP 403.
 	FakeVolumePoolGetForbidden = "get-forbidden"
 )
+
+// fakeVolumePoolError returns a googleapi error with the given HTTP code and
+// canonical status, shaped like googleapi.CheckResponse's result for a
+// Filestore JSON error body (https://google.aip.dev/193), which carries no
+// error reason.
+func fakeVolumePoolError(httpCode int, canonicalStatus, message string) error {
+	body, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    httpCode,
+			"message": message,
+			"status":  canonicalStatus,
+		},
+	})
+	return &googleapi.Error{
+		Code:    httpCode,
+		Message: message,
+		Body:    string(body),
+	}
+}
 
 // fakeVolumePoolConflictError returns an HTTP 409 googleapi error with the
 // given canonical status, shaped like googleapi.CheckResponse's result for a

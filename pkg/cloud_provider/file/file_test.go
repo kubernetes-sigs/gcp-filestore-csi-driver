@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -1334,9 +1335,9 @@ func TestStatusErrorHTTPConflictUnchanged(t *testing.T) {
 	}
 }
 
-// TestVolumePoolVolumeHTTPErrors checks the errors that CreateVolumePoolVolume
-// and DeleteVolumePoolVolume return for Filestore error responses, as parsed by
-// googleapi.CheckResponse.
+// TestVolumePoolVolumeHTTPErrors checks the errors that CreateVolumePoolVolume,
+// GetVolumePoolVolume and DeleteVolumePoolVolume return for Filestore error
+// responses, as parsed by googleapi.CheckResponse.
 func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
 	volID := "vol-123"
@@ -1550,5 +1551,91 @@ func TestGetVolumePoolVolume(t *testing.T) {
 				t.Errorf("unexpected volume (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// TestVolumePoolRequestEscaping checks that resource names and the volume ID
+// can't change the request path or add a query.
+func TestVolumePoolRequestEscaping(t *testing.T) {
+	const parentPool = "projects/test-project/locations/us-central1/volumePools/test-pool"
+	var gotPath, gotRawQuery, gotVolumeID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotRawQuery, gotVolumeID = r.URL.EscapedPath(), r.URL.RawQuery, r.URL.Query().Get("volumeId")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, volumePoolErrorBody(http.StatusNotFound, "NOT_FOUND", "not found"))
+	}))
+	defer server.Close()
+	ctx := context.Background()
+	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("failed to create service client: %v", err)
+	}
+	fileService.BasePath = server.URL + "/"
+	manager := &gcfsServiceManager{fileService: fileService, httpClient: server.Client()}
+
+	if _, err := manager.GetVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); !IsHTTPNotFoundErr(err) {
+		t.Fatalf("GetVolumePoolVolume error = %v, want HTTP 404", err)
+	}
+	if want := "/v1beta1/" + parentPool + "/volumes/%3Fx%23y"; gotPath != want || gotRawQuery != "" {
+		t.Errorf("GET path %q query %q, want %q and no query", gotPath, gotRawQuery, want)
+	}
+	if _, err := manager.CreateVolumePoolVolume(ctx, parentPool, "a&b=c"); err == nil {
+		t.Fatal("CreateVolumePoolVolume succeeded, want an error")
+	}
+	if gotVolumeID != "a&b=c" {
+		t.Errorf("POST volumeId = %q, want %q", gotVolumeID, "a&b=c")
+	}
+}
+
+// TestVolumePoolUnexpectedSuccessStatus checks that a 2xx status that a call
+// doesn't expect is an error, never a nil volume with a nil error.
+func TestVolumePoolUnexpectedSuccessStatus(t *testing.T) {
+	const name = "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-1"
+	for _, code := range []int{http.StatusAccepted, http.StatusNoContent, http.StatusPartialContent} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		}))
+		ctx := context.Background()
+		fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+		if err != nil {
+			t.Fatalf("failed to create service client: %v", err)
+		}
+		fileService.BasePath = server.URL + "/"
+		manager := &gcfsServiceManager{fileService: fileService, httpClient: server.Client()}
+		if vol, err := manager.GetVolumePoolVolume(ctx, name); err == nil || vol != nil {
+			t.Errorf("GetVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
+		}
+		if code != http.StatusNoContent {
+			if vol, err := manager.CreateVolumePoolVolume(ctx, "projects/test-project/locations/us-central1/volumePools/test-pool", "vol-1"); err == nil || vol != nil {
+				t.Errorf("CreateVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
+			}
+			if err := manager.DeleteVolumePoolVolume(ctx, name); err == nil {
+				t.Errorf("DeleteVolumePoolVolume with HTTP %d succeeded, want an error", code)
+			}
+		}
+		server.Close()
+	}
+}
+
+// TestFakeVolumePoolFullPoolBeforeName checks that the fake, like Filestore,
+// reports a full pool before an existing volume ID.
+func TestFakeVolumePoolFullPoolBeforeName(t *testing.T) {
+	const pool = "projects/test-project/locations/us-central1/volumePools/" + FakeVolumePoolExhausted + "-pool"
+	svc, err := NewFakeService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := svc.(*fakeServiceManager)
+	fake.allocatedVolumes[pool+"/volumes/vol-1"] = &PoolVolume{Name: pool + "/volumes/vol-1", IpAddress: "10.1.1.1", MountName: "vol_1", State: VolumePoolVolumeStateHot}
+	_, err = fake.CreateVolumePoolVolume(context.Background(), pool, "vol-1")
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) || googleErr.Code != http.StatusTooManyRequests {
+		t.Errorf("CreateVolumePoolVolume for an existing ID in a full pool: error = %v, want HTTP 429", err)
+	}
+	// The fake's 404 has no error reason, like Filestore's.
+	_, err = fake.GetVolumePoolVolume(context.Background(), pool+"/volumes/missing")
+	if !IsHTTPNotFoundErr(err) || IsNotFoundErr(err) {
+		t.Errorf("GetVolumePoolVolume for a missing volume: error = %v, want an HTTP 404 without an error reason", err)
 	}
 }

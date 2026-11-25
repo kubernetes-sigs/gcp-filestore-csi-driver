@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
@@ -81,6 +82,52 @@ func isVolumePoolVolumeID(volumeID string) bool {
 	return strings.HasPrefix(volumeID, volumePoolURLPrefix)
 }
 
+var (
+	// volumePoolVolumeIDRE is the format Filestore accepts for a Volume Pool
+	// volume ID: 1 to 63 lowercase letters, digits and hyphens, starting with
+	// a letter and not ending with a hyphen. CO-generated names such as
+	// pvc-<uuid> match it.
+	volumePoolVolumeIDRE = regexp.MustCompile(`^[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?$`)
+	// volumePoolNameRE matches a Volume Pool resource name,
+	// projects/{project}/locations/{location}/volumePools/{pool}.
+	volumePoolNameRE = regexp.MustCompile(`^projects/([a-z0-9][-a-z0-9]*)/locations/([a-z][-a-z0-9]*)/volumePools/([a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)$`)
+)
+
+// checkVolumePoolVolumeName returns InvalidArgument unless name is a valid
+// Volume Pool volume ID. The ID becomes part of the API request path, so a
+// name such as "..", or one containing "/", "?" or "#", would otherwise reach
+// a different API method.
+func checkVolumePoolVolumeName(name string) error {
+	if !volumePoolVolumeIDRE.MatchString(name) {
+		return status.Errorf(codes.InvalidArgument, "invalid volume name %q for a volume pool volume: want 1 to 63 lowercase letters, digits and hyphens, starting with a letter and not ending with a hyphen", name)
+	}
+	return nil
+}
+
+// canonicalVolumePoolName returns the canonical form of pool, the value of the
+// volume-pool parameter, or InvalidArgument if it isn't a Volume Pool resource
+// name, projects/{project}/locations/{location}/volumePools/{pool}. Surrounding
+// whitespace and slashes are removed. The name must also survive the round
+// trip through a volume ID, so that DeleteVolume sees the pool, and takes the
+// lock, that CreateVolume used.
+func canonicalVolumePoolName(pool string) (string, error) {
+	canonical := strings.Trim(strings.TrimSpace(pool), "/")
+	if !volumePoolNameRE.MatchString(canonical) {
+		return "", status.Errorf(codes.InvalidArgument, "invalid %s parameter %q: want projects/{project}/locations/{location}/volumePools/{pool}", paramKeyVolumePool, pool)
+	}
+	if parent, _, _, err := parseVolumePoolVolumeID(buildVolumePoolVolumeID(canonical, "volume", "")); err != nil || parent != canonical {
+		return "", status.Errorf(codes.InvalidArgument, "unsupported %s parameter %q: it can't be encoded in a volume ID", paramKeyVolumePool, pool)
+	}
+	return canonical, nil
+}
+
+// volumePoolVolumeName returns the resource name of the volume volumeID in the
+// pool poolName. CreateVolume and DeleteVolume use it both for the API calls
+// and as the key of the per-volume lock, so that both lock the same key.
+func volumePoolVolumeName(poolName, volumeID string) string {
+	return fmt.Sprintf("%s/volumes/%s", poolName, volumeID)
+}
+
 // volumePoolStatusError converts an error from a Volume Pool API call to a gRPC
 // status error. An HTTP 409 ABORTED (concurrent claims on the same pool volume)
 // becomes codes.Aborted, which tells the caller that an immediate retry can
@@ -104,11 +151,21 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	if len(name) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "CreateVolume name must be provided")
 	}
+	if err := checkVolumePoolVolumeName(name); err != nil {
+		return nil, err
+	}
+	poolPath, err := canonicalVolumePoolName(poolPath)
+	if err != nil {
+		return nil, err
+	}
 
 	klog.V(4).Infof("Creating Volume Pool volume: pool %q, requestID %q", poolPath, name)
-	volumeName := fmt.Sprintf("%s/volumes/%s", poolPath, name)
+	volumeName := volumePoolVolumeName(poolPath, name)
 	// Serialize operations on the same volume, as the other CreateVolume and
-	// DeleteVolume paths do.
+	// DeleteVolume paths do. The lock is per controller pod: across replicas,
+	// safety relies on Filestore keeping volume names unique (a concurrent
+	// create on another pod gets HTTP 409 ALREADY_EXISTS, and this pod then
+	// looks the volume up).
 	if acquired := s.config.volumeLocks.TryAcquire(volumeName); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeName)
 	}
@@ -175,40 +232,57 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // lookupVolumePoolVolume returns the volume named volumeName, whatever its
 // state, or nil if it does not exist.
 //
-// Volume Pool volumes created by the driver have no attributes that can differ
-// between two CreateVolume requests with the same name: the request sends no
-// quota or ip_acls, and the CreateVolumeResponse capacity, protocol and mount
-// options come from the request. So an existing volume is always compatible,
-// and codes.AlreadyExists is never returned. Once the driver sends a quota,
-// compare it here and return codes.AlreadyExists on a mismatch.
+// Two CreateVolume requests with the same name can't ask for different backend
+// volumes: the driver sends no quota or ip_acls, and the response fields
+// (capacity, protocol, mount options) come from the request. So an existing
+// volume is always compatible, and codes.AlreadyExists is never returned. Once
+// the driver sends a quota, compare it here and return codes.AlreadyExists on a
+// mismatch.
+//
+// Only an HTTP 404 from the API means that the volume doesn't exist.
 func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeName string) (*file.PoolVolume, error) {
 	vol, err := s.config.fileService.GetVolumePoolVolume(ctx, volumeName)
 	if err == nil {
 		return vol, nil
 	}
-	statusErr := volumePoolStatusError(err)
-	if status.Code(statusErr) == codes.NotFound {
+	if file.IsHTTPNotFoundErr(err) {
 		return nil, nil
 	}
 	klog.Errorf("Failed to look up Volume Pool volume %q: %v", volumeName, err)
-	return nil, statusErr
+	return nil, volumePoolStatusError(err)
 }
 
 // createVolumePoolVolume creates the volume name in poolPath. If another
-// request created the volume after the lookup (HTTP 409 ALREADY_EXISTS), it
-// returns that volume instead, with createdByOther set. The volume is returned
-// whatever its state.
+// request created the volume after the lookup, it returns that volume instead,
+// with createdByOther set. The volume is returned whatever its state.
 func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name string) (poolVol *file.PoolVolume, createdByOther bool, err error) {
+	volumeName := volumePoolVolumeName(poolPath, name)
 	poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
 	if err == nil {
 		return poolVol, false, nil
+	}
+	if file.IsHTTPTooManyRequestsErr(err) {
+		// The API looks for a free share before it checks the name, so a
+		// create for a name that another request (for example on another
+		// controller pod) created after our lookup gets HTTP 429 when that
+		// request took the last free share. Look once more before reporting
+		// the pool as full.
+		existing, getErr := s.lookupVolumePoolVolume(ctx, volumeName)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		if existing != nil {
+			klog.Infof("Volume Pool volume %q was created by another request while the pool filled up", volumeName)
+			return existing, true, nil
+		}
+		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
+		return nil, false, volumePoolStatusError(err)
 	}
 	if !file.IsAlreadyExistsErr(err) {
 		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
 		return nil, false, volumePoolStatusError(err)
 	}
 
-	volumeName := fmt.Sprintf("%s/volumes/%s", poolPath, name)
 	klog.Infof("Volume Pool volume %q was created by another request, looking it up", volumeName)
 	poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
 	if err != nil {
@@ -223,16 +297,9 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 	return poolVol, true, nil
 }
 
-// isVolumePoolVolumeHot reports whether vol is HOT and has a mount point, so
-// that it can be mounted. A volume whose state is unspecified, or from an API
-// version that does not report states, counts as HOT if it has a mount point.
-func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
-	switch vol.State {
-	case "", file.VolumePoolVolumeStateUnspecified, file.VolumePoolVolumeStateHot:
-		return vol.IpAddress != "" && vol.MountName != ""
-	default:
-		return false
-	}
+// hasVolumePoolMountPoint reports whether vol has a complete mount point.
+func hasVolumePoolMountPoint(vol *file.PoolVolume) bool {
+	return vol.IpAddress != "" && vol.MountName != ""
 }
 
 // checkVolumePoolVolumeMountable returns nil if vol can be mounted, and
@@ -243,14 +310,25 @@ func isVolumePoolVolumeHot(vol *file.PoolVolume) bool {
 // is unfrozen or made HOT. The CO then gets no volume ID that it could delete,
 // so the volume must be unfrozen, made HOT or deleted out of band. That
 // happens if a volume with the requested name was frozen after an earlier
-// attempt created it, or if the API created the volume WARM, which it does
-// when the volume's share denies all clients.
+// attempt created it, or if the API created the volume WARM, which it may do
+// when the volume's ip_acls are empty or its share denies all clients.
 //
 // A volume that is still being created, or that has no mount point for another
 // reason, gives Aborted, so that the caller retries until it has one. For
 // example, the API reports a volume whose instance is being recovered as
-// unspecified-state, without a mount point.
+// unspecified-state, without a mount point. A state this driver doesn't know
+// also gives Aborted, with a warning.
 func checkVolumePoolVolumeMountable(vol *file.PoolVolume) error {
+	if vol == nil {
+		return status.Error(codes.Internal, "the Volume Pool API returned no volume")
+	}
+	switch vol.State {
+	case "", file.VolumePoolVolumeStateUnspecified, file.VolumePoolVolumeStateHot, file.VolumePoolVolumeStateCreating,
+		file.VolumePoolVolumeStateWarm, file.VolumePoolVolumeStateCold:
+	default:
+		klog.Warningf("Volume Pool volume %q is in unknown state %q", vol.Name, vol.State)
+		return status.Errorf(codes.Aborted, "volume %q is in state %q, which can't be mounted", vol.Name, vol.State)
+	}
 	switch {
 	case vol.State == file.VolumePoolVolumeStateCold:
 		return status.Errorf(codes.FailedPrecondition, "volume %q is COLD; unfreeze it first", vol.Name)
@@ -258,7 +336,8 @@ func checkVolumePoolVolumeMountable(vol *file.PoolVolume) error {
 		return status.Errorf(codes.FailedPrecondition, "volume %q is WARM, which cannot be mounted; make it HOT first", vol.Name)
 	case vol.State == file.VolumePoolVolumeStateCreating:
 		return status.Errorf(codes.Aborted, "volume %q is still being created", vol.Name)
-	case !isVolumePoolVolumeHot(vol):
+	case !hasVolumePoolMountPoint(vol):
+		// HOT, unspecified or no state reported, without a mount point.
 		return status.Errorf(codes.Aborted, "volume %q has no mount point yet: its state is %q", vol.Name, vol.State)
 	}
 	return nil
@@ -275,7 +354,15 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 
 	klog.V(4).Infof("Parsed release parameters: parent=%q, volID=%q, ipAddress=%q", parent, volID, ipAddress)
 
-	name := fmt.Sprintf("%s/volumes/%s", parent, volID)
+	// The ID came from CreateVolume, which checked both parts. Check them
+	// again, as both become part of the API request path.
+	if err := checkVolumePoolVolumeName(volID); err != nil {
+		return nil, err
+	}
+	if parent, err = canonicalVolumePoolName(parent); err != nil {
+		return nil, err
+	}
+	name := volumePoolVolumeName(parent, volID)
 	if acquired := s.config.volumeLocks.TryAcquire(name); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, name)
 	}
@@ -283,7 +370,7 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 
 	err = s.config.fileService.DeleteVolumePoolVolume(ctx, name)
 	if err != nil {
-		if file.IsNotFoundErr(err) {
+		if file.IsNotFoundErr(err) || file.IsHTTPNotFoundErr(err) {
 			klog.Warningf("Volume Pool volume %q not found, returning success", volumeID)
 			return &csi.DeleteVolumeResponse{}, nil
 		}

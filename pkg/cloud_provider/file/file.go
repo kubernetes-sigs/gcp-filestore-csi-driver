@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"runtime"
 	"strings"
@@ -791,6 +792,22 @@ func IsNotFoundErr(err error) bool {
 		}
 	}
 	return false
+}
+
+// IsHTTPNotFoundErr reports whether err is a googleapi error with HTTP status
+// 404. Unlike IsNotFoundErr, it doesn't need an error reason, which the Volume
+// Pool API's JSON error bodies (https://google.aip.dev/193) don't carry.
+func IsHTTPNotFoundErr(err error) bool {
+	var googleErr *googleapi.Error
+	return errors.As(err, &googleErr) && googleErr.Code == http.StatusNotFound
+}
+
+// IsHTTPTooManyRequestsErr reports whether err is a googleapi error with HTTP
+// status 429, which the Volume Pool API returns when the pool has no free
+// volume (RESOURCE_EXHAUSTED).
+func IsHTTPTooManyRequestsErr(err error) bool {
+	var googleErr *googleapi.Error
+	return errors.As(err, &googleErr) && googleErr.Code == http.StatusTooManyRequests
 }
 
 // IsAbortedErr reports whether err is an HTTP 409 googleapi error whose
@@ -1614,8 +1631,30 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
+// escapeResourceName escapes each segment of the resource name name, such as
+// projects/{project}/locations/{location}/volumePools/{pool}, for use as a URL
+// path, so that no segment can change the path or add a query.
+func escapeResourceName(name string) string {
+	segments := strings.Split(name, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return strings.Join(segments, "/")
+}
+
+// volumePoolResponseError returns the error for an HTTP response that a Volume
+// Pool call did not expect. googleapi.CheckResponse returns nil for every 2xx
+// status, so an unexpected 2xx status gets an explicit error instead of being
+// treated as success.
+func volumePoolResponseError(resp *http.Response, call string) error {
+	if err := googleapi.CheckResponse(resp); err != nil {
+		return err
+	}
+	return fmt.Errorf("%s: unexpected HTTP status %d", call, resp.StatusCode)
+}
+
 func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
-	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
+	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", escapeResourceName(parentPool), url.QueryEscape(volumeID))
 
 	// We purposefully populate the Description field to bypass a Google API Gateway
 	// REST-to-gRPC transcoding bug. The backend CreateVolumeRequest protobuf marks
@@ -1635,7 +1674,7 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, googleapi.CheckResponse(resp)
+		return nil, volumePoolResponseError(resp, "CreateVolume")
 	}
 
 	var vol VolumePoolVolume
@@ -1651,14 +1690,14 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 // projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
 // whatever its state.
 func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
-	resp, err := manager.executeRESTRequest(ctx, http.MethodGet, name, nil)
+	resp, err := manager.executeRESTRequest(ctx, http.MethodGet, escapeResourceName(name), nil)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, googleapi.CheckResponse(resp)
+		return nil, volumePoolResponseError(resp, "GetVolume")
 	}
 
 	var vol VolumePoolVolume
@@ -1669,14 +1708,14 @@ func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name
 }
 
 func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
-	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, name, nil)
+	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, escapeResourceName(name), nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return googleapi.CheckResponse(resp)
+		return volumePoolResponseError(resp, "DeleteVolume")
 	}
 	return nil
 }
