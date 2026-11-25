@@ -273,9 +273,10 @@ func TestReconcilerGenerateNewMultishareInstance(t *testing.T) {
 	const storageClassName = "test-sc"
 
 	cases := []struct {
-		name      string
-		params    map[string]string
-		expectErr bool
+		name               string
+		params             map[string]string
+		pscEndpointProject string
+		expectErr          bool
 	}{
 		{
 			name: "private service connect",
@@ -283,6 +284,23 @@ func TestReconcilerGenerateNewMultishareInstance(t *testing.T) {
 				ParamConnectMode: privateServiceConnect,
 			},
 			expectErr: false,
+		},
+		{
+			name: "private service connect with psc-endpoint-project",
+			params: map[string]string{
+				ParamConnectMode:        privateServiceConnect,
+				ParamPscEndpointProject: "service-project",
+			},
+			pscEndpointProject: "service-project",
+			expectErr:          false,
+		},
+		{
+			name: "psc-endpoint-project without private service connect",
+			params: map[string]string{
+				ParamConnectMode:        privateServiceAccess,
+				ParamPscEndpointProject: "service-project",
+			},
+			expectErr: true,
 		},
 		{
 			name: "private service connect with reserved IP range",
@@ -340,8 +358,13 @@ func TestReconcilerGenerateNewMultishareInstance(t *testing.T) {
 				t.Errorf("got error %v, expectErr %v", err, test.expectErr)
 				return
 			}
-			if err == nil && instance.Network.ConnectMode != privateServiceConnect {
-				t.Errorf("got connect mode %q, want %q", instance.Network.ConnectMode, privateServiceConnect)
+			if err == nil {
+				if instance.Network.ConnectMode != privateServiceConnect {
+					t.Errorf("got connect mode %q, want %q", instance.Network.ConnectMode, privateServiceConnect)
+				}
+				if instance.Network.PscEndpointProject != test.pscEndpointProject {
+					t.Errorf("got psc endpoint project %q, want %q", instance.Network.PscEndpointProject, test.pscEndpointProject)
+				}
 			}
 		})
 	}

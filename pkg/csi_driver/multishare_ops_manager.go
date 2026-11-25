@@ -731,6 +731,8 @@ func (m *MultishareOpsManager) listMatchedInstances(ctx context.Context, req *cs
 //     "gke_cluster_name", and the value should be the same.
 //
 //  11. Both source and target instance should have the same FileSystem protocol.
+//
+//  12. Both source and target instance should have the same PscEndpointProject.
 func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateVolumeRequest) (bool, error) {
 	matchLabels := [3]string{util.ParamMultishareInstanceScLabelKey, TagKeyClusterLocation, TagKeyClusterName}
 	for _, labelKey := range matchLabels {
@@ -762,6 +764,7 @@ func isMatchedInstance(source, target *file.MultishareInstance, req *csi.CreateV
 		strings.EqualFold(source.Tier, target.Tier) &&
 		strings.EqualFold(source.Network.Name, target.Network.Name) &&
 		strings.EqualFold(source.Network.ConnectMode, target.Network.ConnectMode) &&
+		strings.EqualFold(source.Network.PscEndpointProject, target.Network.PscEndpointProject) &&
 		strings.EqualFold(source.KmsKeyName, target.KmsKeyName) {
 		return true, nil
 	}
