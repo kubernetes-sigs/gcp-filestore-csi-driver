@@ -692,6 +692,16 @@ func (s CreateProjectMetadata) MarshalJSON() ([]byte, error) {
 	return gensupport.MarshalJSON(NoMethod(s), s.ForceSendFields, s.NullFields)
 }
 
+// CreateSemanticTagBindingMetadata: Metadata for the
+// `CreateSemanticTagBinding` long-running operation.
+type CreateSemanticTagBindingMetadata struct {
+}
+
+// CreateSemanticTagValueMetadata: Runtime operation information for creating a
+// `SemanticTagValue`.
+type CreateSemanticTagValueMetadata struct {
+}
+
 // CreateTagBindingMetadata: Runtime operation information for creating a
 // TagValue.
 type CreateTagBindingMetadata struct {
@@ -730,6 +740,16 @@ type DeleteOrganizationMetadata struct {
 // DeleteProjectMetadata: A status object which is used as the `metadata` field
 // for the Operation returned by `DeleteProject`.
 type DeleteProjectMetadata struct {
+}
+
+// DeleteSemanticTagBindingMetadata: Metadata for the
+// `DeleteSemanticTagBinding` long-running operation.
+type DeleteSemanticTagBindingMetadata struct {
+}
+
+// DeleteSemanticTagValueMetadata: Runtime operation information for deleting a
+// `SemanticTagValue`.
+type DeleteSemanticTagValueMetadata struct {
 }
 
 // DeleteTagBindingMetadata: Runtime operation information for deleting a
@@ -1726,6 +1746,16 @@ type Project struct {
 	//   "DELETE_IN_PROGRESS" - This lifecycle state is no longer used and not
 	// returned by the API.
 	LifecycleState string `json:"lifecycleState,omitempty"`
+	// ManagementType: Output only. The type of Management Project. This field is
+	// only populated if `is_management_project` is `true`.
+	//
+	// Possible values:
+	//   "MANAGEMENT_TYPE_UNSPECIFIED" - Unspecified type.
+	//   "SELF_MANAGED" - The Management Project is a self-managed project that
+	// constitutes its own boundary.
+	//   "HUB" - The Management Project is a hub project that manages resources
+	// across a boundary.
+	ManagementType string `json:"managementType,omitempty"`
 	// Name: The optional user-assigned display name of the Project. When present
 	// it must be between 4 to 30 characters. Allowed characters are: lowercase and
 	// uppercase letters, numbers, hyphen, single-quote, double-quote, space, and
@@ -2789,7 +2819,7 @@ type LiensCreateCall struct {
 	header_    http.Header
 }
 
-// Create: Create a Lien which applies to the resource denoted by the `parent`
+// Create: Creates a Lien which applies to the resource denoted by the `parent`
 // field. Callers of this method will require permission on the `parent`
 // resource. For example, applying to `projects/1234` requires permission
 // `resourcemanager.projects.updateLiens`. NOTE: Some resources may limit the
@@ -2889,7 +2919,7 @@ type LiensDeleteCall struct {
 	header_    http.Header
 }
 
-// Delete: Delete a Lien by `name`. Callers of this method will require
+// Delete: Deletes a Lien by `name`. Callers of this method will require
 // permission on the `parent` resource. For example, a Lien with a `parent` of
 // `projects/1234` requires permission `resourcemanager.projects.updateLiens`.
 //
@@ -2989,7 +3019,7 @@ type LiensGetCall struct {
 	header_      http.Header
 }
 
-// Get: Retrieve a Lien by `name`. Callers of this method will require
+// Get: Retrieves a Lien by `name`. Callers of this method will require
 // permission on the `parent` resource. For example, a Lien with a `parent` of
 // `projects/1234` requires permission `resourcemanager.projects.get`
 //
@@ -3099,7 +3129,7 @@ type LiensListCall struct {
 	header_      http.Header
 }
 
-// List: List all Liens applied to the `parent` resource. Callers of this
+// List: Lists all Liens applied to the `parent` resource. Callers of this
 // method will require permission on the `parent` resource. For example, a Lien
 // with a `parent` of `projects/1234` requires permission
 // `resourcemanager.projects.get`.
