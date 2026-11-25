@@ -709,6 +709,13 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			want:   codes.Aborted,
 		},
 		{
+			// Only a 429 from create leads to a second lookup.
+			name:   "403 on create keeps its mapping without a second lookup",
+			gets:   []response{notFound},
+			create: &response{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")},
+			want:   codes.PermissionDenied,
+		},
+		{
 			// An unexpected 2xx must not look like "not found".
 			name: "lookup returns an unexpected 204",
 			gets: []response{{http.StatusNoContent, nil}},
@@ -1194,5 +1201,25 @@ func TestDeleteVolume_VolumePoolHTTP(t *testing.T) {
 				t.Errorf("got %d DELETE requests, want 1", deletes)
 			}
 		})
+	}
+}
+
+// TestDeleteVolume_VolumePoolInvalidID checks that DeleteVolume rejects a
+// volume ID whose name or pool part isn't valid, before any API call.
+func TestDeleteVolume_VolumePoolInvalidID(t *testing.T) {
+	for _, volumeID := range []string{
+		"volumepool://test-project/us-central1/my-pool/volumes/Pvc-A?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/..?ip=10.1.1.1",
+		"volumepool://My-Project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/My_Pool/volumes/pvc-a?ip=10.1.1.1",
+	} {
+		cs, fs := newVolumePoolTestController(t)
+		_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{VolumeId: volumeID})
+		if got := status.Code(err); got != codes.InvalidArgument {
+			t.Errorf("DeleteVolume(%q) code = %v, want InvalidArgument (error: %v)", volumeID, got, err)
+		}
+		if len(fs.calls) != 0 {
+			t.Errorf("DeleteVolume(%q) made API calls: %v", volumeID, fs.calls)
+		}
 	}
 }
