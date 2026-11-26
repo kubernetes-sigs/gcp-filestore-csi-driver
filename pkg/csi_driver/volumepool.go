@@ -230,7 +230,8 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // returned. Once the driver sends a quota, compare it here and return
 // codes.AlreadyExists on a mismatch.
 //
-// Only an HTTP 404 from the API means that the volume doesn't exist.
+// Only an HTTP 404 from the API means that the volume doesn't exist. Any other
+// error is returned as is; the caller logs and maps it.
 func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeName string) (*file.PoolVolume, error) {
 	vol, err := s.config.fileService.GetVolumePoolVolume(ctx, volumeName)
 	if err == nil {
@@ -239,8 +240,7 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 	if file.IsHTTPNotFoundErr(err) {
 		return nil, nil
 	}
-	klog.Errorf("Failed to look up Volume Pool volume %q: %v", volumeName, err)
-	return nil, volumePoolStatusError(err)
+	return nil, err
 }
 
 // createVolumePoolVolume creates the volume name in poolPath, or returns the
@@ -264,8 +264,14 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 //     that volume isn't visible yet, the GET returns 404 and the call fails
 //     with ResourceExhausted; if it's still CREATING, the call fails with
 //     Aborted; either way the caller's retry finds it. A 429 from rate
-//     limiting costs one extra GET. If the volume doesn't exist, the original
-//     429 is returned (ResourceExhausted).
+//     limiting costs one extra GET.
+//     If the GET doesn't return the volume, whether it returns 404 or fails
+//     in any other way (for example 403, 429, 5xx or a timeout), the original
+//     429 is returned (ResourceExhausted with Filestore's message), as before
+//     the lookup was added: the volume can't be confirmed, and a failure of
+//     the extra GET mustn't turn a full pool or a rate limit into another
+//     error. The GET error is logged as a warning. A missing get permission
+//     still shows as PermissionDenied on the 409 path, and in that log.
 //
 // HTTP 409 ABORTED (contention) and every other error keep their mapping
 // without a lookup.
@@ -281,7 +287,9 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 		klog.Infof("Volume Pool volume %q already exists (HTTP 409 ALREADY_EXISTS), looking it up", volumeName)
 		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
-			return nil, "", err
+			// The volume is known to exist, so the GET's error is the answer.
+			klog.Errorf("Failed to look up Volume Pool volume %q after HTTP 409 ALREADY_EXISTS: %v", volumeName, err)
+			return nil, "", volumePoolStatusError(err)
 		}
 		if poolVol == nil {
 			// The volume was deleted between the two calls. Another
@@ -294,7 +302,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 		klog.Infof("Creating Volume Pool volume %q failed with HTTP 429, looking it up in case it already exists: %v", volumeName, createErr)
 		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
-			return nil, "", err
+			klog.Warningf("Failed to look up Volume Pool volume %q after HTTP 429 from its create, returning the 429: %v", volumeName, err)
 		}
 		if poolVol == nil {
 			klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)

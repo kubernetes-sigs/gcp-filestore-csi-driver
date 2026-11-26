@@ -320,8 +320,20 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 	wantContext := map[string]string{attrIP: "10.1.1.1", attrVolume: "vol_" + volName, attrFileProtocol: v4_1FileProtocol, attrMountOptions: "nconnect=8"}
 
 	const fullPool = "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolExhausted + "-pool"
+	// The create's 429 has its own message, so that the tests can tell it from
+	// the GET's errors.
+	const fullPoolMsg = "no free share in the pool"
 	tooManyRequests := func(context.Context, string, string) (*file.PoolVolume, error) {
-		return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
+		err := googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
+		err.Message = fullPoolMsg
+		return nil, err
+	}
+	// getFailsAfter429 makes the create fail with 429 and the GET with getErr.
+	getFailsAfter429 := func(getErr error) func(*testing.T, *controllerServer, *volumePoolTestService) {
+		return func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+			fs.createVolume = tooManyRequests
+			fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) { return nil, getErr }
+		}
 	}
 	alreadyExists := func(context.Context, string, string) (*file.PoolVolume, error) {
 		return nil, googleAPIError(http.StatusConflict, "ALREADY_EXISTS")
@@ -398,16 +410,71 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			wantCreateHTTP: http.StatusTooManyRequests,
 		},
 		{
-			name: "lookup error after 429 keeps its mapping",
-			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				fs.createVolume = tooManyRequests
-				fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")
-				}
-			},
-			wantCode:   codes.PermissionDenied,
+			name:       "GET 403 after 429 returns the 429",
+			setup:      getFailsAfter429(googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
 			wantCreate: 1,
 			wantGet:    1,
+		},
+		{
+			name:       "GET 500 after 429 returns the 429",
+			setup:      getFailsAfter429(googleAPIError(http.StatusInternalServerError, "INTERNAL")),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "GET 503 after 429 returns the 429",
+			setup:      getFailsAfter429(googleAPIError(http.StatusServiceUnavailable, "UNAVAILABLE")),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "GET 429 after 429 returns the 429",
+			setup:      getFailsAfter429(googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "GET timeout after 429 returns the 429",
+			setup:      getFailsAfter429(fmt.Errorf("get volume: %w", context.DeadlineExceeded)),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "GET canceled after 429 returns the 429",
+			setup:      getFailsAfter429(context.Canceled),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "GET non-HTTP error after 429 returns the 429",
+			setup:      getFailsAfter429(errors.New("connection reset by peer")),
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    fullPoolMsg,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			// The same through the fake: a full pool, and a GET that fails
+			// with 403.
+			name:           "GET 403 after 429 from the fake returns the 429",
+			pool:           "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolExhausted + "-" + file.FakeVolumePoolGetForbidden + "-pool",
+			wantCode:       codes.ResourceExhausted,
+			wantMsg:        "no available volumes in the pool",
+			wantCreate:     1,
+			wantGet:        1,
+			wantCreateHTTP: http.StatusTooManyRequests,
 		},
 		{
 			name: "ALREADY_EXISTS for a volume that is not found is retryable",
@@ -652,13 +719,17 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 	}
 	notFound := response{http.StatusNotFound, errorBody(http.StatusNotFound, "NOT_FOUND")}
 	alreadyExists := response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")}
-	exhausted := response{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")}
+	// The create's 429 has its own message, so that the tests can tell it from
+	// the GET's errors.
+	const fullPoolMsg = "no free share in the pool"
+	exhausted := response{http.StatusTooManyRequests, map[string]any{"error": map[string]any{"code": http.StatusTooManyRequests, "message": fullPoolMsg, "status": "RESOURCE_EXHAUSTED"}}}
 
 	tests := []struct {
-		name   string
-		create response   // response to the create, which comes first
-		gets   []response // responses to the GET requests that follow, in order
-		want   codes.Code
+		name    string
+		create  response   // response to the create, which comes first
+		gets    []response // responses to the GET requests that follow, in order
+		want    codes.Code
+		wantMsg string // substring of the error message, if set
 	}{
 		{
 			name:   "new volume is created without a lookup",
@@ -676,16 +747,33 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			gets:   []response{{http.StatusOK, hot}},
 		},
 		{
-			name:   "429 RESOURCE_EXHAUSTED for a new volume keeps its mapping",
-			create: exhausted,
-			gets:   []response{notFound},
-			want:   codes.ResourceExhausted,
+			name:    "429 RESOURCE_EXHAUSTED for a new volume keeps its mapping",
+			create:  exhausted,
+			gets:    []response{notFound},
+			want:    codes.ResourceExhausted,
+			wantMsg: fullPoolMsg,
 		},
 		{
-			name:   "429 RESOURCE_EXHAUSTED then 403 on get",
-			create: exhausted,
-			gets:   []response{{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")}},
-			want:   codes.PermissionDenied,
+			// A failed GET after a 429 returns the 429.
+			name:    "429 RESOURCE_EXHAUSTED then 403 on get",
+			create:  exhausted,
+			gets:    []response{{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")}},
+			want:    codes.ResourceExhausted,
+			wantMsg: fullPoolMsg,
+		},
+		{
+			name:    "429 RESOURCE_EXHAUSTED then 500 on get",
+			create:  exhausted,
+			gets:    []response{{http.StatusInternalServerError, errorBody(http.StatusInternalServerError, "INTERNAL")}},
+			want:    codes.ResourceExhausted,
+			wantMsg: fullPoolMsg,
+		},
+		{
+			name:    "429 RESOURCE_EXHAUSTED then 429 on get",
+			create:  exhausted,
+			gets:    []response{{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")}},
+			want:    codes.ResourceExhausted,
+			wantMsg: fullPoolMsg,
 		},
 		{
 			name:   "429 RESOURCE_EXHAUSTED then a WARM volume",
@@ -809,6 +897,9 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			})
 			if got := status.Code(err); got != tc.want {
 				t.Fatalf("got error code %v, want %v (error: %v)", got, tc.want, err)
+			}
+			if tc.wantMsg != "" && !strings.Contains(status.Convert(err).Message(), tc.wantMsg) {
+				t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), tc.wantMsg)
 			}
 			if gets != len(tc.gets) {
 				t.Errorf("got %d GET requests, want %d", gets, len(tc.gets))
