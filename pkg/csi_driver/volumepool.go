@@ -63,10 +63,12 @@ func parseVolumePoolVolumeID(volumeID string) (parent, volID, ipAddress string, 
 	}
 
 	// Require exactly {project} as the host and
-	// /{location}/{pool}/volumes/{volume} as the path, with no escaped
-	// characters (such as an escaped slash). The ip query parameter is
-	// optional here: DeleteVolume identifies the volume without it.
-	if u.Host == "" || u.RawPath != "" || u.Opaque != "" || u.User != nil || u.Fragment != "" {
+	// /{location}/{pool}/volumes/{volume} as the path, with no percent-escapes
+	// in the path (such as an escaped slash or space) and no fragment, not even
+	// an empty one. The ip query parameter is optional here: DeleteVolume
+	// identifies the volume without it.
+	if u.Host == "" || u.EscapedPath() != u.Path || u.Opaque != "" || u.User != nil ||
+		u.Fragment != "" || strings.Contains(volumeID, "#") {
 		return "", "", "", fmt.Errorf("invalid composite volume ID: %s", volumeID)
 	}
 	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
@@ -170,9 +172,10 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	volumeName := volumePoolVolumeName(poolPath, name)
 	// Serialize operations on the same volume, as the other CreateVolume and
 	// DeleteVolume paths do. The lock is per controller pod: across replicas,
-	// safety relies on Filestore keeping volume names unique (a concurrent
-	// create on another pod gets HTTP 409 ALREADY_EXISTS, and this pod then
-	// looks the volume up).
+	// safety relies on Filestore keeping volume names unique. If another pod
+	// creates the same volume concurrently, this pod's create gets HTTP 409
+	// ALREADY_EXISTS (or 429 if that create took the last free share), and this
+	// pod looks the volume up or the caller retries.
 	if acquired := s.config.volumeLocks.TryAcquire(volumeName); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeName)
 	}
@@ -239,8 +242,8 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // lookupVolumePoolVolume returns the volume named volumeName, whatever its
 // state, or nil if it does not exist.
 //
-// Two CreateVolume requests with the same name can't ask for different backend
-// volumes: the driver sends no quota or ip_acls, and the response fields
+// Two CreateVolume requests with the same name for the same pool can't ask for
+// different backend volumes: the driver sends no quota or ip_acls, and the response fields
 // (capacity, protocol, mount options) come from the request. So an existing
 // volume is always compatible, and codes.AlreadyExists is never returned. Once
 // the driver sends a quota, compare it here and return codes.AlreadyExists on a
@@ -355,7 +358,7 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 		return nil, err
 	}
 	if parent, err = canonicalVolumePoolName(parent); err != nil {
-		return nil, err
+		return nil, status.Errorf(codes.InvalidArgument, "invalid volume pool in volume ID %q", volumeID)
 	}
 	name := volumePoolVolumeName(parent, volID)
 	if acquired := s.config.volumeLocks.TryAcquire(name); !acquired {

@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -27,8 +29,6 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
-	"strings"
-	"sync"
 )
 
 const (
@@ -601,10 +601,11 @@ func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 }
 
 const (
-	// FakeVolumePoolContended makes the fake CreateVolumePoolVolume and
-	// DeleteVolumePoolVolume on a pool or volume whose name contains it fail
-	// with HTTP 409 ABORTED, as Filestore does when concurrent calls contend
-	// for the same volume. GetVolumePoolVolume is not affected.
+	// FakeVolumePoolContended makes the fake CreateVolumePoolVolume fail with
+	// HTTP 409 ABORTED, as Filestore does when concurrent calls contend for
+	// the same volume, when the pool name contains it (only the pool name is
+	// checked), and DeleteVolumePoolVolume when the volume's resource name
+	// contains it. GetVolumePoolVolume is not affected.
 	FakeVolumePoolContended = "contended"
 	// FakeVolumePoolExhausted makes the fake CreateVolumePoolVolume on a pool
 	// whose name contains it fail with HTTP 429 RESOURCE_EXHAUSTED, even for
@@ -638,16 +639,5 @@ func fakeVolumePoolError(httpCode int, canonicalStatus, message string) error {
 // given canonical status, shaped like googleapi.CheckResponse's result for a
 // Filestore JSON error body.
 func fakeVolumePoolConflictError(canonicalStatus, message string) error {
-	body, _ := json.Marshal(map[string]any{
-		"error": map[string]any{
-			"code":    409,
-			"message": message,
-			"status":  canonicalStatus,
-		},
-	})
-	return &googleapi.Error{
-		Code:    409,
-		Message: message,
-		Body:    string(body),
-	}
+	return fakeVolumePoolError(409, canonicalStatus, message)
 }

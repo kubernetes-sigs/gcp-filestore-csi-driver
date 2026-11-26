@@ -1623,7 +1623,7 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
-// escapeResourceName escapes each segment of the resource name name, such as
+// escapeResourceName escapes each segment of a resource name, such as
 // projects/{project}/locations/{location}/volumePools/{pool}, for use as a URL
 // path, so that no segment can change the path or add a query.
 func escapeResourceName(name string) string {

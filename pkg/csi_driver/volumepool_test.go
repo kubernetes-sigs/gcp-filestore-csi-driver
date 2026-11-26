@@ -508,11 +508,10 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 		{name: "unspecified", state: file.VolumePoolVolumeStateUnspecified, mountPoint: true},
 		{name: "no state reported", state: "", mountPoint: true},
 		{name: "unspecified without a mount point", state: file.VolumePoolVolumeStateUnspecified, wantCode: codes.Aborted},
-		{name: "HOT without a mount point", state: file.VolumePoolVolumeStateHot, wantCode: codes.Aborted},
+		{name: "HOT without a mount point", state: file.VolumePoolVolumeStateHot, wantCode: codes.Aborted, wantMsg: "has no mount point yet"},
 		{name: "HOT with an IP but no mount name", state: file.VolumePoolVolumeStateHot, ipOnly: true, wantCode: codes.Aborted},
 		{name: "HOT with a mount name but no IP", state: file.VolumePoolVolumeStateHot, mountNameOnly: true, wantCode: codes.Aborted},
 		{name: "unknown state with a mount point", state: "DELETING", mountPoint: true, wantCode: codes.Aborted, wantMsg: `in state "DELETING", which can't be mounted`},
-		{name: "HOT without a mount point message", state: file.VolumePoolVolumeStateHot, wantCode: codes.Aborted, wantMsg: "has no mount point yet"},
 		{name: "CREATING", state: file.VolumePoolVolumeStateCreating, wantCode: codes.Aborted},
 		{name: "WARM", state: file.VolumePoolVolumeStateWarm, wantCode: codes.FailedPrecondition},
 		{name: "COLD", state: file.VolumePoolVolumeStateCold, wantCode: codes.FailedPrecondition},
@@ -920,8 +919,8 @@ func TestVolumePoolID_ParseAndBuild(t *testing.T) {
 
 func TestCheckVolumePoolVolumeName(t *testing.T) {
 	valid := []string{
-		"pvc-205cf9ee-3739-4112-8356-ff3b12763078",
-		"substrate-08fe8bdc-aa8a-4542-9456-2faa9b182678-fs",
+		"pvc-00000000-0000-4000-8000-000000000001",
+		"substrate-00000000-0000-4000-8000-000000000002-fs",
 		"a",
 		"a" + strings.Repeat("b", 62),
 	}
@@ -1066,10 +1065,11 @@ func TestVolumePoolLockExclusion(t *testing.T) {
 	}
 	cs, fs := newVolumePoolTestController(t)
 	entered := make(chan struct{})
+	var enteredOnce sync.Once
 	release := make(chan struct{})
 	fs.createVolume = func(ctx context.Context, parent, id string) (*file.PoolVolume, error) {
 		if id == "held-vol" {
-			close(entered)
+			enteredOnce.Do(func() { close(entered) })
 			<-release
 		}
 		return fs.Service.CreateVolumePoolVolume(ctx, parent, id)
@@ -1174,6 +1174,10 @@ func TestDeleteVolume_VolumePoolInvalidID(t *testing.T) {
 		"volumepool://test-project//my-pool/volumes/pvc-a?ip=10.1.1.1",
 		// An escaped character that would alias another name.
 		"volumepool://test-project/us-central1/my-pool/volumes/pvc%2Da?ip=10.1.1.1",
+		// Escapes that Go keeps escaped, and an empty fragment.
+		"volumepool://test-project/us-central1/my-pool/volumes/a%3Fb?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc%20a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a#",
 	} {
 		cs, fs := newVolumePoolTestController(t)
 		_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{VolumeId: volumeID})
@@ -1226,10 +1230,73 @@ func TestParseVolumePoolVolumeIDStrict(t *testing.T) {
 		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a/extra?ip=10.1.1.1",
 		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1#frag",
 		"volumepool://user@test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/a%3Fb?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc%20a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/a%25b?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a#",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1#",
 		"modeInstance/test-project/us-central1/my-pool/volumes/pvc-a",
 	} {
 		if parent, volID, _, err := parseVolumePoolVolumeID(id); err == nil {
 			t.Errorf("parseVolumePoolVolumeID(%q) = %q, %q, nil; want an error", id, parent, volID)
 		}
+	}
+}
+
+// TestCreateVolume_VolumePoolInvalidPool checks that CreateVolume rejects an
+// invalid volume-pool parameter before any API call.
+func TestCreateVolume_VolumePoolInvalidPool(t *testing.T) {
+	for _, pool := range []string{
+		"projects/test-project/locations/us-central1",
+		"projects/example.com:test-project/locations/us-central1/volumePools/my-pool",
+		"projects/test-project/locations/us-central1/volumePools/my-pool?x=y",
+	} {
+		cs, fs := newVolumePoolTestController(t)
+		_, err := cs.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
+			Name:       "pvc-a",
+			Parameters: map[string]string{paramKeyVolumePool: pool},
+			VolumeCapabilities: []*csi.VolumeCapability{{
+				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+			}},
+		})
+		if got := status.Code(err); got != codes.InvalidArgument {
+			t.Errorf("CreateVolume(volume-pool %q) code = %v, want InvalidArgument (error: %v)", pool, got, err)
+		}
+		if len(fs.calls) != 0 {
+			t.Errorf("CreateVolume(volume-pool %q) made API calls: %v", pool, fs.calls)
+		}
+	}
+}
+
+// TestDeleteVolume_VolumePoolHandlerNotFound checks the handler's own 404
+// branch: an HTTP 404 with an AIP-193 body (no error reason) from the delete
+// call means the volume is already gone.
+func TestDeleteVolume_VolumePoolHandlerNotFound(t *testing.T) {
+	cs, fs := newVolumePoolTestController(t)
+	fs.deleteVolume = func(context.Context, string) error {
+		return googleAPIError(http.StatusNotFound, "NOT_FOUND")
+	}
+	_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{
+		VolumeId: buildVolumePoolVolumeID("projects/test-project/locations/us-central1/volumePools/my-pool", "gone-vol", "10.1.1.1"),
+	})
+	if err != nil {
+		t.Errorf("DeleteVolume of a volume whose delete returns HTTP 404 = %v, want success", err)
+	}
+	if got := fs.calls["DeleteVolumePoolVolume"]; got != 1 {
+		t.Errorf("DeleteVolumePoolVolume called %d times, want 1", got)
+	}
+}
+
+// TestDeleteVolume_VolumePoolInvalidPoolMessage checks that a bad pool part of
+// a volume ID is reported as such, not as a bad volume-pool parameter.
+func TestDeleteVolume_VolumePoolInvalidPoolMessage(t *testing.T) {
+	cs, _ := newVolumePoolTestController(t)
+	_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{
+		VolumeId: "volumepool://My-Project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+	})
+	msg := status.Convert(err).Message()
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(msg, "volume ID") || strings.Contains(msg, "parameter") {
+		t.Errorf("DeleteVolume error = %v, want InvalidArgument about the volume ID, not a parameter", err)
 	}
 }

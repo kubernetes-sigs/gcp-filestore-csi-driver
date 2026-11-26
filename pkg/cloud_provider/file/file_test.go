@@ -1586,6 +1586,19 @@ func TestVolumePoolRequestEscaping(t *testing.T) {
 	if gotVolumeID != "a&b=c" {
 		t.Errorf("POST volumeId = %q, want %q", gotVolumeID, "a&b=c")
 	}
+	if _, err := manager.CreateVolumePoolVolume(ctx, parentPool+"?z", "vol-1"); err == nil {
+		t.Fatal("CreateVolumePoolVolume succeeded, want an error")
+	}
+	if want := "/v1beta1/" + parentPool + "%3Fz/volumes"; gotPath != want || gotRawQuery != "volumeId=vol-1" {
+		t.Errorf("POST path %q query %q, want %q and only volumeId", gotPath, gotRawQuery, want)
+	}
+	// DeleteVolumePoolVolume treats HTTP 404 as success.
+	if err := manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); err != nil {
+		t.Fatalf("DeleteVolumePoolVolume error = %v, want nil for HTTP 404", err)
+	}
+	if want := "/v1beta1/" + parentPool + "/volumes/%3Fx%23y"; gotPath != want || gotRawQuery != "" {
+		t.Errorf("DELETE path %q query %q, want %q and no query", gotPath, gotRawQuery, want)
+	}
 }
 
 // TestVolumePoolUnexpectedSuccessStatus checks that a 2xx status that a call
@@ -1606,10 +1619,11 @@ func TestVolumePoolUnexpectedSuccessStatus(t *testing.T) {
 		if vol, err := manager.GetVolumePoolVolume(ctx, name); err == nil || vol != nil {
 			t.Errorf("GetVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
 		}
+		if vol, err := manager.CreateVolumePoolVolume(ctx, "projects/test-project/locations/us-central1/volumePools/test-pool", "vol-1"); err == nil || vol != nil {
+			t.Errorf("CreateVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
+		}
+		// HTTP 204 is a valid response to a delete.
 		if code != http.StatusNoContent {
-			if vol, err := manager.CreateVolumePoolVolume(ctx, "projects/test-project/locations/us-central1/volumePools/test-pool", "vol-1"); err == nil || vol != nil {
-				t.Errorf("CreateVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
-			}
 			if err := manager.DeleteVolumePoolVolume(ctx, name); err == nil {
 				t.Errorf("DeleteVolumePoolVolume with HTTP %d succeeded, want an error", code)
 			}
