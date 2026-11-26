@@ -62,8 +62,15 @@ func parseVolumePoolVolumeID(volumeID string) (parent, volID, ipAddress string, 
 		return "", "", "", fmt.Errorf("invalid volume ID scheme %q: expected %q", u.Scheme, volumePoolURLScheme)
 	}
 
-	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
-	if len(parts) < 4 || parts[2] != "volumes" {
+	// Require exactly {project} as the host and
+	// /{location}/{pool}/volumes/{volume} as the path, with no escaped
+	// characters (such as an escaped slash). The ip query parameter is
+	// optional here: DeleteVolume identifies the volume without it.
+	if u.Host == "" || u.RawPath != "" || u.Opaque != "" || u.User != nil || u.Fragment != "" {
+		return "", "", "", fmt.Errorf("invalid composite volume ID: %s", volumeID)
+	}
+	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
+	if len(parts) != 4 || parts[0] == "" || parts[1] == "" || parts[2] != "volumes" || parts[3] == "" {
 		return "", "", "", fmt.Errorf("invalid composite volume ID path: %s", volumeID)
 	}
 
@@ -261,23 +268,11 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 	if err == nil {
 		return poolVol, false, nil
 	}
-	if file.IsHTTPTooManyRequestsErr(err) {
-		// The API looks for a free share before it checks the name, so a
-		// create for a name that another request (for example on another
-		// controller pod) created after our lookup gets HTTP 429 when that
-		// request took the last free share. Look once more before reporting
-		// the pool as full.
-		existing, getErr := s.lookupVolumePoolVolume(ctx, volumeName)
-		if getErr != nil {
-			return nil, false, getErr
-		}
-		if existing != nil {
-			klog.Infof("Volume Pool volume %q was created by another request while the pool filled up", volumeName)
-			return existing, true, nil
-		}
-		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
-		return nil, false, volumePoolStatusError(err)
-	}
+	// The API looks for a free share before it checks the name. So in the rare
+	// race where another request (for example on another controller pod)
+	// creates this volume after our lookup and takes the last free share, our
+	// create gets HTTP 429 and returns ResourceExhausted; the caller's retry
+	// then finds the volume through the lookup.
 	if !file.IsAlreadyExistsErr(err) {
 		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
 		return nil, false, volumePoolStatusError(err)

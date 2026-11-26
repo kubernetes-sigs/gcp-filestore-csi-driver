@@ -416,47 +416,6 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			wantGet:    2,
 		},
 		{
-			// Another request, for example on another controller pod, created
-			// the volume after the lookup and took the last free share.
-			name: "429 from create, then the volume is found",
-			setup: func(t *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				if _, err := fs.Service.CreateVolumePoolVolume(ctx, poolPath, volName); err != nil {
-					t.Fatalf("failed to create volume: %v", err)
-				}
-				fs.getVolume = notFoundOnce(fs.Service.GetVolumePoolVolume)
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-				}
-			},
-			wantCreate: 1,
-			wantGet:    2,
-		},
-		{
-			name: "429 from create, then the volume is still not found",
-			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-				}
-			},
-			wantCode:   codes.ResourceExhausted,
-			wantCreate: 1,
-			wantGet:    2,
-		},
-		{
-			name: "429 from create, then the lookup fails with 403",
-			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				fs.getVolume = notFoundOnce(func(context.Context, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")
-				})
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-				}
-			},
-			wantCode:   codes.PermissionDenied,
-			wantCreate: 1,
-			wantGet:    2,
-		},
-		{
 			// Only an HTTP 404 means "missing"; an error that merely mentions
 			// NOT_FOUND must not lead to a create.
 			name: "lookup error mentioning NOT_FOUND is not a missing volume",
@@ -686,15 +645,10 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			want:   codes.Internal,
 		},
 		{
-			name:   "429 RESOURCE_EXHAUSTED on create, volume still missing",
-			gets:   []response{notFound, notFound},
+			name:   "429 RESOURCE_EXHAUSTED on create",
+			gets:   []response{notFound},
 			create: &response{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")},
 			want:   codes.ResourceExhausted,
-		},
-		{
-			name:   "429 RESOURCE_EXHAUSTED on create, volume found",
-			gets:   []response{notFound, {http.StatusOK, hot}},
-			create: &response{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")},
 		},
 		{
 			name:   "409 ALREADY_EXISTS then a WARM volume",
@@ -709,7 +663,6 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			want:   codes.Aborted,
 		},
 		{
-			// Only a 429 from create leads to a second lookup.
 			name:   "403 on create keeps its mapping without a second lookup",
 			gets:   []response{notFound},
 			create: &response{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")},
@@ -1212,6 +1165,15 @@ func TestDeleteVolume_VolumePoolInvalidID(t *testing.T) {
 		"volumepool://test-project/us-central1/my-pool/volumes/..?ip=10.1.1.1",
 		"volumepool://My-Project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
 		"volumepool://test-project/us-central1/My_Pool/volumes/pvc-a?ip=10.1.1.1",
+		// An escaped slash, extra path segments, a missing host or location.
+		"volumepool://test-project/us-central1/my-pool/volumes/a%2Fb?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a/extra?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a/?ip=10.1.1.1",
+		"volumepool:///us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1#frag",
+		"volumepool://test-project//my-pool/volumes/pvc-a?ip=10.1.1.1",
+		// An escaped character that would alias another name.
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc%2Da?ip=10.1.1.1",
 	} {
 		cs, fs := newVolumePoolTestController(t)
 		_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{VolumeId: volumeID})
@@ -1220,6 +1182,54 @@ func TestDeleteVolume_VolumePoolInvalidID(t *testing.T) {
 		}
 		if len(fs.calls) != 0 {
 			t.Errorf("DeleteVolume(%q) made API calls: %v", volumeID, fs.calls)
+		}
+	}
+}
+
+// TestDeleteVolume_VolumePoolIDWithoutIP checks that a volume ID without the ip
+// query parameter still deletes the volume.
+func TestDeleteVolume_VolumePoolIDWithoutIP(t *testing.T) {
+	for _, volumeID := range []string{
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=",
+	} {
+		cs, fs := newVolumePoolTestController(t)
+		if _, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{VolumeId: volumeID}); err != nil {
+			t.Errorf("DeleteVolume(%q) = %v, want success", volumeID, err)
+		}
+		if got := fs.calls["DeleteVolumePoolVolume"]; got != 1 {
+			t.Errorf("DeleteVolume(%q) made %d delete calls, want 1", volumeID, got)
+		}
+	}
+}
+
+// TestParseVolumePoolVolumeIDStrict checks the parser itself, not only the
+// checks that DeleteVolume applies to its result.
+func TestParseVolumePoolVolumeIDStrict(t *testing.T) {
+	for _, id := range []string{
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a",
+	} {
+		parent, volID, _, err := parseVolumePoolVolumeID(id)
+		if err != nil || parent != "projects/test-project/locations/us-central1/volumePools/my-pool" || volID != "pvc-a" {
+			t.Errorf("parseVolumePoolVolumeID(%q) = %q, %q, %v", id, parent, volID, err)
+		}
+	}
+	for _, id := range []string{
+		"volumepool:///us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project//my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1//volumes/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/disks/pvc-a?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/a%2Fb?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc%2Da?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a/extra?ip=10.1.1.1",
+		"volumepool://test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1#frag",
+		"volumepool://user@test-project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
+		"modeInstance/test-project/us-central1/my-pool/volumes/pvc-a",
+	} {
+		if parent, volID, _, err := parseVolumePoolVolumeID(id); err == nil {
+			t.Errorf("parseVolumePoolVolumeID(%q) = %q, %q, nil; want an error", id, parent, volID)
 		}
 	}
 }

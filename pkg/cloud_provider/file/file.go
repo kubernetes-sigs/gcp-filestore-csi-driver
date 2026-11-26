@@ -802,14 +802,6 @@ func IsHTTPNotFoundErr(err error) bool {
 	return errors.As(err, &googleErr) && googleErr.Code == http.StatusNotFound
 }
 
-// IsHTTPTooManyRequestsErr reports whether err is a googleapi error with HTTP
-// status 429, which the Volume Pool API returns when the pool has no free
-// volume (RESOURCE_EXHAUSTED).
-func IsHTTPTooManyRequestsErr(err error) bool {
-	var googleErr *googleapi.Error
-	return errors.As(err, &googleErr) && googleErr.Code == http.StatusTooManyRequests
-}
-
 // IsAbortedErr reports whether err is an HTTP 409 googleapi error whose
 // canonical status is ABORTED. The Filestore Volume Pool API returns this when
 // concurrent CreateVolume calls contend for the same free volume in a pool
