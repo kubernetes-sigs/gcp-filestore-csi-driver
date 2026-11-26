@@ -181,30 +181,11 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	}
 	defer s.config.volumeLocks.Release(volumeName)
 
-	// CreateVolume must be idempotent: a retried request returns the volume
-	// that an earlier attempt created (for example after its response was
-	// lost). Look the volume up first. Creating first, and looking up only on
-	// HTTP 409 ALREADY_EXISTS, would save a call for every new volume, but the
-	// API's CreateVolume looks for a free share before it checks the name: in
-	// a full pool, a retry for an existing volume gets HTTP 429
-	// RESOURCE_EXHAUSTED instead of ALREADY_EXISTS, and never its volume.
-	result := "found existing"
-	poolVol, err := s.lookupVolumePoolVolume(ctx, volumeName)
+	poolVol, result, err := s.createVolumePoolVolume(ctx, poolPath, name)
 	if err != nil {
 		return nil, err
 	}
-	if poolVol == nil {
-		var createdByOther bool
-		if poolVol, createdByOther, err = s.createVolumePoolVolume(ctx, poolPath, name); err != nil {
-			return nil, err
-		}
-		result = "created"
-		if createdByOther {
-			result = "found (created by another request)"
-		}
-	}
-	// Check the volume however it was found: existing, new, or created by
-	// another request.
+	// Check the volume however it was found: new, or existing.
 	if err := checkVolumePoolVolumeMountable(poolVol); err != nil {
 		return nil, err
 	}
@@ -262,37 +243,64 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 	return nil, volumePoolStatusError(err)
 }
 
-// createVolumePoolVolume creates the volume name in poolPath. If another
-// request created the volume after the lookup, it returns that volume instead,
-// with createdByOther set. The volume is returned whatever its state.
-func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name string) (poolVol *file.PoolVolume, createdByOther bool, err error) {
+// createVolumePoolVolume creates the volume name in poolPath, or returns the
+// existing volume of that name, whatever its state. result says which, for the
+// log.
+//
+// CreateVolume must be idempotent: a retried request returns the volume that an
+// earlier attempt created (for example after its response was lost). The
+// volume is created first, so that the normal path, a new volume, is one API
+// call. Only two errors lead to a lookup (GET), so the get permission is needed
+// only on these paths:
+//   - HTTP 409 ALREADY_EXISTS: the volume exists, created by an earlier
+//     attempt or by a concurrent request (for example on another controller
+//     pod).
+//   - Any HTTP 429: Filestore looks for a free share before it checks the
+//     name, so in a full pool a create for an existing name fails with 429
+//     RESOURCE_EXHAUSTED, not ALREADY_EXISTS, and the lookup finds the volume.
+//     This also covers two pods competing for the last free share: the one
+//     that loses gets 429 and finds the volume the other created. A 429 from
+//     rate limiting costs one extra GET. If the volume doesn't exist, the
+//     original 429 is returned (ResourceExhausted).
+//
+// HTTP 409 ABORTED (contention) and every other error keep their mapping
+// without a lookup.
+func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name string) (poolVol *file.PoolVolume, result string, err error) {
 	volumeName := volumePoolVolumeName(poolPath, name)
 	poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
 	if err == nil {
-		return poolVol, false, nil
+		return poolVol, "created", nil
 	}
-	// The API looks for a free share before it checks the name. So in the rare
-	// race where another request (for example on another controller pod)
-	// creates this volume after our lookup and takes the last free share, our
-	// create gets HTTP 429 and returns ResourceExhausted; the caller's retry
-	// then finds the volume through the lookup.
-	if !file.IsAlreadyExistsErr(err) {
-		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, err)
-		return nil, false, volumePoolStatusError(err)
+	createErr := err
+	switch {
+	case file.IsAlreadyExistsErr(createErr):
+		klog.Infof("Volume Pool volume %q already exists, looking it up", volumeName)
+		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
+		if err != nil {
+			return nil, "", err
+		}
+		if poolVol == nil {
+			// The volume was deleted between the two calls. Another
+			// CreateVolume can succeed, so ask the caller to retry.
+			klog.Warningf("Volume Pool volume %q was reported as existing but is not found", volumeName)
+			return nil, "", status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
+		}
+		return poolVol, "found existing (HTTP 409 ALREADY_EXISTS)", nil
+	case file.IsHTTPTooManyRequestsErr(createErr):
+		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
+		if err != nil {
+			return nil, "", err
+		}
+		if poolVol == nil {
+			klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
+			return nil, "", volumePoolStatusError(createErr)
+		}
+		klog.Infof("Found existing Volume Pool volume %q after HTTP 429; the pool may be full", volumeName)
+		return poolVol, "found existing (after HTTP 429)", nil
+	default:
+		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
+		return nil, "", volumePoolStatusError(createErr)
 	}
-
-	klog.Infof("Volume Pool volume %q was created by another request, looking it up", volumeName)
-	poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
-	if err != nil {
-		return nil, false, err
-	}
-	if poolVol == nil {
-		// The volume was deleted between the two calls. Another CreateVolume
-		// can succeed, so ask the caller to retry.
-		klog.Warningf("Volume Pool volume %q was reported as existing but is not found", volumeName)
-		return nil, false, status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
-	}
-	return poolVol, true, nil
 }
 
 // hasVolumePoolMountPoint reports whether vol has a complete mount point.

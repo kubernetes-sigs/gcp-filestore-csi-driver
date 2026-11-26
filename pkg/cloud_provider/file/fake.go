@@ -616,6 +616,24 @@ const (
 	FakeVolumePoolGetForbidden = "get-forbidden"
 )
 
+// FakeAddVolumePoolVolume adds vol to the fake file service svc, as if it had
+// been created, without the checks of the fake CreateVolumePoolVolume. It lets
+// tests put an existing volume into a pool that the fake reports as full.
+func FakeAddVolumePoolVolume(svc Service, vol *PoolVolume) error {
+	manager, ok := svc.(*fakeServiceManager)
+	if !ok {
+		return fmt.Errorf("%T is not the fake file service", svc)
+	}
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
+	if manager.allocatedVolumes == nil {
+		manager.allocatedVolumes = make(map[string]*PoolVolume)
+	}
+	copied := *vol
+	manager.allocatedVolumes[vol.Name] = &copied
+	return nil
+}
+
 // fakeVolumePoolError returns a googleapi error with the given HTTP code and
 // canonical status, shaped like googleapi.CheckResponse's result for a
 // Filestore JSON error body (https://google.aip.dev/193), which carries no

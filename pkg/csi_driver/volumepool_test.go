@@ -326,107 +326,154 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 	}
 	wantContext := map[string]string{attrIP: "10.1.1.1", attrVolume: "vol_" + volName, attrFileProtocol: v4_1FileProtocol, attrMountOptions: "nconnect=8"}
 
+	const fullPool = "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolExhausted + "-pool"
+	tooManyRequests := func(context.Context, string, string) (*file.PoolVolume, error) {
+		return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
+	}
+	alreadyExists := func(context.Context, string, string) (*file.PoolVolume, error) {
+		return nil, googleAPIError(http.StatusConflict, "ALREADY_EXISTS")
+	}
+	createFirst := func(t *testing.T, cs *controllerServer, _ *volumePoolTestService) {
+		if _, err := cs.CreateVolume(ctx, newReq(poolPath)); err != nil {
+			t.Fatalf("first CreateVolume: %v", err)
+		}
+	}
+
 	tests := []struct {
 		name string
 		// setup runs before the CreateVolume under test.
 		setup      func(t *testing.T, cs *controllerServer, fs *volumePoolTestService)
 		pool       string
 		wantCode   codes.Code
-		wantCreate int // CreateVolumePoolVolume calls made by the CreateVolume under test
-		wantGet    int // GetVolumePoolVolume calls made by the CreateVolume under test
+		wantMsg    string // substring of the error message, if set
+		wantCreate int    // CreateVolumePoolVolume calls made by the CreateVolume under test
+		wantGet    int    // GetVolumePoolVolume calls made by the CreateVolume under test
 	}{
 		{
-			name:       "new volume is looked up, then created",
+			name:       "new volume is created without a lookup",
+			wantCreate: 1,
+		},
+		{
+			name:       "existing volume is looked up after ALREADY_EXISTS",
+			setup:      createFirst,
 			wantCreate: 1,
 			wantGet:    1,
 		},
 		{
-			name: "existing volume is returned without a create",
-			setup: func(t *testing.T, cs *controllerServer, _ *volumePoolTestService) {
-				if _, err := cs.CreateVolume(ctx, newReq(poolPath)); err != nil {
-					t.Fatalf("first CreateVolume: %v", err)
-				}
-			},
-			wantGet: 1,
-		},
-		{
-			// The API looks for a free share before it checks the name, so in a
-			// full pool a create for an existing name gets HTTP 429
+			// Filestore looks for a free share before it checks the name, so in
+			// a full pool a create for an existing name gets HTTP 429
 			// RESOURCE_EXHAUSTED instead of ALREADY_EXISTS.
-			name: "existing volume in a full pool is returned",
+			name: "existing volume in a full pool is looked up after 429",
 			setup: func(t *testing.T, cs *controllerServer, fs *volumePoolTestService) {
-				if _, err := cs.CreateVolume(ctx, newReq(poolPath)); err != nil {
-					t.Fatalf("first CreateVolume: %v", err)
-				}
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-				}
+				createFirst(t, cs, fs)
+				fs.createVolume = tooManyRequests
 			},
-			wantGet: 1,
+			wantCreate: 1,
+			wantGet:    1,
 		},
 		{
-			name: "another request created the volume after the lookup",
+			// The same through the fake, which, like Filestore, fails a create
+			// in a full pool with 429 even for an existing name.
+			name: "existing volume in a pool the fake reports as full",
 			setup: func(t *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				if _, err := fs.Service.CreateVolumePoolVolume(ctx, poolPath, volName); err != nil {
-					t.Fatalf("failed to create volume: %v", err)
-				}
-				fs.getVolume = notFoundOnce(fs.Service.GetVolumePoolVolume)
-			},
-			wantCreate: 1,
-			wantGet:    2,
-		},
-		{
-			name: "ALREADY_EXISTS for a volume that is still not found is retryable",
-			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusConflict, "ALREADY_EXISTS")
+				if err := file.FakeAddVolumePoolVolume(fs.Service, &file.PoolVolume{
+					Name:      fullPool + "/volumes/" + volName,
+					IpAddress: "10.1.1.1",
+					MountName: "vol_" + volName,
+					State:     file.VolumePoolVolumeStateHot,
+				}); err != nil {
+					t.Fatalf("failed to add volume: %v", err)
 				}
 			},
-			wantCode:   codes.Aborted,
+			pool:       fullPool,
 			wantCreate: 1,
-			wantGet:    2,
+			wantGet:    1,
 		},
 		{
-			name:     "lookup error 403 keeps its mapping",
-			pool:     "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolGetForbidden + "-pool",
-			wantCode: codes.PermissionDenied,
-			wantGet:  1,
+			// The 429 is returned, not the lookup's 404.
+			name:       "new volume in a full pool keeps the 429 mapping",
+			pool:       fullPool,
+			wantCode:   codes.ResourceExhausted,
+			wantMsg:    "no available volumes in the pool",
+			wantCreate: 1,
+			wantGet:    1,
 		},
 		{
-			name: "lookup error 429 keeps its mapping",
+			name: "lookup error after 429 keeps its mapping",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.createVolume = tooManyRequests
 				fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-				}
-			},
-			wantCode: codes.ResourceExhausted,
-			wantGet:  1,
-		},
-		{
-			name: "get error after ALREADY_EXISTS keeps its mapping",
-			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
-				fs.getVolume = notFoundOnce(func(context.Context, string) (*file.PoolVolume, error) {
 					return nil, googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")
-				})
-				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusConflict, "ALREADY_EXISTS")
 				}
 			},
 			wantCode:   codes.PermissionDenied,
 			wantCreate: 1,
-			wantGet:    2,
+			wantGet:    1,
+		},
+		{
+			name: "ALREADY_EXISTS for a volume that is not found is retryable",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.createVolume = alreadyExists
+			},
+			wantCode:   codes.Aborted,
+			wantMsg:    "reported as existing but is not found",
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name: "lookup error after ALREADY_EXISTS keeps its mapping",
+			setup: func(t *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				forbiddenPool := "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolGetForbidden + "-pool"
+				if _, err := fs.Service.CreateVolumePoolVolume(ctx, forbiddenPool, volName); err != nil {
+					t.Fatalf("failed to create volume: %v", err)
+				}
+			},
+			pool:       "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolGetForbidden + "-pool",
+			wantCode:   codes.PermissionDenied,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name: "lookup error 429 after ALREADY_EXISTS keeps its mapping",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.createVolume = alreadyExists
+				fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) {
+					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
+				}
+			},
+			wantCode:   codes.ResourceExhausted,
+			wantCreate: 1,
+			wantGet:    1,
 		},
 		{
 			// Only an HTTP 404 means "missing"; an error that merely mentions
-			// NOT_FOUND must not lead to a create.
+			// NOT_FOUND must not be reported as a volume that went away.
 			name: "lookup error mentioning NOT_FOUND is not a missing volume",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.createVolume = alreadyExists
 				fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) {
 					return nil, errors.New("transport failure: NOT_FOUND in proxy response")
 				}
 			},
-			wantCode: codes.NotFound,
-			wantGet:  1,
+			wantCode:   codes.NotFound,
+			wantCreate: 1,
+			wantGet:    1,
+		},
+		{
+			name:       "409 ABORTED is retryable without a lookup",
+			pool:       "projects/test-project/locations/us-central1/volumePools/" + file.FakeVolumePoolContended + "-pool",
+			wantCode:   codes.Aborted,
+			wantCreate: 1,
+		},
+		{
+			name: "other create errors keep their mapping without a lookup",
+			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
+				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
+					return nil, googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")
+				}
+			},
+			wantCode:   codes.PermissionDenied,
+			wantCreate: 1,
 		},
 		{
 			name: "another operation on the volume is in progress",
@@ -453,6 +500,9 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			if got := status.Code(err); got != tc.wantCode {
 				t.Fatalf("got error code %v, want %v (error: %v)", got, tc.wantCode, err)
 			}
+			if tc.wantMsg != "" && !strings.Contains(status.Convert(err).Message(), tc.wantMsg) {
+				t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), tc.wantMsg)
+			}
 			if got := fs.calls["CreateVolumePoolVolume"]; got != tc.wantCreate {
 				t.Errorf("CreateVolumePoolVolume called %d times, want %d", got, tc.wantCreate)
 			}
@@ -462,7 +512,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			if tc.wantCode != codes.OK {
 				return
 			}
-			if got, want := resp.GetVolume().GetVolumeId(), buildVolumePoolVolumeID(poolPath, volName, "10.1.1.1"); got != want {
+			if got, want := resp.GetVolume().GetVolumeId(), buildVolumePoolVolumeID(pool, volName, "10.1.1.1"); got != want {
 				t.Errorf("got volume ID %q, want %q", got, want)
 			}
 			if got, want := resp.GetVolume().GetCapacityBytes(), int64(1*util.Gb); got != want {
@@ -517,9 +567,18 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 		{name: "WARM", state: file.VolumePoolVolumeStateWarm, wantCode: codes.FailedPrecondition},
 		{name: "COLD", state: file.VolumePoolVolumeStateCold, wantCode: codes.FailedPrecondition},
 	}
-	for _, existing := range []bool{true, false} {
+	// createErr is the create's error for an existing volume, which is then
+	// looked up; nil: the create returns a new volume.
+	for _, mode := range []struct {
+		name      string
+		createErr error
+	}{
+		{name: "new"},
+		{name: "existing after 409 ALREADY_EXISTS", createErr: googleAPIError(http.StatusConflict, "ALREADY_EXISTS")},
+		{name: "existing after 429 RESOURCE_EXHAUSTED", createErr: googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")},
+	} {
 		for _, st := range states {
-			t.Run(fmt.Sprintf("existing=%t/%s", existing, st.name), func(t *testing.T) {
+			t.Run(mode.name+"/"+st.name, func(t *testing.T) {
 				cs, fs := newVolumePoolTestController(t)
 				vol := func(name string) *file.PoolVolume {
 					v := &file.PoolVolume{Name: name, State: st.state}
@@ -534,7 +593,8 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 					}
 					return v
 				}
-				if existing {
+				if mode.createErr != nil {
+					fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) { return nil, mode.createErr }
 					fs.getVolume = func(_ context.Context, name string) (*file.PoolVolume, error) { return vol(name), nil }
 				} else {
 					fs.createVolume = func(_ context.Context, parent, id string) (*file.PoolVolume, error) {
@@ -554,6 +614,9 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 				}
 				if st.wantMsg != "" && !strings.Contains(status.Convert(err).Message(), st.wantMsg) {
 					t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), st.wantMsg)
+				}
+				if got, want := fs.calls["GetVolumePoolVolume"], map[bool]int{true: 1}[mode.createErr != nil]; got != want {
+					t.Errorf("GetVolumePoolVolume called %d times, want %d", got, want)
 				}
 			})
 		}
@@ -583,102 +646,115 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 		body map[string]any
 	}
 	notFound := response{http.StatusNotFound, errorBody(http.StatusNotFound, "NOT_FOUND")}
+	alreadyExists := response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")}
+	exhausted := response{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")}
 
 	tests := []struct {
 		name   string
-		gets   []response // responses to the GET requests, in order
-		create *response  // response to the create; nil: the test expects no create
+		create response   // response to the create, which comes first
+		gets   []response // responses to the GET requests that follow, in order
 		want   codes.Code
 	}{
 		{
-			name:   "new volume is created",
-			gets:   []response{notFound},
-			create: &response{http.StatusOK, hot},
+			name:   "new volume is created without a lookup",
+			create: response{http.StatusOK, hot},
 		},
 		{
-			name: "existing volume is returned without a create",
-			gets: []response{{http.StatusOK, hot}},
+			name:   "409 ALREADY_EXISTS then the volume is found",
+			create: alreadyExists,
+			gets:   []response{{http.StatusOK, hot}},
 		},
 		{
-			name:   "409 ABORTED is retryable",
+			// A full pool fails a create for an existing name with 429.
+			name:   "429 RESOURCE_EXHAUSTED then the volume is found",
+			create: exhausted,
+			gets:   []response{{http.StatusOK, hot}},
+		},
+		{
+			name:   "429 RESOURCE_EXHAUSTED for a new volume keeps its mapping",
+			create: exhausted,
 			gets:   []response{notFound},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ABORTED")},
+			want:   codes.ResourceExhausted,
+		},
+		{
+			name:   "429 RESOURCE_EXHAUSTED then 403 on get",
+			create: exhausted,
+			gets:   []response{{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")}},
+			want:   codes.PermissionDenied,
+		},
+		{
+			name:   "429 RESOURCE_EXHAUSTED then a WARM volume",
+			create: exhausted,
+			gets:   []response{{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}}},
+			want:   codes.FailedPrecondition,
+		},
+		{
+			name:   "429 RESOURCE_EXHAUSTED then a CREATING volume",
+			create: exhausted,
+			gets:   []response{{http.StatusOK, map[string]any{"name": volumePath, "state": "CREATING"}}},
 			want:   codes.Aborted,
 		},
 		{
-			name:   "409 ALREADY_EXISTS after the lookup returns the volume",
-			gets:   []response{notFound, {http.StatusOK, hot}},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")},
+			name:   "409 ABORTED is retryable without a lookup",
+			create: response{http.StatusConflict, errorBody(http.StatusConflict, "ABORTED")},
+			want:   codes.Aborted,
 		},
 		{
 			name:   "409 ALREADY_EXISTS then 404 is retryable",
-			gets:   []response{notFound, notFound},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")},
+			create: alreadyExists,
+			gets:   []response{notFound},
 			want:   codes.Aborted,
 		},
 		{
 			name:   "409 ALREADY_EXISTS then 429 on get",
-			gets:   []response{notFound, {http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")}},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")},
+			create: alreadyExists,
+			gets:   []response{exhausted},
 			want:   codes.ResourceExhausted,
 		},
 		{
-			name: "lookup 403 keeps its mapping",
-			gets: []response{{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")}},
-			want: codes.PermissionDenied,
-		},
-		{
-			name: "existing WARM volume can't be mounted",
-			gets: []response{{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}}},
-			want: codes.FailedPrecondition,
-		},
-		{
-			name:   "new volume created WARM can't be mounted",
-			gets:   []response{notFound},
-			create: &response{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}},
-			want:   codes.FailedPrecondition,
-		},
-		{
-			name:   "409 without status keeps the default mapping",
-			gets:   []response{notFound},
-			create: &response{http.StatusConflict, map[string]any{"error": map[string]any{"code": http.StatusConflict, "message": "conflict"}}},
-			want:   codes.Internal,
-		},
-		{
-			name:   "429 RESOURCE_EXHAUSTED on create",
-			gets:   []response{notFound},
-			create: &response{http.StatusTooManyRequests, errorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")},
-			want:   codes.ResourceExhausted,
+			name:   "409 ALREADY_EXISTS then 403 on get",
+			create: alreadyExists,
+			gets:   []response{{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")}},
+			want:   codes.PermissionDenied,
 		},
 		{
 			name:   "409 ALREADY_EXISTS then a WARM volume",
-			gets:   []response{notFound, {http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}}},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")},
+			create: alreadyExists,
+			gets:   []response{{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}}},
 			want:   codes.FailedPrecondition,
 		},
 		{
 			name:   "409 ALREADY_EXISTS then a CREATING volume",
-			gets:   []response{notFound, {http.StatusOK, map[string]any{"name": volumePath, "state": "CREATING"}}},
-			create: &response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")},
+			create: alreadyExists,
+			gets:   []response{{http.StatusOK, map[string]any{"name": volumePath, "state": "CREATING"}}},
 			want:   codes.Aborted,
 		},
 		{
-			name:   "403 on create keeps its mapping without a second lookup",
-			gets:   []response{notFound},
-			create: &response{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")},
-			want:   codes.PermissionDenied,
+			// An unexpected 2xx must not look like "not found".
+			name:   "409 ALREADY_EXISTS then an unexpected 204 on get",
+			create: alreadyExists,
+			gets:   []response{{http.StatusNoContent, nil}},
+			want:   codes.Internal,
 		},
 		{
-			// An unexpected 2xx must not look like "not found".
-			name: "lookup returns an unexpected 204",
-			gets: []response{{http.StatusNoContent, nil}},
-			want: codes.Internal,
+			name:   "new volume created WARM can't be mounted",
+			create: response{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}},
+			want:   codes.FailedPrecondition,
+		},
+		{
+			name:   "409 without status keeps the default mapping without a lookup",
+			create: response{http.StatusConflict, map[string]any{"error": map[string]any{"code": http.StatusConflict, "message": "conflict"}}},
+			want:   codes.Internal,
+		},
+		{
+			name:   "403 on create keeps its mapping without a lookup",
+			create: response{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")},
+			want:   codes.PermissionDenied,
 		},
 		{
 			// An unexpected 2xx must not look like success.
 			name:   "create returns an unexpected 202",
-			gets:   []response{notFound},
-			create: &response{http.StatusAccepted, hot},
+			create: response{http.StatusAccepted, hot},
 			want:   codes.Internal,
 		},
 	}
@@ -689,10 +765,11 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				resp := response{http.StatusBadRequest, errorBody(http.StatusBadRequest, "INVALID_ARGUMENT")}
 				switch {
-				case r.Method == http.MethodPost && r.URL.Path == "/v1beta1/"+poolPath+"/volumes" && r.URL.Query().Get("volumeId") == volName && tc.create != nil:
+				case r.Method == http.MethodPost && r.URL.Path == "/v1beta1/"+poolPath+"/volumes" && r.URL.Query().Get("volumeId") == volName && creates == 0:
 					creates++
-					resp = *tc.create
-				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+volumePath && gets < len(tc.gets):
+					resp = tc.create
+				// A GET is expected only after the create.
+				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+volumePath && creates == 1 && gets < len(tc.gets):
 					resp = tc.gets[gets]
 					gets++
 				default:
@@ -731,8 +808,8 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			if gets != len(tc.gets) {
 				t.Errorf("got %d GET requests, want %d", gets, len(tc.gets))
 			}
-			if wantCreates := map[bool]int{true: 1}[tc.create != nil]; creates != wantCreates {
-				t.Errorf("got %d create requests, want %d", creates, wantCreates)
+			if creates != 1 {
+				t.Errorf("got %d create requests, want 1", creates)
 			}
 			if tc.want != codes.OK {
 				return
