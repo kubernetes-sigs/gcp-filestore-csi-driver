@@ -18,6 +18,7 @@ package substrate
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -155,7 +156,7 @@ func TestDeployScriptStorageClass(t *testing.T) {
 		args        []string
 		env         []string
 		wantLine    string // a whole output line that must be present
-		wantErr     bool
+		wantRC      int    // deploy.sh exit code
 		wantApplied bool
 		wantOut     []string
 		notWantOut  []string
@@ -189,11 +190,12 @@ func TestDeployScriptStorageClass(t *testing.T) {
 			wantOut: []string{warning, "volumeBindingMode=WaitForFirstConsumer"},
 		},
 		{
-			name: "class of another driver is left unchanged without a delete hint", state: "present", existing: otherDriver,
+			name: "class of another driver is left unchanged, without a delete hint, and fails", state: "present", existing: otherDriver,
+			wantRC:     1,
 			wantOut:    []string{provWarning, "example.com/other"},
 			notWantOut: []string{"kubectl delete storageclass", warning},
 		},
-		{name: "other kubectl errors stop the script", state: "error", wantErr: true},
+		{name: "other kubectl errors stop the script", state: "error", wantRC: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -230,8 +232,16 @@ func TestDeployScriptStorageClass(t *testing.T) {
 			cmd.Stdin = nil
 			outBytes, err := cmd.CombinedOutput()
 			out := string(outBytes)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("deploy.sh error = %v, want error %t; output:\n%s", err, tc.wantErr, out)
+			var exitErr *exec.ExitError
+			if err != nil && !errors.As(err, &exitErr) {
+				t.Fatalf("deploy.sh didn't run: %v", err)
+			}
+			if got := cmd.ProcessState.ExitCode(); got != tc.wantRC {
+				t.Fatalf("deploy.sh exit code = %d, want %d; output:\n%s", got, tc.wantRC, out)
+			}
+			// The driver is deployed before the StorageClass is checked.
+			if calls, err := os.ReadFile(filepath.Join(dir, "calls")); err != nil || !strings.Contains(string(calls), "kubectl apply -k ") {
+				t.Errorf("deploy.sh didn't apply the overlay (kubectl apply -k); calls:\n%s", calls)
 			}
 			applied, readErr := os.ReadFile(filepath.Join(dir, "applied.yaml"))
 			if gotApplied := readErr == nil; gotApplied != tc.wantApplied {

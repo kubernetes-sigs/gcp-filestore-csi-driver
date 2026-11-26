@@ -193,8 +193,8 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
   # A StorageClass's provisioner, parameters, reclaimPolicy and
   # volumeBindingMode can't be changed after creation, so applying a template
   # in which they changed (for example new mount options) over an existing
-  # StorageClass fails. Compare them first, and warn instead of failing: the
-  # rest of the deployment has already been applied.
+  # StorageClass fails. Compare them first. If only settings differ, warn
+  # instead of failing: the rest of the deployment has already been applied.
   SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
   # Only NotFound counts as missing; any other error stops the script.
   EXISTING_SC="$(kubectl get storageclass "${STORAGECLASS_NAME}" --ignore-not-found -o name)"
@@ -204,10 +204,14 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
     WANT_PROVISIONER="$(printf '%s\n' "${WANT_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
     HAVE_PROVISIONER="$(printf '%s\n' "${HAVE_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
     if [[ "${WANT_PROVISIONER}" != "${HAVE_PROVISIONER}" ]]; then
+      # The class may belong to another driver: leave it alone, and fail, so
+      # that the run isn't reported as a success without a StorageClass for
+      # this driver.
       echo "" >&2
-      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with provisioner '${HAVE_PROVISIONER}', not '${WANT_PROVISIONER}'." >&2
+      echo "❌ [ERROR] StorageClass '${STORAGECLASS_NAME}' already exists with provisioner '${HAVE_PROVISIONER}', not '${WANT_PROVISIONER}'." >&2
       echo "   It may belong to another driver, so it was left unchanged. Re-run deploy.sh with another --storageclass-name." >&2
       echo "" >&2
+      exit 1
     elif [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
       echo "" >&2
       echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged." >&2
