@@ -199,7 +199,7 @@ vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288
 
 These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. NFSv4.1 volumes get no defaults.
 
-* These defaults come with driver releases that include them. Earlier releases default to only `vers=3,proto=tcp,mountproto=tcp`, and this overlay pins its driver image (see `kustomization.yaml`), so an installation keeps the earlier defaults until that image is updated.
+* The 8-option defaults apply from the first driver release that includes this change. Earlier releases default to only `vers=3,proto=tcp,mountproto=tcp`, and this overlay pins its driver image (see `kustomization.yaml`), so an installation keeps the earlier defaults until that image is updated.
 * `rsize` and `wsize` set read and write payloads of up to 512 KiB. They cap the transfer size that the client and server would otherwise negotiate.
 * `nconnect` needs a Linux client kernel that supports it (5.3 or later; see `nfs(5)` on the node).
 

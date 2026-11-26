@@ -17,11 +17,16 @@ limitations under the License.
 package substrate
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"text/template"
+
+	"sigs.k8s.io/yaml"
 )
 
 // stubKubectl stands in for kubectl when deploy.sh runs in tests. It records
@@ -141,11 +146,15 @@ func TestDeployScriptStorageClass(t *testing.T) {
 		t.Fatal("the template has no volumeBindingMode line to replace")
 	}
 
+	const rerunHint = "./deploy/kubernetes/overlays/substrate/deploy.sh --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1"
+
 	tests := []struct {
 		name        string
 		state       string // stub SC_STATE
 		existing    string
 		args        []string
+		env         []string
+		wantLine    string // a whole output line that must be present
 		wantErr     bool
 		wantApplied bool
 		wantOut     []string
@@ -155,13 +164,21 @@ func TestDeployScriptStorageClass(t *testing.T) {
 		{name: "same class is applied", state: "present", existing: rendered, wantApplied: true, notWantOut: []string{warning}},
 		{
 			name: "class with old parameters is left unchanged with a warning", state: "present", existing: oldClass,
-			wantOut:    []string{warning, "kubectl delete storageclass sc1", "deploy.sh --project-id proj"},
+			wantOut:    []string{warning, "kubectl delete storageclass sc1"},
+			wantLine:   rerunHint,
 			notWantOut: []string{"--service-account"},
 		},
 		{
 			name: "custom service account is kept in the re-run hint", state: "present", existing: oldClass,
-			args:    []string{"--service-account", customGSA},
-			wantOut: []string{warning, "--service-account " + customGSA},
+			args:     []string{"--service-account", customGSA},
+			wantOut:  []string{warning},
+			wantLine: rerunHint + " --service-account " + customGSA,
+		},
+		{
+			name: "custom service account from the environment is kept in the re-run hint", state: "present", existing: oldClass,
+			env:      []string{"GCP_SERVICE_ACCOUNT=" + customGSA},
+			wantOut:  []string{warning},
+			wantLine: rerunHint + " --service-account " + customGSA,
 		},
 		{
 			name: "class with another reclaimPolicy is left unchanged with a warning", state: "present", existing: otherPolicy,
@@ -208,6 +225,8 @@ func TestDeployScriptStorageClass(t *testing.T) {
 			cmd := exec.Command(bash, args...)
 			cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "STUB_DIR="+dir, "SC_STATE="+tc.state,
 				"PROJECT_ID=", "GCP_SERVICE_ACCOUNT=", "VOLUMEPOOL_LOCATION=", "VOLUMEPOOL_NAME=", "STORAGECLASS_NAME=")
+			// Later entries win, so a case can set any of these.
+			cmd.Env = append(cmd.Env, tc.env...)
 			cmd.Stdin = nil
 			outBytes, err := cmd.CombinedOutput()
 			out := string(outBytes)
@@ -221,6 +240,17 @@ func TestDeployScriptStorageClass(t *testing.T) {
 			if tc.wantApplied && strings.TrimSpace(string(applied)) != strings.TrimSpace(rendered) {
 				t.Errorf("applied manifest differs from the rendered template:\n%s", applied)
 			}
+			if tc.wantLine != "" {
+				found := false
+				for _, line := range strings.Split(out, "\n") {
+					if strings.TrimSpace(line) == tc.wantLine {
+						found = true
+					}
+				}
+				if !found {
+					t.Errorf("output has no line %q; output:\n%s", tc.wantLine, out)
+				}
+			}
 			for _, want := range tc.wantOut {
 				if !strings.Contains(out, want) {
 					t.Errorf("output doesn't contain %q; output:\n%s", want, out)
@@ -232,5 +262,69 @@ func TestDeployScriptStorageClass(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDeployScriptFieldsTemplate executes deploy.sh's SC_FIELDS_TEMPLATE, the
+// go-template it passes to kubectl, with text/template (which kubectl's
+// go-template output uses) on the rendered StorageClass. It checks that the
+// template is valid and prints the fields deploy.sh compares, and that the
+// kubectl stub used by TestDeployScriptStorageClass prints the same lines, so
+// a change to the template can't pass that test unnoticed.
+func TestDeployScriptFieldsTemplate(t *testing.T) {
+	repoRoot := filepath.Join("..", "..", "..", "..")
+	script, err := os.ReadFile(filepath.Join(repoRoot, "deploy/kubernetes/overlays/substrate/deploy.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := regexp.MustCompile(`(?m)^\s*SC_FIELDS_TEMPLATE='([^']*)'$`).FindSubmatch(script)
+	if m == nil {
+		t.Fatal("SC_FIELDS_TEMPLATE not found in deploy.sh")
+	}
+	tmplText := string(m[1])
+	tmpl, err := template.New("fields").Parse(tmplText)
+	if err != nil {
+		t.Fatalf("SC_FIELDS_TEMPLATE doesn't parse: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(repoRoot, "examples/kubernetes/substrate/storageclass.yaml.tmpl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rendered := strings.NewReplacer("<PROJECT_ID>", "proj", "<LOCATION>", "us-central1", "<VOLUMEPOOL_NAME>", "pool", "<STORAGECLASS_NAME>", "sc1").Replace(string(raw))
+	var obj map[string]interface{}
+	if err := yaml.Unmarshal([]byte(rendered), &obj); err != nil {
+		t.Fatal(err)
+	}
+	var got bytes.Buffer
+	if err := tmpl.Option("missingkey=error").Execute(&got, obj); err != nil {
+		t.Fatalf("SC_FIELDS_TEMPLATE doesn't execute on the StorageClass: %v", err)
+	}
+	want := "provisioner=filestore.csi.storage.gke.io\n" +
+		"reclaimPolicy=Delete\n" +
+		"volumeBindingMode=Immediate\n" +
+		"parameters.mount-options=vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60\n" +
+		"parameters.volume-pool=projects/proj/locations/us-central1/volumePools/pool\n"
+	if got.String() != want {
+		t.Errorf("SC_FIELDS_TEMPLATE output:\n%s\nwant:\n%s", got.String(), want)
+	}
+
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash not found")
+	}
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "kubectl")
+	if err := os.WriteFile(stub, []byte(stubKubectl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bash, stub, "patch", "--local", "-f", "-", "--type=merge", "-p", "{}", "-o", "go-template="+tmplText)
+	cmd.Env = append(os.Environ(), "STUB_DIR="+dir)
+	cmd.Stdin = strings.NewReader(rendered)
+	stubOut, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("stub kubectl failed: %v", err)
+	}
+	if string(stubOut) != got.String() {
+		t.Errorf("stub kubectl prints:\n%s\nbut the template prints:\n%s", stubOut, got.String())
 	}
 }
