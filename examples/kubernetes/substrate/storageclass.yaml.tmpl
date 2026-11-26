@@ -20,14 +20,29 @@
 #     YAML ">" or "|" block scalar, which would add spaces or newlines.
 #   - Any value replaces all of the CSI driver's default mount options, so list
 #     every option you want.
-#   - These options are tuned for dedicated single-actor workspaces, where only one
-#     node mounts a volume at a time: nolock keeps file locks local to the node and
-#     actimeo=60 caches file and directory attributes for 60 seconds. Don't reuse this
-#     StorageClass for volumes that several nodes mount at the same time (shared
-#     ReadWriteMany volumes); create a separate StorageClass without nolock and
-#     actimeo=60 for those.
+#   - nconnect=8 requires Linux kernel 5.3 or later; older kernels fail to mount
+#     and need explicit parameters.mount-options without nconnect. Linux shares
+#     one NFS client per server IP, so nconnect takes effect for a server IP only
+#     once every earlier mount to that IP on the node is unmounted.
+#   - port=2049 and mountport=2050 are fixed (skipping rpcbind).
+#   - Privileged source-port budget: Linux NFS binds TCP connections to ports
+#     665-1023 by default (about 360 per node). With nconnect=8, each distinct
+#     server IP a node mounts uses 8 ports, so a node caps out at roughly 44
+#     distinct server IPs (fewer with other NFS mounts and TIME_WAIT sockets).
+#     If a node hits that limit, set parameters.mount-options with a lower
+#     nconnect.
+#   - nolock and actimeo=60 are only safe for dedicated single-actor workspaces
+#     where strictly one node mounts a volume at a time and the runtime unmounts
+#     it on the old node before mounting on the new one. Do NOT use this
+#     StorageClass for regular Kubernetes PVCs (neither ReadWriteOnce nor
+#     ReadWriteMany -- the CSIDriver sets attachRequired: false, so even
+#     ReadWriteOnce PVCs can overlap across two nodes during rolling updates) or
+#     for volumes shared by several actors. Otherwise, nolock gives no
+#     cross-node lock exclusion (corruption risk) and actimeo=60 can serve up to
+#     60 seconds of stale file/directory attributes and negative lookups. Create a
+#     separate StorageClass without nolock and actimeo=60 for those workloads.
 #   - StorageClass parameters can't be changed after creation. To change them,
-#     delete the StorageClass and create it again. Existing volumes keep the
+#     replace or delete and re-create the StorageClass. Existing volumes keep the
 #     mount-options value they were created with.
 
 apiVersion: storage.k8s.io/v1

@@ -354,6 +354,22 @@ func TestNodePublishVolume(t *testing.T) {
 			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "noatime,nodiratime"}},
 		},
 		{
+			name: "VolumePool volume without mount options injects no defaults",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumePoolVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext: map[string]string{
+					attrIP:           "10.1.1.1",
+					attrVolume:       "vol1",
+					attrFileProtocol: v3FileProtocol,
+				},
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind"}},
+		},
+		{
 			name: "VolumePool volume with the Substrate template mount options in VolumeContext",
 			req: &csi.NodePublishVolumeRequest{
 				VolumeId:          testVolumePoolVolumeID,
@@ -369,6 +385,24 @@ func TestNodePublishVolume(t *testing.T) {
 			},
 			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
 			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", substrateTemplateMountOptions}},
+		},
+		{
+			name: "VolumePool volume read-only with the Substrate template mount options in VolumeContext",
+			req: &csi.NodePublishVolumeRequest{
+				VolumeId:          testVolumePoolVolumeID,
+				StagingTargetPath: stagingTargetPath,
+				TargetPath:        testTargetPath,
+				VolumeCapability:  testVolumeCapability,
+				VolumeContext: map[string]string{
+					attrIP:           "10.1.1.1",
+					attrVolume:       "vol1",
+					attrFileProtocol: v3FileProtocol,
+					attrMountOptions: substrateTemplateMountOptions,
+				},
+				Readonly: true,
+			},
+			actions:       []mount.FakeAction{{Action: mount.FakeActionMount}},
+			expectedMount: &mount.MountPoint{Device: stagingTargetPath, Path: testTargetPath, Type: "nfs", Opts: []string{"bind", "ro", substrateTemplateMountOptions}},
 		},
 		// TODO: Revisit this (https://github.com/kubernetes-sigs/gcp-filestore-csi-driver/issues/47).
 		// {
@@ -1333,8 +1367,12 @@ func TestVolumePoolExampleStorageClasses(t *testing.T) {
 	t.Run("deploy.sh replaces every placeholder in the template", func(t *testing.T) {
 		script := readFile(t, "deploy", "kubernetes", "overlays", "substrate", "deploy.sh")
 		raw := readFile(t, "examples", "kubernetes", "substrate", "storageclass.yaml.tmpl")
-		// Apply deploy.sh's sed replacements, s|<NAME>|...|g, with dummy values.
-		subs := regexp.MustCompile(`s\|(<[A-Z_]+>)\|`).FindAllStringSubmatch(script, -1)
+		scSedBlock := regexp.MustCompile(`(?s)SC_MANIFEST="\$\(sed.*?storageclass\.yaml\.tmpl"\)"`).FindString(script)
+		if scSedBlock == "" {
+			t.Fatal("found no SC_MANIFEST sed block in deploy.sh")
+		}
+		// Apply deploy.sh's sed replacements, s<delim><NAME><delim>...<delim>g, with dummy values.
+		subs := regexp.MustCompile(`s[^A-Za-z0-9\s](<[A-Z0-9_]+>)`).FindAllStringSubmatch(scSedBlock, -1)
 		if len(subs) == 0 {
 			t.Fatal("found no placeholder replacements in deploy.sh")
 		}
@@ -1349,7 +1387,7 @@ func TestVolumePoolExampleStorageClasses(t *testing.T) {
 				manifest = append(manifest, line)
 			}
 		}
-		if left := regexp.MustCompile(`<[A-Za-z_]+>`).FindAllString(strings.Join(manifest, "\n"), -1); len(left) > 0 {
+		if left := regexp.MustCompile(`<[A-Za-z0-9_]+>`).FindAllString(strings.Join(manifest, "\n"), -1); len(left) > 0 {
 			t.Errorf("deploy.sh leaves placeholders %v in the template", left)
 		}
 	})

@@ -5,7 +5,7 @@
 # Usage: ./deploy.sh [OPTIONS]
 #
 # Note: All options can alternatively be provided as environment variables 
-#       (PROJECT_ID, GCP_SERVICE_ACCOUNT, LOCATION, VOLUMEPOOL_NAME, STORAGECLASS_NAME).
+#       (PROJECT_ID, GCP_SERVICE_ACCOUNT, VOLUMEPOOL_LOCATION, VOLUMEPOOL_NAME, STORAGECLASS_NAME).
 #       Command-line arguments will always take precedence over environment variables.
 #
 # Required Options:
@@ -164,21 +164,12 @@ sed -e "s|\${GCP_SERVICE_ACCOUNT}|${GCP_SERVICE_ACCOUNT}|g" \
 echo "📦 Applying Substrate Filestore CSI Driver Overlay via Kustomize..."
 kubectl apply -k "${SCRIPT_DIR}"
 
-echo ""
-echo "================================================================="
-echo "✅ Deployment complete!"
-echo "   - CSI Driver & Substrate CSIDriverConfig applied."
-echo "   - Check controller status : kubectl get pods -n gcp-filestore-csi-driver"
-echo "   - Check Substrate driver  : kubectl get csidriverconfig"
-echo "================================================================="
-echo ""
-
 # 5. Optional StorageClass Generation
 if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
   if [[ -z "${STORAGECLASS_NAME:-}" ]]; then
     # Open /dev/tty if possible, else standard input
     if [ -t 0 ]; then
-       read -p "💬 No StorageClass name provided. Enter custom name or press Enter for default [substrate-volumepool-sc]: " USER_SC_NAME
+       read -r -p "💬 No StorageClass name provided. Enter custom name or press Enter for default [substrate-volumepool-sc]: " USER_SC_NAME || USER_SC_NAME=""
     else
        USER_SC_NAME=""
     fi
@@ -191,18 +182,18 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl")"
 
   # A StorageClass's provisioner, parameters, reclaimPolicy and
-  # volumeBindingMode can't be changed after creation, so applying a template
-  # in which they changed (for example new mount options) over an existing
-  # StorageClass fails. Compare them first. If only settings differ, warn
+  # volumeBindingMode can't be changed after creation, and applying the
+  # template over an existing StorageClass would overwrite mutable fields
+  # (allowVolumeExpansion) or fail on immutable ones (mountOptions,
+  # allowedTopologies). Compare them first. If only settings differ, warn
   # instead of failing: the rest of the deployment has already been applied.
-  SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
+  SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}allowVolumeExpansion={{.allowVolumeExpansion}}{{"\n"}}{{range .mountOptions}}mountOptions={{.}}{{"\n"}}{{end}}{{range .allowedTopologies}}allowedTopologies={{.}}{{"\n"}}{{end}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
   # Only NotFound counts as missing; any other error stops the script.
-  EXISTING_SC="$(kubectl get storageclass "${STORAGECLASS_NAME}" --ignore-not-found -o name)"
-  if [[ -n "${EXISTING_SC}" ]]; then
+  HAVE_SC_FIELDS="$(kubectl get storageclass --ignore-not-found -o go-template="${SC_FIELDS_TEMPLATE}" -- "${STORAGECLASS_NAME}")"
+  if [[ -n "${HAVE_SC_FIELDS}" ]]; then
     WANT_SC_FIELDS="$(printf '%s\n' "${SC_MANIFEST}" | kubectl patch --local -f - --type=merge -p '{}' -o go-template="${SC_FIELDS_TEMPLATE}")"
-    HAVE_SC_FIELDS="$(kubectl get storageclass "${STORAGECLASS_NAME}" -o go-template="${SC_FIELDS_TEMPLATE}")"
-    WANT_PROVISIONER="$(printf '%s\n' "${WANT_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
-    HAVE_PROVISIONER="$(printf '%s\n' "${HAVE_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
+    WANT_PROVISIONER="$(printf '%s\n' "${WANT_SC_FIELDS}" | sed -n '1s/^provisioner=//p')"
+    HAVE_PROVISIONER="$(printf '%s\n' "${HAVE_SC_FIELDS}" | sed -n '1s/^provisioner=//p')"
     if [[ "${WANT_PROVISIONER}" != "${HAVE_PROVISIONER}" ]]; then
       # The class may belong to another driver: leave it alone, and fail, so
       # that the run isn't reported as a success without a StorageClass for
@@ -213,26 +204,32 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       echo "" >&2
       exit 1
     elif [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
+      SC_MANIFEST_FILE="$(mktemp "${TMPDIR:-/tmp}/substrate-storageclass.XXXXXX")"
+      printf '%s\n' "${SC_MANIFEST}" > "${SC_MANIFEST_FILE}"
+      RERUN_CMD="$(printf '%q --project-id %q --volumepool-location %q --volumepool-name %q --storageclass-name %q' \
+        "$0" "${PROJECT_ID}" "${VOLUMEPOOL_LOCATION}" "${VOLUMEPOOL_NAME}" "${STORAGECLASS_NAME}")"
+      # Keep a custom Google service account: without it, the re-run would
+      # create or bind the default one and re-annotate the controller's
+      # Kubernetes service account.
+      if [[ "${CUSTOM_GSA_PROVIDED}" == "true" ]]; then
+        RERUN_CMD="${RERUN_CMD}$(printf ' --service-account %q' "${GCP_SERVICE_ACCOUNT}")"
+      fi
       echo "" >&2
       echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged." >&2
       echo "   Current:" >&2
       printf '%s\n' "${HAVE_SC_FIELDS}" | sed 's/^/     /' >&2
       echo "   Template:" >&2
       printf '%s\n' "${WANT_SC_FIELDS}" | sed 's/^/     /' >&2
-      echo "   These settings can't be changed in place. To use the template's settings, delete and re-create the StorageClass:" >&2
-      echo "     kubectl delete storageclass ${STORAGECLASS_NAME}" >&2
-      RERUN_ARGS="--project-id ${PROJECT_ID} --volumepool-location ${VOLUMEPOOL_LOCATION} --volumepool-name ${VOLUMEPOOL_NAME} --storageclass-name ${STORAGECLASS_NAME}"
-      # Keep a custom Google service account: without it, the re-run would
-      # create or bind the default one and re-annotate the controller's
-      # Kubernetes service account.
-      if [[ "${CUSTOM_GSA_PROVIDED}" == "true" ]]; then
-        RERUN_ARGS="${RERUN_ARGS} --service-account ${GCP_SERVICE_ACCOUNT}"
-      fi
-      echo "     ./deploy/kubernetes/overlays/substrate/deploy.sh ${RERUN_ARGS}" >&2
-      echo "   (Use the same deploy.sh arguments and environment variables as for this run.)" >&2
+      echo "   These settings can't be changed in place. To replace the StorageClass in one step" >&2
+      echo "   (avoiding the gcloud and kubectl apply -k gap where creating actors or volumes fails):" >&2
+      printf '     kubectl replace --force -f %q\n' "${SC_MANIFEST_FILE}" >&2
+      echo "   Or delete it and re-run deploy.sh:" >&2
+      printf '     kubectl delete storageclass %q\n' "${STORAGECLASS_NAME}" >&2
+      printf '     %s\n' "${RERUN_CMD}" >&2
+      echo "   For zero downtime, re-run with a new --storageclass-name instead." >&2
       echo "   Existing volumes keep the mount-options value they were created with; volumes created without" >&2
-      echo "   one get the driver's defaults each time they're mounted. While the StorageClass is deleted," >&2
-      echo "   creating actors or volumes that use it fails, so re-create it right away." >&2
+      echo "   one get the driver's defaults when they're next staged on a node (volumes still staged keep" >&2
+      echo "   their current options)." >&2
       echo "" >&2
     else
       echo "📦 StorageClass '${STORAGECLASS_NAME}' already exists with the same settings; applying it..."
@@ -243,3 +240,12 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
     printf '%s\n' "${SC_MANIFEST}" | kubectl apply -f -
   fi
 fi
+
+echo ""
+echo "================================================================="
+echo "✅ Deployment complete!"
+echo "   - CSI Driver & Substrate CSIDriverConfig applied."
+echo "   - Check controller status : kubectl get pods -n gcp-filestore-csi-driver"
+echo "   - Check Substrate driver  : kubectl get csidriverconfig"
+echo "================================================================="
+echo ""

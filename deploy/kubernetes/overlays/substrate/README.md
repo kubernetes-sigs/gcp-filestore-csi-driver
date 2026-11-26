@@ -199,13 +199,16 @@ vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288
 
 These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. NFSv4.1 volumes get no defaults.
 
-* The 8-option defaults apply from the first driver release that includes this change. Earlier releases default to only `vers=3,proto=tcp,mountproto=tcp`, and this overlay pins its driver image (see `kustomization.yaml`), so an installation keeps the earlier defaults until that image is updated.
+* The 8-option defaults apply from the first driver release that includes this change. Earlier releases set at most `vers=3,proto=tcp,mountproto=tcp` (for example `v1.14.3`, pinned in the Substrate and Volume Pool overlays; see `kustomization.yaml`), and older releases set none, so an installation keeps those earlier defaults until that image is updated. (Explicit `parameters.mount-options` in the Substrate StorageClass template still takes effect immediately on the pinned image.)
+* `port=2049` and `mountport=2050` are fixed (skipping `rpcbind`). Any VolumePool endpoint or test server whose MOUNT daemon is not on port 2050 needs explicit mount options.
 * `rsize` and `wsize` set read and write payloads of up to 512 KiB. They cap the transfer size that the client and server would otherwise negotiate.
-* `nconnect` needs a Linux client kernel that supports it (5.3 or later; see `nfs(5)` on the node).
+* `nconnect` requires a Linux client kernel that supports it (5.3 or later; see `nfs(5)` on the node). Kernels older than 5.3 fail to mount with `nconnect=8` and need explicit options without `nconnect` (`parameters.mount-options` for Substrate, `mountOptions` for regular PVCs).
+* Linux shares one NFS client per server IP, so `nconnect=8` takes effect for a server IP only once every earlier mount to that IP on the node is unmounted.
+* Privileged source-port budget: Linux NFS binds each TCP connection to a privileged source port (`665`–`1023` by default, about 360 per node). With `nconnect=8`, each distinct server IP a node mounts uses 8 ports, so a node caps out at roughly 44 distinct NFS server IPs (fewer with other NFS mounts and `TIME_WAIT` sockets). If a node mounts more distinct server IPs than that, set explicit mount options (`parameters.mount-options` for Substrate, `mountOptions` for regular PVCs) with a lower `nconnect`.
 
 ### Substrate StorageClass template
 
-`deploy.sh` and `examples/kubernetes/substrate/storageclass.yaml.tmpl` set these options for dedicated single-actor workspaces, where only one node mounts a volume at a time:
+`deploy.sh` and `examples/kubernetes/substrate/storageclass.yaml.tmpl` set these options for dedicated single-actor workspaces, where strictly one node mounts a volume at a time:
 
 ```yaml
 parameters:
@@ -213,7 +216,7 @@ parameters:
   mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
 ```
 
-`nolock` keeps file locks local to the node, and `actimeo=60` caches file and directory attributes for 60 seconds. Don't reuse this StorageClass for volumes that several nodes mount at the same time (shared `ReadWriteMany` volumes); create a separate StorageClass without `nolock` and `actimeo=60` for those.
+`nolock` keeps file locks local to the node, and `actimeo=60` caches file and directory attributes for 60 seconds (shown in `/proc/mounts` as `acregmin=60,acregmax=60,acdirmin=60,acdirmax=60`). Do not use this StorageClass for regular Kubernetes PVCs—neither `ReadWriteOnce` nor `ReadWriteMany` (the driver's `CSIDriver` sets `attachRequired: false`, so even `ReadWriteOnce` PVCs can overlap across two nodes during rolling updates)—or for volumes shared by several actors. `nolock` and `actimeo=60` are safe only when the runtime unmounts the volume on the old node before mounting it on the new one; otherwise, `nolock` gives no cross-node lock exclusion (corruption risk) and `actimeo=60` can serve up to 60 seconds of stale attributes and negative lookups. Create a separate StorageClass without `nolock` and `actimeo=60` for those workloads.
 
 When you write your own `parameters.mount-options`:
 
@@ -222,6 +225,6 @@ When you write your own `parameters.mount-options`:
 
 ### Changing the StorageClass
 
-StorageClass `provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` can't be changed after the StorageClass is created. To change the mount options, delete the StorageClass and create it again. Existing volumes keep the `mount-options` value they were created with, and new volumes get the new value. Volumes created without mount options get the driver defaults each time they're mounted, so they pick up new defaults after a driver upgrade. While the StorageClass is deleted, creating actors or volumes that use it fails.
+StorageClass `provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` can't be changed after the StorageClass is created. To change the mount options, replace or delete and re-create the StorageClass. Existing volumes keep the `mount-options` value they were created with, and new volumes get the new value. Volumes created without mount options get the driver defaults when they're next staged on a node, so a volume still staged on the node keeps its current options until it is unstaged and staged again (and `nconnect` takes effect for a server IP once every earlier mount to that IP on the node is unmounted). While the StorageClass is deleted, creating actors or volumes that use it fails.
 
-If the StorageClass already exists with different settings (for example, it was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` leaves it unchanged, prints a warning with the commands to delete and re-create it, and finishes the rest of the deployment. If the existing StorageClass has a different provisioner, it may belong to another driver: `deploy.sh` leaves it unchanged, doesn't suggest deleting it, and exits with an error after deploying the driver; re-run it with another `--storageclass-name`.
+If the StorageClass already exists with different settings (`provisioner`, `reclaimPolicy`, `volumeBindingMode`, `allowVolumeExpansion`, `mountOptions`, `allowedTopologies`, or `parameters`—for example, it was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` leaves it unchanged, writes the rendered manifest to a temporary file, prints a warning with a one-step `kubectl replace --force -f <file>` command (along with the delete + re-run alternative and `--storageclass-name` zero-downtime option), and exits 0 (the driver overlay is already applied). If the existing StorageClass has a different provisioner, it may belong to another driver: `deploy.sh` leaves it unchanged, doesn't suggest deleting or replacing it, and exits 1 after deploying the driver; re-run it with another `--storageclass-name`.
