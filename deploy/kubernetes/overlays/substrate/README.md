@@ -197,7 +197,11 @@ When a VolumePool NFSv3 volume has no mount options (neither `parameters.mount-o
 vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288,wsize=524288
 ```
 
-These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. Driver releases before this change default to only `vers=3,proto=tcp,mountproto=tcp`. NFSv4.1 volumes get no defaults.
+These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. NFSv4.1 volumes get no defaults.
+
+* These defaults come with driver releases that include them. Earlier releases default to only `vers=3,proto=tcp,mountproto=tcp`, and this overlay pins its driver image (see `kustomization.yaml`), so an installation keeps the earlier defaults until that image is updated.
+* `rsize` and `wsize` set read and write payloads of up to 512 KiB. They cap the transfer size that the client and server would otherwise negotiate.
+* `nconnect` needs a Linux client kernel that supports it (5.3 or later; see `nfs(5)` on the node).
 
 ### Substrate StorageClass template
 
@@ -209,7 +213,7 @@ parameters:
   mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
 ```
 
-`nolock` keeps file locks local to the node, and `actimeo=60` caches file attributes for 60 seconds. Don't reuse this StorageClass for volumes that several nodes mount at the same time (shared `ReadWriteMany` volumes); create a separate StorageClass without `nolock` and `actimeo=60` for those.
+`nolock` keeps file locks local to the node, and `actimeo=60` caches file and directory attributes for 60 seconds. Don't reuse this StorageClass for volumes that several nodes mount at the same time (shared `ReadWriteMany` volumes); create a separate StorageClass without `nolock` and `actimeo=60` for those.
 
 When you write your own `parameters.mount-options`:
 
@@ -218,6 +222,6 @@ When you write your own `parameters.mount-options`:
 
 ### Changing the StorageClass
 
-StorageClass `parameters` can't be changed after the StorageClass is created. To change the mount options, delete the StorageClass and create it again. Existing volumes keep the options they were created with; new volumes get the new options. While the StorageClass is deleted, creating actors or volumes that use it fails.
+StorageClass `provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` can't be changed after the StorageClass is created. To change the mount options, delete the StorageClass and create it again. Existing volumes keep the `mount-options` value they were created with, and new volumes get the new value. Volumes created without mount options get the driver defaults each time they're mounted, so they pick up new defaults after a driver upgrade. While the StorageClass is deleted, creating actors or volumes that use it fails.
 
-If the StorageClass already exists with different parameters (for example, it was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` leaves it unchanged, prints a warning with the commands to delete and re-create it, and finishes the rest of the deployment.
+If the StorageClass already exists with different settings (for example, it was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` leaves it unchanged, prints a warning with the commands to delete and re-create it, and finishes the rest of the deployment. If the existing StorageClass has a different provisioner, `deploy.sh` doesn't suggest deleting it, because it may belong to another driver; choose another `--storageclass-name`.

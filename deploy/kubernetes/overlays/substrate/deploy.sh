@@ -190,22 +190,32 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       -e "s|<STORAGECLASS_NAME>|${STORAGECLASS_NAME}|g" \
       "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl")"
 
-  # StorageClass provisioner and parameters can't be changed after creation, so
-  # applying a template whose parameters changed (for example new mount options)
-  # over an existing StorageClass fails. Compare them first, and warn instead of
-  # failing: the rest of the deployment has already been applied.
-  SC_FIELDS_TEMPLATE='{{.provisioner}}{{"\n"}}{{range $k, $v := .parameters}}{{$k}}={{$v}}{{"\n"}}{{end}}'
-  if kubectl get storageclass "${STORAGECLASS_NAME}" >/dev/null 2>&1; then
+  # A StorageClass's provisioner, parameters, reclaimPolicy and
+  # volumeBindingMode can't be changed after creation, so applying a template
+  # in which they changed (for example new mount options) over an existing
+  # StorageClass fails. Compare them first, and warn instead of failing: the
+  # rest of the deployment has already been applied.
+  SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
+  # Only NotFound counts as missing; any other error stops the script.
+  EXISTING_SC="$(kubectl get storageclass "${STORAGECLASS_NAME}" --ignore-not-found -o name)"
+  if [[ -n "${EXISTING_SC}" ]]; then
     WANT_SC_FIELDS="$(printf '%s\n' "${SC_MANIFEST}" | kubectl patch --local -f - --type=merge -p '{}' -o go-template="${SC_FIELDS_TEMPLATE}")"
     HAVE_SC_FIELDS="$(kubectl get storageclass "${STORAGECLASS_NAME}" -o go-template="${SC_FIELDS_TEMPLATE}")"
-    if [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
+    WANT_PROVISIONER="$(printf '%s\n' "${WANT_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
+    HAVE_PROVISIONER="$(printf '%s\n' "${HAVE_SC_FIELDS}" | sed -n 's/^provisioner=//p')"
+    if [[ "${WANT_PROVISIONER}" != "${HAVE_PROVISIONER}" ]]; then
       echo "" >&2
-      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different parameters, so it was left unchanged." >&2
+      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with provisioner '${HAVE_PROVISIONER}', not '${WANT_PROVISIONER}'." >&2
+      echo "   It may belong to another driver, so it was left unchanged. Re-run deploy.sh with another --storageclass-name." >&2
+      echo "" >&2
+    elif [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
+      echo "" >&2
+      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged." >&2
       echo "   Current:" >&2
       printf '%s\n' "${HAVE_SC_FIELDS}" | sed 's/^/     /' >&2
       echo "   Template:" >&2
       printf '%s\n' "${WANT_SC_FIELDS}" | sed 's/^/     /' >&2
-      echo "   StorageClass parameters can't be changed in place. To use the new parameters, delete and re-create it:" >&2
+      echo "   These settings can't be changed in place. To use the template's settings, delete and re-create the StorageClass:" >&2
       echo "     kubectl delete storageclass ${STORAGECLASS_NAME}" >&2
       RERUN_ARGS="--project-id ${PROJECT_ID} --volumepool-location ${VOLUMEPOOL_LOCATION} --volumepool-name ${VOLUMEPOOL_NAME} --storageclass-name ${STORAGECLASS_NAME}"
       # Keep a custom Google service account: without it, the re-run would
@@ -216,11 +226,12 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       fi
       echo "     ./deploy/kubernetes/overlays/substrate/deploy.sh ${RERUN_ARGS}" >&2
       echo "   (Use the same deploy.sh arguments and environment variables as for this run.)" >&2
-      echo "   Existing volumes keep the mount options they were created with. While the StorageClass is" >&2
-      echo "   deleted, creating actors or volumes that use it fails, so re-create it right away." >&2
+      echo "   Existing volumes keep the mount-options value they were created with; volumes created without" >&2
+      echo "   one get the driver's defaults each time they're mounted. While the StorageClass is deleted," >&2
+      echo "   creating actors or volumes that use it fails, so re-create it right away." >&2
       echo "" >&2
     else
-      echo "📦 StorageClass '${STORAGECLASS_NAME}' already exists with the same parameters; applying it..."
+      echo "📦 StorageClass '${STORAGECLASS_NAME}' already exists with the same settings; applying it..."
       printf '%s\n' "${SC_MANIFEST}" | kubectl apply -f -
     fi
   else

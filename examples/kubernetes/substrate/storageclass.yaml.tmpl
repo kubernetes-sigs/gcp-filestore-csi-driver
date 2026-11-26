@@ -22,13 +22,13 @@
 #     every option you want.
 #   - These options are tuned for dedicated single-actor workspaces, where only one
 #     node mounts a volume at a time: nolock keeps file locks local to the node and
-#     actimeo=60 caches file attributes for 60 seconds. Don't reuse this
+#     actimeo=60 caches file and directory attributes for 60 seconds. Don't reuse this
 #     StorageClass for volumes that several nodes mount at the same time (shared
 #     ReadWriteMany volumes); create a separate StorageClass without nolock and
 #     actimeo=60 for those.
 #   - StorageClass parameters can't be changed after creation. To change them,
-#     delete the StorageClass and create it again; existing volumes keep the
-#     options they were created with.
+#     delete the StorageClass and create it again. Existing volumes keep the
+#     mount-options value they were created with.
 
 apiVersion: storage.k8s.io/v1
 kind: StorageClass

@@ -647,7 +647,9 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 //     instead of one (see nfs(5)). How connections are shared between mounts of
 //     the same server depends on the client kernel, so a node that already has
 //     mounts of the server may not open new connections for another mount.
-//   - rsize=524288, wsize=524288: 512 KiB read and write RPC payloads.
+//   - rsize=524288, wsize=524288: read and write RPC payloads of up to 512 KiB.
+//     These cap the transfer size that the client and server would otherwise
+//     negotiate (see nfs(5)).
 //
 // The defaults leave out nolock and actimeo, which are only safe when one node
 // mounts the volume at a time. The access mode doesn't guarantee that: the
