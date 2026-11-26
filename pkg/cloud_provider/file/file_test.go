@@ -1474,6 +1474,54 @@ func TestIsAlreadyExistsErr(t *testing.T) {
 	}
 }
 
+func TestIsHTTPTooManyRequestsErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "429 RESOURCE_EXHAUSTED",
+			err:  &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool")},
+			want: true,
+		},
+		{
+			// Any 429 counts, whatever its body says.
+			name: "429 without a body",
+			err:  &googleapi.Error{Code: http.StatusTooManyRequests},
+			want: true,
+		},
+		{
+			name: "wrapped 429",
+			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "quota exceeded")}),
+			want: true,
+		},
+		{
+			name: "non-googleapi error that mentions 429",
+			err:  errors.New("googleapi: Error 429: RESOURCE_EXHAUSTED"),
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+		},
+		{
+			name: "403 that claims RESOURCE_EXHAUSTED",
+			err:  &googleapi.Error{Code: http.StatusForbidden, Body: volumePoolErrorBody(http.StatusForbidden, "RESOURCE_EXHAUSTED", "denied")},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsHTTPTooManyRequestsErr(tc.err); got != tc.want {
+				t.Errorf("IsHTTPTooManyRequestsErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetVolumePoolVolume(t *testing.T) {
 	name := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
 

@@ -174,8 +174,8 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	// DeleteVolume paths do. The lock is per controller pod: across replicas,
 	// safety relies on Filestore keeping volume names unique. If another pod
 	// creates the same volume concurrently, this pod's create gets HTTP 409
-	// ALREADY_EXISTS (or 429 if that create took the last free share), and this
-	// pod looks the volume up or the caller retries.
+	// ALREADY_EXISTS (or 429 if that create took the last free share) and this
+	// pod looks the volume up; on HTTP 409 ABORTED the caller retries.
 	if acquired := s.config.volumeLocks.TryAcquire(volumeName); !acquired {
 		return nil, status.Errorf(codes.Aborted, util.VolumeOperationAlreadyExistsFmt, volumeName)
 	}
@@ -192,7 +192,7 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
-	klog.Infof("Successfully %s Volume Pool volume: %q, Composite ID: %q, IP: %q, MountName: %q", result, poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	klog.Infof("Volume Pool volume %q %s: Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, result, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
 
 	fileProtocol := v3FileProtocol
 	if protocol, ok := req.GetParameters()[paramFileProtocol]; ok {
@@ -245,7 +245,7 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 
 // createVolumePoolVolume creates the volume name in poolPath, or returns the
 // existing volume of that name, whatever its state. result says which, for the
-// log.
+// log: "created", or how the existing volume was found.
 //
 // CreateVolume must be idempotent: a retried request returns the volume that an
 // earlier attempt created (for example after its response was lost). The
@@ -259,9 +259,12 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 //     name, so in a full pool a create for an existing name fails with 429
 //     RESOURCE_EXHAUSTED, not ALREADY_EXISTS, and the lookup finds the volume.
 //     This also covers two pods competing for the last free share: the one
-//     that loses gets 429 and finds the volume the other created. A 429 from
-//     rate limiting costs one extra GET. If the volume doesn't exist, the
-//     original 429 is returned (ResourceExhausted).
+//     that loses gets 429 and usually finds the volume the other created. If
+//     that volume isn't visible yet, the GET returns 404 and the call fails
+//     with ResourceExhausted; if it's still CREATING, the call fails with
+//     Aborted; either way the caller's retry finds it. A 429 from rate
+//     limiting costs one extra GET. If the volume doesn't exist, the original
+//     429 is returned (ResourceExhausted).
 //
 // HTTP 409 ABORTED (contention) and every other error keep their mapping
 // without a lookup.
@@ -274,7 +277,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 	createErr := err
 	switch {
 	case file.IsAlreadyExistsErr(createErr):
-		klog.Infof("Volume Pool volume %q already exists, looking it up", volumeName)
+		klog.Infof("Volume Pool volume %q already exists (HTTP 409 ALREADY_EXISTS), looking it up", volumeName)
 		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
 			return nil, "", err
@@ -285,8 +288,9 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 			klog.Warningf("Volume Pool volume %q was reported as existing but is not found", volumeName)
 			return nil, "", status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
 		}
-		return poolVol, "found existing (HTTP 409 ALREADY_EXISTS)", nil
+		return poolVol, "already existed (HTTP 409 ALREADY_EXISTS)", nil
 	case file.IsHTTPTooManyRequestsErr(createErr):
+		klog.Infof("Creating Volume Pool volume %q failed with HTTP 429, looking it up in case it already exists: %v", volumeName, createErr)
 		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
 			return nil, "", err
@@ -296,7 +300,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 			return nil, "", volumePoolStatusError(createErr)
 		}
 		klog.Infof("Found existing Volume Pool volume %q after HTTP 429; the pool may be full", volumeName)
-		return poolVol, "found existing (after HTTP 429)", nil
+		return poolVol, "already existed (found after HTTP 429)", nil
 	default:
 		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
 		return nil, "", volumePoolStatusError(createErr)

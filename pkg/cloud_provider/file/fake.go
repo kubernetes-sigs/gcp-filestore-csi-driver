@@ -624,6 +624,9 @@ func FakeAddVolumePoolVolume(svc Service, vol *PoolVolume) error {
 	if !ok {
 		return fmt.Errorf("%T is not the fake file service", svc)
 	}
+	if vol == nil {
+		return fmt.Errorf("no volume to add")
+	}
 	manager.volumePoolMu.Lock()
 	defer manager.volumePoolMu.Unlock()
 	if manager.allocatedVolumes == nil {

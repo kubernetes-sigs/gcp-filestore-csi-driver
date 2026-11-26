@@ -238,6 +238,7 @@ type volumePoolTestService struct {
 	deleteVolume func(ctx context.Context, name string) error
 	mu           sync.Mutex
 	calls        map[string]int
+	createErr    error // the error of the last CreateVolumePoolVolume call
 }
 
 func (s *volumePoolTestService) count(call string) {
@@ -256,10 +257,15 @@ func (s *volumePoolTestService) GetVolumePoolVolume(ctx context.Context, name st
 
 func (s *volumePoolTestService) CreateVolumePoolVolume(ctx context.Context, parentPool, volumeID string) (*file.PoolVolume, error) {
 	s.count("CreateVolumePoolVolume")
+	create := s.Service.CreateVolumePoolVolume
 	if s.createVolume != nil {
-		return s.createVolume(ctx, parentPool, volumeID)
+		create = s.createVolume
 	}
-	return s.Service.CreateVolumePoolVolume(ctx, parentPool, volumeID)
+	vol, err := create(ctx, parentPool, volumeID)
+	s.mu.Lock()
+	s.createErr = err
+	s.mu.Unlock()
+	return vol, err
 }
 
 func (s *volumePoolTestService) DeleteVolumePoolVolume(ctx context.Context, name string) error {
@@ -288,19 +294,6 @@ func googleAPIError(httpCode int, st string) *googleapi.Error {
 		Code:    httpCode,
 		Message: strings.ToLower(st),
 		Body:    fmt.Sprintf(`{"error": {"code": %d, "message": %q, "status": %q}}`, httpCode, strings.ToLower(st), st),
-	}
-}
-
-// notFoundOnce returns a getVolume override that reports the volume missing on
-// the first call and then calls next.
-func notFoundOnce(next func(context.Context, string) (*file.PoolVolume, error)) func(context.Context, string) (*file.PoolVolume, error) {
-	first := true
-	return func(ctx context.Context, name string) (*file.PoolVolume, error) {
-		if first {
-			first = false
-			return nil, googleAPIError(http.StatusNotFound, "NOT_FOUND")
-		}
-		return next(ctx, name)
 	}
 }
 
@@ -348,16 +341,20 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		wantMsg    string // substring of the error message, if set
 		wantCreate int    // CreateVolumePoolVolume calls made by the CreateVolume under test
 		wantGet    int    // GetVolumePoolVolume calls made by the CreateVolume under test
+		// wantCreateHTTP, if set, is the HTTP code of the create's error, to
+		// show which path the fake took.
+		wantCreateHTTP int
 	}{
 		{
 			name:       "new volume is created without a lookup",
 			wantCreate: 1,
 		},
 		{
-			name:       "existing volume is looked up after ALREADY_EXISTS",
-			setup:      createFirst,
-			wantCreate: 1,
-			wantGet:    1,
+			name:           "existing volume is looked up after ALREADY_EXISTS",
+			setup:          createFirst,
+			wantCreate:     1,
+			wantGet:        1,
+			wantCreateHTTP: http.StatusConflict,
 		},
 		{
 			// Filestore looks for a free share before it checks the name, so in
@@ -385,18 +382,20 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 					t.Fatalf("failed to add volume: %v", err)
 				}
 			},
-			pool:       fullPool,
-			wantCreate: 1,
-			wantGet:    1,
+			pool:           fullPool,
+			wantCreate:     1,
+			wantGet:        1,
+			wantCreateHTTP: http.StatusTooManyRequests,
 		},
 		{
 			// The 429 is returned, not the lookup's 404.
-			name:       "new volume in a full pool keeps the 429 mapping",
-			pool:       fullPool,
-			wantCode:   codes.ResourceExhausted,
-			wantMsg:    "no available volumes in the pool",
-			wantCreate: 1,
-			wantGet:    1,
+			name:           "new volume in a full pool keeps the 429 mapping",
+			pool:           fullPool,
+			wantCode:       codes.ResourceExhausted,
+			wantMsg:        "no available volumes in the pool",
+			wantCreate:     1,
+			wantGet:        1,
+			wantCreateHTTP: http.StatusTooManyRequests,
 		},
 		{
 			name: "lookup error after 429 keeps its mapping",
@@ -508,6 +507,12 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			}
 			if got := fs.calls["GetVolumePoolVolume"]; got != tc.wantGet {
 				t.Errorf("GetVolumePoolVolume called %d times, want %d", got, tc.wantGet)
+			}
+			if tc.wantCreateHTTP != 0 {
+				var googleErr *googleapi.Error
+				if !errors.As(fs.createErr, &googleErr) || googleErr.Code != tc.wantCreateHTTP {
+					t.Errorf("create error = %v, want HTTP %d", fs.createErr, tc.wantCreateHTTP)
+				}
 			}
 			if tc.wantCode != codes.OK {
 				return
