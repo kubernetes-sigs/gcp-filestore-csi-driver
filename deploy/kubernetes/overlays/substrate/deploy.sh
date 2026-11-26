@@ -207,7 +207,15 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       printf '%s\n' "${WANT_SC_FIELDS}" | sed 's/^/     /' >&2
       echo "   StorageClass parameters can't be changed in place. To use the new parameters, delete and re-create it:" >&2
       echo "     kubectl delete storageclass ${STORAGECLASS_NAME}" >&2
-      echo "     ./deploy/kubernetes/overlays/substrate/deploy.sh --project-id ${PROJECT_ID} --volumepool-location ${VOLUMEPOOL_LOCATION} --volumepool-name ${VOLUMEPOOL_NAME} --storageclass-name ${STORAGECLASS_NAME}" >&2
+      RERUN_ARGS="--project-id ${PROJECT_ID} --volumepool-location ${VOLUMEPOOL_LOCATION} --volumepool-name ${VOLUMEPOOL_NAME} --storageclass-name ${STORAGECLASS_NAME}"
+      # Keep a custom Google service account: without it, the re-run would
+      # create or bind the default one and re-annotate the controller's
+      # Kubernetes service account.
+      if [[ "${CUSTOM_GSA_PROVIDED}" == "true" ]]; then
+        RERUN_ARGS="${RERUN_ARGS} --service-account ${GCP_SERVICE_ACCOUNT}"
+      fi
+      echo "     ./deploy/kubernetes/overlays/substrate/deploy.sh ${RERUN_ARGS}" >&2
+      echo "   (Use the same deploy.sh arguments and environment variables as for this run.)" >&2
       echo "   Existing volumes keep the mount options they were created with. While the StorageClass is" >&2
       echo "   deleted, creating actors or volumes that use it fails, so re-create it right away." >&2
       echo "" >&2
