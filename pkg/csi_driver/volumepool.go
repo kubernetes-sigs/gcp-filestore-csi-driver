@@ -192,7 +192,7 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
-	klog.Infof("Volume Pool volume %q %s: Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, result, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	klog.Infof("Successfully %s: %q, Composite ID: %q, IP: %q, MountName: %q", result, poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
 
 	fileProtocol := v3FileProtocol
 	if protocol, ok := req.GetParameters()[paramFileProtocol]; ok {
@@ -245,7 +245,8 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 
 // createVolumePoolVolume creates the volume name in poolPath, or returns the
 // existing volume of that name, whatever its state. result says which, for the
-// log: "created", or how the existing volume was found.
+// success log: "created Volume Pool volume", or "found existing Volume Pool
+// volume" and how.
 //
 // CreateVolume must be idempotent: a retried request returns the volume that an
 // earlier attempt created (for example after its response was lost). The
@@ -272,7 +273,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 	volumeName := volumePoolVolumeName(poolPath, name)
 	poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
 	if err == nil {
-		return poolVol, "created", nil
+		return poolVol, "created Volume Pool volume", nil
 	}
 	createErr := err
 	switch {
@@ -288,7 +289,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 			klog.Warningf("Volume Pool volume %q was reported as existing but is not found", volumeName)
 			return nil, "", status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
 		}
-		return poolVol, "already existed (HTTP 409 ALREADY_EXISTS)", nil
+		return poolVol, "found existing Volume Pool volume (HTTP 409 ALREADY_EXISTS)", nil
 	case file.IsHTTPTooManyRequestsErr(createErr):
 		klog.Infof("Creating Volume Pool volume %q failed with HTTP 429, looking it up in case it already exists: %v", volumeName, createErr)
 		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
@@ -300,7 +301,7 @@ func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath,
 			return nil, "", volumePoolStatusError(createErr)
 		}
 		klog.Infof("Found existing Volume Pool volume %q after HTTP 429; the pool may be full", volumeName)
-		return poolVol, "already existed (found after HTTP 429)", nil
+		return poolVol, "found existing Volume Pool volume (after HTTP 429)", nil
 	default:
 		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
 		return nil, "", volumePoolStatusError(createErr)
