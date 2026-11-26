@@ -68,7 +68,7 @@ func parseVolumePoolVolumeID(volumeID string) (parent, volID, ipAddress string, 
 	// an empty one. The ip query parameter is optional here: DeleteVolume
 	// identifies the volume without it.
 	if u.Host == "" || u.EscapedPath() != u.Path || u.Opaque != "" || u.User != nil ||
-		u.Fragment != "" || strings.Contains(volumeID, "#") {
+		strings.Contains(volumeID, "#") {
 		return "", "", "", fmt.Errorf("invalid composite volume ID: %s", volumeID)
 	}
 	parts := strings.Split(strings.TrimPrefix(u.Path, "/"), "/")
@@ -243,11 +243,11 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // state, or nil if it does not exist.
 //
 // Two CreateVolume requests with the same name for the same pool can't ask for
-// different backend volumes: the driver sends no quota or ip_acls, and the response fields
-// (capacity, protocol, mount options) come from the request. So an existing
-// volume is always compatible, and codes.AlreadyExists is never returned. Once
-// the driver sends a quota, compare it here and return codes.AlreadyExists on a
-// mismatch.
+// different backend volumes: the driver sends no quota or ip_acls, and the
+// response fields (capacity, protocol, mount options) come from the request. So
+// an existing volume is always compatible, and codes.AlreadyExists is never
+// returned. Once the driver sends a quota, compare it here and return
+// codes.AlreadyExists on a mismatch.
 //
 // Only an HTTP 404 from the API means that the volume doesn't exist.
 func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeName string) (*file.PoolVolume, error) {
@@ -358,7 +358,7 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 		return nil, err
 	}
 	if parent, err = canonicalVolumePoolName(parent); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid volume pool in volume ID %q", volumeID)
+		return nil, status.Errorf(codes.InvalidArgument, "invalid volume pool in volume ID %q: want volumepool://{project}/{location}/{pool}/volumes/{volume}", volumeID)
 	}
 	name := volumePoolVolumeName(parent, volID)
 	if acquired := s.config.volumeLocks.TryAcquire(name); !acquired {

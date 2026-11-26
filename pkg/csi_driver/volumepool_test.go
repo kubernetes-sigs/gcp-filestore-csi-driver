@@ -25,6 +25,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1065,11 +1066,13 @@ func TestVolumePoolLockExclusion(t *testing.T) {
 	}
 	cs, fs := newVolumePoolTestController(t)
 	entered := make(chan struct{})
-	var enteredOnce sync.Once
 	release := make(chan struct{})
+	// Block only the first create of held-vol, so that a missing lock makes the
+	// concurrent create below succeed (and fail the test) instead of hanging.
+	var heldCreates atomic.Int32
 	fs.createVolume = func(ctx context.Context, parent, id string) (*file.PoolVolume, error) {
-		if id == "held-vol" {
-			enteredOnce.Do(func() { close(entered) })
+		if id == "held-vol" && heldCreates.Add(1) == 1 {
+			close(entered)
 			<-release
 		}
 		return fs.Service.CreateVolumePoolVolume(ctx, parent, id)
@@ -1296,7 +1299,8 @@ func TestDeleteVolume_VolumePoolInvalidPoolMessage(t *testing.T) {
 		VolumeId: "volumepool://My-Project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
 	})
 	msg := status.Convert(err).Message()
-	if status.Code(err) != codes.InvalidArgument || !strings.Contains(msg, "volume ID") || strings.Contains(msg, "parameter") {
-		t.Errorf("DeleteVolume error = %v, want InvalidArgument about the volume ID, not a parameter", err)
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(msg, "volume ID") || strings.Contains(msg, "parameter") ||
+		!strings.Contains(msg, "volumepool://{project}/{location}/{pool}/volumes/{volume}") {
+		t.Errorf("DeleteVolume error = %v, want InvalidArgument about the volume ID with the expected form, not a parameter", err)
 	}
 }
