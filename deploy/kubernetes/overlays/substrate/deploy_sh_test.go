@@ -323,6 +323,16 @@ func TestDeployScriptStorageClass(t *testing.T) {
 	if otherExpansion == rendered {
 		t.Fatal("the template has no allowVolumeExpansion line to replace")
 	}
+	var noExpansionLines []string
+	for _, l := range strings.Split(rendered, "\n") {
+		if !strings.Contains(l, "allowVolumeExpansion:") {
+			noExpansionLines = append(noExpansionLines, l)
+		}
+	}
+	withoutAllowVolumeExpansion := strings.Join(noExpansionLines, "\n")
+	if withoutAllowVolumeExpansion == rendered {
+		t.Fatal("the template has no allowVolumeExpansion line to remove")
+	}
 	withMountOptions := rendered + "\nmountOptions:\n  - vers=3\n  - nolock\n"
 	withAllowedTopologies := rendered + "\nallowedTopologies:\n  - matchLabelExpressions:\n      - key: topology.gke.io/zone\n        values:\n          - us-central1-a\n"
 	sameProvNoParams := `apiVersion: storage.k8s.io/v1
@@ -422,24 +432,32 @@ volumeBindingMode: WaitForFirstConsumer
 			notWantOut:  []string{warning},
 		},
 		{
+			name:        "class without allowVolumeExpansion matches false and is applied",
+			state:       "present",
+			existing:    withoutAllowVolumeExpansion,
+			wantApplied: true,
+			notWantOut:  []string{warning, "<no value>"},
+		},
+		{
 			name:            "class with old parameters is left unchanged with a warning",
 			state:           "present",
 			existing:        oldClass,
 			wantReplaceFile: true,
-			wantOut:         []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass sc1", "--storageclass-name", "when they're next staged on a node"},
+			wantOut:         []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1", "--storageclass-name", "when they're next staged on a node"},
 			wantLine:        "<SCRIPT_PATH> --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1",
 			notWantOut:      []string{"--service-account", redundantNote},
 		},
 		{
 			name:              "re-run hint uses invoked ./deploy.sh path from overlay dir and quotes spaces",
 			state:             "present",
-			existing:          renderSubstrateSCTemplate(oldClass, "proj", "us-central1", "my pool", "sc1"),
+			existing:          strings.Replace(oldClass, "/volumePools/pool", "/volumePools/my pool", 1),
 			noDefaultFlags:    true,
 			runFromOverlayDir: true,
 			args:              []string{"--project-id", "proj", "--volumepool-location", "us-central1", "--volumepool-name", "my pool", "--storageclass-name", "sc1"},
 			wantRendered:      renderSubstrateSCTemplate(scTmplRaw, "proj", "us-central1", "my pool", "sc1"),
 			wantReplaceFile:   true,
-			wantOut:           []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass sc1"},
+			wantOut:           []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1"},
+			notWantOut:        []string{"/volumePools/pool\n", "//substrate-storageclass."},
 			wantLine:          "./deploy.sh --project-id proj --volumepool-location us-central1 --volumepool-name my\\ pool --storageclass-name sc1",
 		},
 		{
@@ -616,7 +634,7 @@ volumeBindingMode: WaitForFirstConsumer
 			}
 			cmd.Env = append(os.Environ(),
 				"PATH="+bin+":"+os.Getenv("PATH"),
-				"TMPDIR="+dir,
+				"TMPDIR="+dir+"/",
 				"STUB_DIR="+dir,
 				"STUB_TEST_BIN="+testBin,
 				"SC_STATE="+tc.state,
@@ -777,15 +795,15 @@ volumeBindingMode: WaitForFirstConsumer
 			want: "provisioner=kubernetes.io/no-provisioner\n" +
 				"reclaimPolicy=<no value>\n" +
 				"volumeBindingMode=WaitForFirstConsumer\n" +
-				"allowVolumeExpansion=<no value>\n",
+				"allowVolumeExpansion=false\n",
 		},
 		{
-			name: "class with allowVolumeExpansion, mountOptions and allowedTopologies",
-			yaml: rendered + "\nmountOptions:\n  - vers=3\n  - nolock\nallowedTopologies:\n  - matchLabelExpressions:\n      - key: topology.gke.io/zone\n        values:\n          - us-central1-a\n",
+			name: "class with allowVolumeExpansion true, mountOptions and allowedTopologies",
+			yaml: strings.Replace(rendered, "allowVolumeExpansion: false", "allowVolumeExpansion: true", 1) + "\nmountOptions:\n  - vers=3\n  - nolock\nallowedTopologies:\n  - matchLabelExpressions:\n      - key: topology.gke.io/zone\n        values:\n          - us-central1-a\n",
 			want: "provisioner=filestore.csi.storage.gke.io\n" +
 				"reclaimPolicy=Delete\n" +
 				"volumeBindingMode=Immediate\n" +
-				"allowVolumeExpansion=false\n" +
+				"allowVolumeExpansion=true\n" +
 				"mountOptions=vers=3\n" +
 				"mountOptions=nolock\n" +
 				"allowedTopologies=map[matchLabelExpressions:[map[key:topology.gke.io/zone values:[us-central1-a]]]]\n" +

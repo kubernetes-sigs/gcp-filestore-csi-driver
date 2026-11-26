@@ -181,13 +181,12 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       -e "s|<STORAGECLASS_NAME>|${STORAGECLASS_NAME}|g" \
       "${REPO_ROOT}/examples/kubernetes/substrate/storageclass.yaml.tmpl")"
 
-  # A StorageClass's provisioner, parameters, reclaimPolicy and
-  # volumeBindingMode can't be changed after creation, and applying the
-  # template over an existing StorageClass would overwrite mutable fields
-  # (allowVolumeExpansion) or fail on immutable ones (mountOptions,
-  # allowedTopologies). Compare them first. If only settings differ, warn
-  # instead of failing: the rest of the deployment has already been applied.
-  SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}allowVolumeExpansion={{.allowVolumeExpansion}}{{"\n"}}{{range .mountOptions}}mountOptions={{.}}{{"\n"}}{{end}}{{range .allowedTopologies}}allowedTopologies={{.}}{{"\n"}}{{end}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
+  # Only provisioner, parameters, reclaimPolicy and volumeBindingMode are
+  # immutable; allowVolumeExpansion, mountOptions and allowedTopologies are
+  # mutable, and are compared as well so deploy.sh doesn't overwrite or miss
+  # custom settings. If only settings differ, warn instead of failing: the
+  # rest of the deployment has already been applied.
+  SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}allowVolumeExpansion={{if .allowVolumeExpansion}}true{{else}}false{{end}}{{"\n"}}{{range .mountOptions}}mountOptions={{.}}{{"\n"}}{{end}}{{range .allowedTopologies}}allowedTopologies={{.}}{{"\n"}}{{end}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
   # Only NotFound counts as missing; any other error stops the script.
   HAVE_SC_FIELDS="$(kubectl get storageclass --ignore-not-found -o go-template="${SC_FIELDS_TEMPLATE}" -- "${STORAGECLASS_NAME}")"
   if [[ -n "${HAVE_SC_FIELDS}" ]]; then
@@ -204,7 +203,9 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       echo "" >&2
       exit 1
     elif [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
-      SC_MANIFEST_FILE="$(mktemp "${TMPDIR:-/tmp}/substrate-storageclass.XXXXXX")"
+      TMP_BASE="${TMPDIR:-/tmp}"
+      TMP_BASE="${TMP_BASE%/}"
+      SC_MANIFEST_FILE="$(mktemp "${TMP_BASE:-/}/substrate-storageclass.XXXXXX")"
       printf '%s\n' "${SC_MANIFEST}" > "${SC_MANIFEST_FILE}"
       RERUN_CMD="$(printf '%q --project-id %q --volumepool-location %q --volumepool-name %q --storageclass-name %q' \
         "$0" "${PROJECT_ID}" "${VOLUMEPOOL_LOCATION}" "${VOLUMEPOOL_NAME}" "${STORAGECLASS_NAME}")"
@@ -220,11 +221,12 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       printf '%s\n' "${HAVE_SC_FIELDS}" | sed 's/^/     /' >&2
       echo "   Template:" >&2
       printf '%s\n' "${WANT_SC_FIELDS}" | sed 's/^/     /' >&2
-      echo "   These settings can't be changed in place. To replace the StorageClass in one step" >&2
+      echo "   StorageClass parameters, reclaimPolicy and volumeBindingMode can't be changed in place." >&2
+      echo "   To replace the StorageClass with the template's settings in one step" >&2
       echo "   (avoiding the gcloud and kubectl apply -k gap where creating actors or volumes fails):" >&2
       printf '     kubectl replace --force -f %q\n' "${SC_MANIFEST_FILE}" >&2
       echo "   Or delete it and re-run deploy.sh:" >&2
-      printf '     kubectl delete storageclass %q\n' "${STORAGECLASS_NAME}" >&2
+      printf '     kubectl delete storageclass -- %q\n' "${STORAGECLASS_NAME}" >&2
       printf '     %s\n' "${RERUN_CMD}" >&2
       echo "   For zero downtime, re-run with a new --storageclass-name instead." >&2
       echo "   Existing volumes keep the mount-options value they were created with; volumes created without" >&2
