@@ -1,0 +1,25 @@
+# Test-only patch: shortens the controller's servicedns certificate lifetime to
+# the minimum the API server allows (maxExpirationSeconds: 3600, 1h), so
+# certificate rotation can be observed in about 30 minutes instead of about 24h.
+# It is NOT part of kustomization.yaml. Apply it to a deployed test cluster with
+#
+#   kubectl -n gcp-filestore-csi-driver patch deployment gcp-filestore-csi-controller \
+#       --patch-file deploy/kubernetes/overlays/substrate/rotation_test_patch.yaml
+#
+# and see README.md "Testing certificate rotation". Do not use it in production.
+#
+# A strategic merge patch replaces the whole projected.sources list, so this
+# entry must repeat every field of the servicedns-certs podCertificate source in
+# controller_patch.yaml. envoy_config_test.go checks that they match.
+spec:
+  template:
+    spec:
+      volumes:
+      - name: servicedns-certs
+        projected:
+          sources:
+          - podCertificate:
+              signerName: servicedns.podcert.ate.dev/identity
+              keyType: ECDSAP256
+              credentialBundlePath: credential-bundle.pem
+              maxExpirationSeconds: 3600

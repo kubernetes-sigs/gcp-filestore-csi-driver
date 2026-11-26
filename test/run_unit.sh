@@ -9,3 +9,4 @@ go version
 
 go test -mod=vendor -timeout 30s "${PKGDIR}/cmd/..."
 go test -mod=vendor -timeout 30s "${PKGDIR}/pkg/..."
+go test -mod=vendor -timeout 30s "${PKGDIR}/deploy/..."

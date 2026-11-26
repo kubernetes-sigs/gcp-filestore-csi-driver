@@ -1,3 +1,28 @@
+# Envoy configuration for the mTLS proxy sidecar in the Filestore CSI controller
+# pod (see controller_patch.yaml). Envoy terminates mTLS from Substrate's
+# ate-api-server on TCP port 10000 and forwards the stream to the CSI driver's
+# Unix socket /csi/csi.sock.
+#
+# Certificate rotation:
+# The serving certificate (/run/servicedns, a podCertificate projection) and
+# the client CA trust bundle (/run/podidentity-ca, a clusterTrustBundle
+# projection) are rotated in place by kubelet. Kubelet's atomic writer swaps the
+# ..data symlink in the volume directory, and Envoy only reloads files on a
+# watched_directory change when the TlsCertificate / CertificateValidationContext
+# is delivered through SDS. So both are delivered through file-based SDS
+# (path_config_source) below, with watched_directory in the SDS secrets. Do not
+# move them back inline under common_tls_context.tls_certificates or
+# validation_context: Envoy then reads them once at startup and keeps serving
+# the old certificate until it expires (b/586528501, about 24h after the pod
+# starts). envoy_config_test.go guards this.
+#
+# path_config_source deliberately has no watched_directory. Envoy then reloads
+# an SDS file (sds_*.yaml below, mounted at /etc/envoy) only when something is
+# renamed onto that exact path, and kubelet updates a ConfigMap volume by
+# renaming ..data, never the sds_*.yaml links. So, like envoy.yaml, an edit to
+# this ConfigMap (including the client SAN pin) takes effect only when the pod
+# restarts. Only the certificate files in the projected volumes are reloaded
+# live.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,6 +33,11 @@ data:
     admin:
       address:
         socket_address: { address: 127.0.0.1, port_value: 15000 }
+    # SDS subscriptions, including file-based ones, require node id and cluster;
+    # Envoy refuses to start without them.
+    node:
+      id: gcp-filestore-csi-controller
+      cluster: gcp-filestore-csi-controller
     static_resources:
       listeners:
       - name: csi_tls_listener
@@ -22,18 +52,18 @@ data:
               common_tls_context:
                 alpn_protocols:
                 - h2
-                tls_certificates:
-                - certificate_chain: { filename: /run/servicedns/credential-bundle.pem }
-                  private_key: { filename: /run/servicedns/credential-bundle.pem }
-                  watched_directory: { path: /run/servicedns }
-                validation_context:
-                  trusted_ca: { filename: /run/podidentity-ca/trust-bundle.pem }
-                  watched_directory: { path: /run/podidentity-ca }
-                  match_typed_subject_alt_names:
-                  - san_type: URI
-                    matcher:
-                      # Pin to authorized Substrate API server identity
-                      exact: "spiffe://cluster.local/ns/ate-system/sa/ate-api-server"
+                tls_certificate_sds_secret_configs:
+                - name: servicedns_cert
+                  sds_config:
+                    resource_api_version: V3
+                    path_config_source:
+                      path: /etc/envoy/sds_servicedns_cert.yaml
+                validation_context_sds_secret_config:
+                  name: podidentity_validation
+                  sds_config:
+                    resource_api_version: V3
+                    path_config_source:
+                      path: /etc/envoy/sds_podidentity_validation.yaml
           filters:
           - name: envoy.filters.network.tcp_proxy
             typed_config:
@@ -52,3 +82,29 @@ data:
                 address:
                   pipe:
                     path: /csi/csi.sock
+  # Serving certificate: the pod's servicedns certificate. The credential bundle
+  # holds the private key followed by the certificate chain. watched_directory
+  # makes Envoy reload it when kubelet rotates the projected volume.
+  sds_servicedns_cert.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: servicedns_cert
+      tls_certificate:
+        certificate_chain: { filename: /run/servicedns/credential-bundle.pem }
+        private_key: { filename: /run/servicedns/credential-bundle.pem }
+        watched_directory: { path: /run/servicedns }
+  # Client certificate validation: trust the podidentity CA bundle and accept
+  # only Substrate's ate-api-server identity. watched_directory makes Envoy
+  # reload the bundle when the cluster trust bundle changes.
+  sds_podidentity_validation.yaml: |
+    resources:
+    - "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret
+      name: podidentity_validation
+      validation_context:
+        trusted_ca: { filename: /run/podidentity-ca/trust-bundle.pem }
+        watched_directory: { path: /run/podidentity-ca }
+        match_typed_subject_alt_names:
+        - san_type: URI
+          matcher:
+            # Pin to authorized Substrate API server identity
+            exact: "spiffe://cluster.local/ns/ate-system/sa/ate-api-server"

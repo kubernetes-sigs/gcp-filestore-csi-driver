@@ -11,8 +11,14 @@
 #
 # 3. envoy mTLS proxy sidecar container (TCP port 10000 -> Unix socket /csi/csi.sock)
 #    - Substrate's ate-api-server communicates with CSI drivers over mTLS gRPC network sockets.
-#      Because the CSI driver natively listens on a local Unix domain socket, this Envoy 
+#      Because the CSI driver natively listens on a local Unix domain socket, this Envoy
 #      proxy intercepts mTLS traffic on TCP port 10000 and forwards it to the Unix socket.
+#    - Envoy serves the pod's servicedns certificate (servicedns-certs volume) and verifies
+#      the client against the podidentity CA bundle (podidentity-ca volume). Kubelet rotates
+#      both in place, and envoy_configmap.yaml delivers them through file-based SDS with
+#      watched_directory so Envoy picks up the new files without a restart (b/586528501).
+#    - The Envoy image is pinned by tag and digest. When bumping it, keep the SDS and
+#      watched_directory configuration in envoy_configmap.yaml and run envoy_config_test.go.
 #
 # 4. --feature-volume-pools=true
 #    - Enables VolumePool capacity management and volume claim/provisioning logic.
@@ -45,6 +51,9 @@ spec:
       - name: servicedns-certs
         projected:
           sources:
+          # Kubelet requests a new certificate before this one expires and swaps it in
+          # place. maxExpirationSeconds is unset, so the API server defaults it to 86400
+          # (24h). See README.md "Testing certificate rotation" to shorten it for testing.
           - podCertificate:
               signerName: servicedns.podcert.ate.dev/identity
               keyType: ECDSAP256
@@ -61,7 +70,8 @@ spec:
       containers:
       # envoy mTLS proxy sidecar intercepts traffic on port 10000 to the local Unix CSI domain socket for Substrate control plane
       - name: envoy
-        image: envoyproxy/envoy:v1.34-latest
+        # v1.34.14 multi-arch (amd64, arm64) image index digest from Docker Hub.
+        image: envoyproxy/envoy:v1.34.14@sha256:cfc0678bc03cca19cbb031688acb31d510bff501ff97e163026a375fe0515d69
         command: ["/usr/local/bin/envoy"]
         args: ["-c", "/etc/envoy/envoy.yaml"]
         securityContext:
