@@ -20,6 +20,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
 
 	"github.com/google/uuid"
 	filev1beta1 "google.golang.org/api/file/v1beta1"
@@ -27,7 +29,6 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/genproto/googleapis/rpc/code"
 	"google.golang.org/grpc/codes"
-	"strings"
 )
 
 const (
@@ -46,6 +47,7 @@ type fakeServiceManager struct {
 	createdMultishares        map[string]*Share
 	multishareops             []*filev1beta1multishare.Operation
 	allocatedVolumes          map[string]*PoolVolume // key: volumeURI
+	volumePoolMu              sync.Mutex             // guards allocatedVolumes
 }
 
 var _ Service = &fakeServiceManager{}
@@ -539,40 +541,121 @@ func (manager *fakeBlockingServiceManager) IsOpDone(*filev1beta1multishare.Opera
 }
 
 func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
 
 	volumeURI := fmt.Sprintf("%s/volumes/%s", parentPool, volumeID)
-	if vol, exists := manager.allocatedVolumes[volumeURI]; exists {
-		return vol, nil
+	// Like Filestore, look for a free share before checking the name: a full
+	// pool fails with HTTP 429 even for an existing volume ID.
+	if strings.Contains(parentPool, FakeVolumePoolExhausted) {
+		return nil, FakeVolumePoolError(429, "RESOURCE_EXHAUSTED", "no available volumes in the pool")
 	}
 
-	if strings.Contains(parentPool, "exhausted") {
-		return nil, &googleapi.Error{
-			Code:    429,
-			Message: "no available volumes in the pool",
-		}
+	// Like Filestore, fail with HTTP 409 ALREADY_EXISTS for an existing volume ID.
+	if _, exists := manager.allocatedVolumes[volumeURI]; exists {
+		return nil, FakeVolumePoolError(409, "ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
+	}
+
+	if strings.Contains(parentPool, FakeVolumePoolContended) {
+		return nil, FakeVolumePoolError(409, "ABORTED", `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`)
 	}
 
 	vol := &PoolVolume{
 		Name:      volumeURI,
 		IpAddress: "10.1.1.1",
 		MountName: fmt.Sprintf("vol_%s", volumeID),
+		State:     VolumePoolVolumeStateHot,
 	}
 	manager.allocatedVolumes[volumeURI] = vol
-	return vol, nil
+	copied := *vol
+	return &copied, nil
+}
+
+func (manager *fakeServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
+	if strings.Contains(name, FakeVolumePoolGetForbidden) {
+		return nil, FakeVolumePoolError(403, "PERMISSION_DENIED", "permission denied")
+	}
+	if vol, ok := manager.allocatedVolumes[name]; ok {
+		copied := *vol
+		return &copied, nil
+	}
+	// Like Filestore, an AIP-193 error body without an error reason.
+	return nil, FakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
 }
 
 func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
+	if strings.Contains(name, FakeVolumePoolContended) {
+		return FakeVolumePoolError(409, "ABORTED", "Resource is in an invalid state for update")
+	}
+	// A missing volume returns HTTP 404, like the client does for a 404
+	// response, so that tests run the caller's not-found handling.
+	if _, ok := manager.allocatedVolumes[name]; !ok {
+		return FakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
+	}
+	delete(manager.allocatedVolumes, name)
+	return nil
+}
+
+const (
+	// FakeVolumePoolContended makes the fake CreateVolumePoolVolume fail with
+	// HTTP 409 ABORTED, as Filestore does when concurrent calls contend for
+	// the same volume, when the pool name contains it (only the pool name is
+	// checked), and DeleteVolumePoolVolume when the volume's resource name
+	// contains it. GetVolumePoolVolume is not affected.
+	FakeVolumePoolContended = "contended"
+	// FakeVolumePoolExhausted makes the fake CreateVolumePoolVolume on a pool
+	// whose name contains it fail with HTTP 429 RESOURCE_EXHAUSTED, even for
+	// an existing volume ID, as Filestore does for a full pool.
+	FakeVolumePoolExhausted = "exhausted"
+	// FakeVolumePoolGetForbidden makes the fake GetVolumePoolVolume on a volume
+	// whose name contains it fail with HTTP 403.
+	FakeVolumePoolGetForbidden = "get-forbidden"
+)
+
+// FakeAddVolumePoolVolume adds vol to the fake file service svc, as if it had
+// been created, without the checks of the fake CreateVolumePoolVolume. It lets
+// tests put an existing volume into a pool that the fake reports as full.
+func FakeAddVolumePoolVolume(svc Service, vol *PoolVolume) error {
+	manager, ok := svc.(*fakeServiceManager)
+	if !ok {
+		return fmt.Errorf("%T is not the fake file service", svc)
+	}
+	if vol == nil {
+		return fmt.Errorf("no volume to add")
+	}
+	manager.volumePoolMu.Lock()
+	defer manager.volumePoolMu.Unlock()
 	if manager.allocatedVolumes == nil {
 		manager.allocatedVolumes = make(map[string]*PoolVolume)
 	}
-
-	if _, ok := manager.allocatedVolumes[name]; ok {
-		delete(manager.allocatedVolumes, name)
-		return nil
-	}
-
+	copied := *vol
+	manager.allocatedVolumes[vol.Name] = &copied
 	return nil
+}
+
+// FakeVolumePoolError returns the error that the Filestore client returns for
+// an HTTP error response with the given code, canonical status and message: a
+// googleapi error shaped like googleapi.CheckResponse's result for a Filestore
+// JSON error body (https://google.aip.dev/193), which carries no error reason.
+// The fake file service and the tests use it for Volume Pool API errors.
+func FakeVolumePoolError(httpCode int, canonicalStatus, message string) *googleapi.Error {
+	body, _ := json.Marshal(map[string]any{
+		"error": map[string]any{
+			"code":    httpCode,
+			"message": message,
+			"status":  canonicalStatus,
+		},
+	})
+	return &googleapi.Error{
+		Code:    httpCode,
+		Message: message,
+		Body:    string(body),
+	}
 }

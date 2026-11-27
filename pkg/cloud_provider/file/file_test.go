@@ -3,6 +3,7 @@ package file
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -975,6 +976,19 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 			},
 		},
 		{
+			// The caller checks whether the volume can be mounted.
+			name:         "WARM volume without mount point is returned",
+			responseCode: http.StatusOK,
+			responseBody: &VolumePoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+			expected: &PoolVolume{
+				Name:  fmt.Sprintf("%s/volumes/%s", parentPool, volID),
+				State: VolumePoolVolumeStateWarm,
+			},
+		},
+		{
 			name:         "api error response",
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,
@@ -996,9 +1010,15 @@ func TestCreateVolumePoolVolume(t *testing.T) {
 				}
 
 				if tc.responseBody != nil {
-					var reqBody VolumePoolVolume
+					var reqBody map[string]any
 					if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 						t.Errorf("failed to decode request body: %v", err)
+					}
+					// The body only carries a description (see
+					// CreateVolumePoolVolume); fields such as state must
+					// never be sent.
+					if want := map[string]any{"description": "Provisioned by GCP Filestore CSI driver"}; !cmp.Equal(reqBody, want) {
+						t.Errorf("request body = %v, want %v", reqBody, want)
 					}
 				}
 
@@ -1053,6 +1073,12 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,
 		},
+		{
+			// The caller decides whether a missing volume counts as deleted.
+			testName:     "404 is an error",
+			responseCode: http.StatusNotFound,
+			expectErr:    true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1086,6 +1112,9 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
+				}
+				if tc.responseCode == http.StatusNotFound && !IsHTTPNotFoundErr(err) {
+					t.Errorf("error = %v, want HTTP 404", err)
 				}
 				return
 			}
@@ -1285,5 +1314,504 @@ func TestCloudInstanceToMultishareInstance_PscEndpointProject(t *testing.T) {
 				t.Errorf("got PscEndpointProject %q, want %q", mi.Network.PscEndpointProject, tc.want)
 			}
 		})
+	}
+}
+
+func TestIsAbortedErr(t *testing.T) {
+	const contentionMsg = `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+		},
+		{
+			name: "non-googleapi error",
+			err:  fmt.Errorf("ABORTED"),
+		},
+		{
+			name: "409 ABORTED",
+			err:  FakeVolumePoolError(http.StatusConflict, "ABORTED", contentionMsg),
+			want: true,
+		},
+		{
+			name: "wrapped 409 ABORTED",
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusConflict, "ABORTED", contentionMsg)),
+			want: true,
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
+		},
+		{
+			name: "409 without a status in the body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: `{"error":{"code":409,"message":"conflict"}}`},
+		},
+		{
+			name: "409 with a non-JSON body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: "conflict"},
+		},
+		{
+			name: "429 RESOURCE_EXHAUSTED",
+			err:  FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool"),
+		},
+		{
+			name: "non-409 that claims ABORTED",
+			err:  FakeVolumePoolError(http.StatusInternalServerError, "ABORTED", "aborted"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAbortedErr(tc.err); got != tc.want {
+				t.Errorf("IsAbortedErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStatusErrorHTTPConflictUnchanged guards the shared mapping used by the
+// Basic, Zonal, Enterprise and multishare paths: an HTTP 409 still maps to
+// codes.Internal whatever its canonical status. Only the Volume Pool path maps
+// 409 ABORTED to codes.Aborted (see volumePoolStatusError in pkg/csi_driver).
+func TestStatusErrorHTTPConflictUnchanged(t *testing.T) {
+	for _, canonicalStatus := range []string{"ABORTED", "ALREADY_EXISTS"} {
+		err := FakeVolumePoolError(http.StatusConflict, canonicalStatus, "conflict")
+		if got := status.Code(StatusError(err)); got != codes.Internal {
+			t.Errorf("StatusError(409 %s) code = %v, want %v", canonicalStatus, got, codes.Internal)
+		}
+	}
+}
+
+// TestVolumePoolVolumeHTTPErrors checks the errors that CreateVolumePoolVolume,
+// GetVolumePoolVolume and DeleteVolumePoolVolume return for Filestore error
+// responses, as parsed by googleapi.CheckResponse.
+func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
+	parentPool := "projects/test-project/locations/us-central1/volumePools/test-pool"
+	volID := "vol-123"
+
+	tests := []struct {
+		name            string
+		httpCode        int
+		canonicalStatus string
+		wantAborted     bool
+		wantExists      bool
+		wantFailedPrec  bool
+		wantStatusCode  codes.Code
+	}{
+		{
+			name:            "409 ABORTED (pool contention)",
+			httpCode:        http.StatusConflict,
+			canonicalStatus: "ABORTED",
+			wantAborted:     true,
+			// StatusError alone is unchanged; the driver maps IsAbortedErr to codes.Aborted.
+			wantStatusCode: codes.Internal,
+		},
+		{
+			name:            "409 ALREADY_EXISTS",
+			httpCode:        http.StatusConflict,
+			canonicalStatus: "ALREADY_EXISTS",
+			wantExists:      true,
+			// StatusError alone is unchanged; the driver gets the existing volume on IsAlreadyExistsErr.
+			wantStatusCode: codes.Internal,
+		},
+		{
+			name:            "429 RESOURCE_EXHAUSTED",
+			httpCode:        http.StatusTooManyRequests,
+			canonicalStatus: "RESOURCE_EXHAUSTED",
+			wantStatusCode:  codes.ResourceExhausted,
+		},
+		{
+			name:            "400 INVALID_ARGUMENT",
+			httpCode:        http.StatusBadRequest,
+			canonicalStatus: "INVALID_ARGUMENT",
+			wantStatusCode:  codes.InvalidArgument,
+		},
+		{
+			name:            "400 FAILED_PRECONDITION",
+			httpCode:        http.StatusBadRequest,
+			canonicalStatus: "FAILED_PRECONDITION",
+			wantFailedPrec:  true,
+			// StatusError alone is unchanged; the driver maps
+			// IsFailedPreconditionErr to codes.FailedPrecondition.
+			wantStatusCode: codes.InvalidArgument,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.httpCode)
+				fmt.Fprint(w, FakeVolumePoolError(tc.httpCode, tc.canonicalStatus, "test error").Body)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			calls := map[string]func() error{
+				"CreateVolumePoolVolume": func() error {
+					_, err := manager.CreateVolumePoolVolume(ctx, parentPool, volID)
+					return err
+				},
+				"GetVolumePoolVolume": func() error {
+					_, err := manager.GetVolumePoolVolume(ctx, parentPool+"/volumes/"+volID)
+					return err
+				},
+				"DeleteVolumePoolVolume": func() error {
+					return manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/"+volID)
+				},
+			}
+			for callName, call := range calls {
+				err := call()
+				if err == nil {
+					t.Fatalf("%s: expected error, got nil", callName)
+				}
+				if got := IsAbortedErr(err); got != tc.wantAborted {
+					t.Errorf("%s: IsAbortedErr(%v) = %v, want %v", callName, err, got, tc.wantAborted)
+				}
+				if got := IsAlreadyExistsErr(err); got != tc.wantExists {
+					t.Errorf("%s: IsAlreadyExistsErr(%v) = %v, want %v", callName, err, got, tc.wantExists)
+				}
+				if got := IsFailedPreconditionErr(err); got != tc.wantFailedPrec {
+					t.Errorf("%s: IsFailedPreconditionErr(%v) = %v, want %v", callName, err, got, tc.wantFailedPrec)
+				}
+				if got := status.Code(StatusError(err)); got != tc.wantStatusCode {
+					t.Errorf("%s: StatusError(%v) code = %v, want %v", callName, err, got, tc.wantStatusCode)
+				}
+			}
+		})
+	}
+}
+
+func TestIsAlreadyExistsErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
+			want: true,
+		},
+		{
+			name: "wrapped 409 ALREADY_EXISTS",
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")),
+			want: true,
+		},
+		{
+			name: "409 ABORTED",
+			err:  FakeVolumePoolError(http.StatusConflict, "ABORTED", "contention"),
+		},
+		{
+			name: "409 without a status in the body",
+			err:  &googleapi.Error{Code: http.StatusConflict, Body: `{"error":{"code":409,"message":"conflict"}}`},
+		},
+		{
+			name: "non-409 that claims ALREADY_EXISTS",
+			err:  FakeVolumePoolError(http.StatusBadRequest, "ALREADY_EXISTS", "exists"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAlreadyExistsErr(tc.err); got != tc.want {
+				t.Errorf("IsAlreadyExistsErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsFailedPreconditionErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "400 FAILED_PRECONDITION",
+			err:  FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "volume cannot be deleted: another operation is in progress on it"),
+			want: true,
+		},
+		{
+			name: "wrapped 400 FAILED_PRECONDITION",
+			err:  fmt.Errorf("delete volume: %w", FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "volume cannot be deleted in its current state")),
+			want: true,
+		},
+		{
+			name: "400 INVALID_ARGUMENT",
+			err:  FakeVolumePoolError(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid volume ID"),
+		},
+		{
+			name: "409 FAILED_PRECONDITION",
+			err:  FakeVolumePoolError(http.StatusConflict, "FAILED_PRECONDITION", "conflict"),
+		},
+		{
+			name: "400 without a body",
+			err:  &googleapi.Error{Code: http.StatusBadRequest},
+		},
+		{
+			name: "400 with a body that isn't JSON",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Body: "<html>FAILED_PRECONDITION</html>"},
+		},
+		{
+			name: "non-googleapi error that mentions FAILED_PRECONDITION",
+			err:  errors.New("googleapi: Error 400: FAILED_PRECONDITION"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsFailedPreconditionErr(tc.err); got != tc.want {
+				t.Errorf("IsFailedPreconditionErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsHTTPTooManyRequestsErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "429 RESOURCE_EXHAUSTED",
+			err:  FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool"),
+			want: true,
+		},
+		{
+			// Any 429 counts, whatever its body says.
+			name: "429 without a body",
+			err:  &googleapi.Error{Code: http.StatusTooManyRequests},
+			want: true,
+		},
+		{
+			name: "wrapped 429",
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "quota exceeded")),
+			want: true,
+		},
+		{
+			name: "non-googleapi error that mentions 429",
+			err:  errors.New("googleapi: Error 429: RESOURCE_EXHAUSTED"),
+		},
+		{
+			name: "409 ALREADY_EXISTS",
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
+		},
+		{
+			name: "403 that claims RESOURCE_EXHAUSTED",
+			err:  FakeVolumePoolError(http.StatusForbidden, "RESOURCE_EXHAUSTED", "denied"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsHTTPTooManyRequestsErr(tc.err); got != tc.want {
+				t.Errorf("IsHTTPTooManyRequestsErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGetVolumePoolVolume(t *testing.T) {
+	name := "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-123"
+
+	tests := []struct {
+		testName     string
+		responseCode int
+		responseBody string
+		expectErr    bool
+		expected     *PoolVolume
+	}{
+		{
+			testName:     "volume with mount point",
+			responseCode: http.StatusOK,
+			responseBody: `{"name":"` + name + `","state":"HOT","quotaMib":"1024","mountPoint":{"ipAddress":"10.0.0.1","mountName":"vol_123"}}`,
+			expected: &PoolVolume{
+				Name:      name,
+				IpAddress: "10.0.0.1",
+				MountName: "vol_123",
+				State:     VolumePoolVolumeStateHot,
+			},
+		},
+		{
+			// The caller checks whether the volume can be mounted.
+			testName:     "volume without mount point is returned",
+			responseCode: http.StatusOK,
+			responseBody: `{"name":"` + name + `","state":"WARM"}`,
+			expected:     &PoolVolume{Name: name, State: VolumePoolVolumeStateWarm},
+		},
+		{
+			testName:     "not found",
+			responseCode: http.StatusNotFound,
+			responseBody: FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found").Body,
+			expectErr:    true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.testName, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				expectedPath := fmt.Sprintf("/v1beta1/%s", name)
+				if r.URL.Path != expectedPath {
+					t.Errorf("expected URL path %q, got %q", expectedPath, r.URL.Path)
+				}
+				if r.Method != http.MethodGet {
+					t.Errorf("expected method %s, got %s", http.MethodGet, r.Method)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.responseCode)
+				fmt.Fprint(w, tc.responseBody)
+			}))
+			defer server.Close()
+
+			ctx := context.Background()
+			fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+			if err != nil {
+				t.Fatalf("failed to create service client: %v", err)
+			}
+			fileService.BasePath = server.URL + "/"
+			manager := &gcfsServiceManager{
+				fileService: fileService,
+				httpClient:  server.Client(),
+			}
+
+			got, err := manager.GetVolumePoolVolume(ctx, name)
+			if tc.expectErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if diff := cmp.Diff(tc.expected, got); diff != "" {
+				t.Errorf("unexpected volume (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestVolumePoolRequestEscaping checks that resource names and the volume ID
+// can't change the request path or add a query.
+func TestVolumePoolRequestEscaping(t *testing.T) {
+	const parentPool = "projects/test-project/locations/us-central1/volumePools/test-pool"
+	var gotPath, gotRawQuery, gotVolumeID string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotRawQuery, gotVolumeID = r.URL.EscapedPath(), r.URL.RawQuery, r.URL.Query().Get("volumeId")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "not found").Body)
+	}))
+	defer server.Close()
+	ctx := context.Background()
+	fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+	if err != nil {
+		t.Fatalf("failed to create service client: %v", err)
+	}
+	fileService.BasePath = server.URL + "/"
+	manager := &gcfsServiceManager{fileService: fileService, httpClient: server.Client()}
+
+	if _, err := manager.GetVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); !IsHTTPNotFoundErr(err) {
+		t.Fatalf("GetVolumePoolVolume error = %v, want HTTP 404", err)
+	}
+	if want := "/v1beta1/" + parentPool + "/volumes/%3Fx%23y"; gotPath != want || gotRawQuery != "" {
+		t.Errorf("GET path %q query %q, want %q and no query", gotPath, gotRawQuery, want)
+	}
+	if _, err := manager.CreateVolumePoolVolume(ctx, parentPool, "a&b=c"); err == nil {
+		t.Fatal("CreateVolumePoolVolume succeeded, want an error")
+	}
+	if gotVolumeID != "a&b=c" {
+		t.Errorf("POST volumeId = %q, want %q", gotVolumeID, "a&b=c")
+	}
+	if _, err := manager.CreateVolumePoolVolume(ctx, parentPool+"?z", "vol-1"); err == nil {
+		t.Fatal("CreateVolumePoolVolume succeeded, want an error")
+	}
+	if want := "/v1beta1/" + parentPool + "%3Fz/volumes"; gotPath != want || gotRawQuery != "volumeId=vol-1" {
+		t.Errorf("POST path %q query %q, want %q and only volumeId", gotPath, gotRawQuery, want)
+	}
+	// DeleteVolumePoolVolume returns HTTP 404 as an error.
+	if err := manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); !IsHTTPNotFoundErr(err) {
+		t.Fatalf("DeleteVolumePoolVolume error = %v, want HTTP 404", err)
+	}
+	if want := "/v1beta1/" + parentPool + "/volumes/%3Fx%23y"; gotPath != want || gotRawQuery != "" {
+		t.Errorf("DELETE path %q query %q, want %q and no query", gotPath, gotRawQuery, want)
+	}
+}
+
+// TestVolumePoolUnexpectedSuccessStatus checks that a 2xx status that a call
+// doesn't expect is an error, never a nil volume with a nil error.
+func TestVolumePoolUnexpectedSuccessStatus(t *testing.T) {
+	const name = "projects/test-project/locations/us-central1/volumePools/test-pool/volumes/vol-1"
+	for _, code := range []int{http.StatusAccepted, http.StatusNoContent, http.StatusPartialContent} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(code)
+		}))
+		ctx := context.Background()
+		fileService, err := filev1beta1.NewService(ctx, option.WithHTTPClient(server.Client()))
+		if err != nil {
+			t.Fatalf("failed to create service client: %v", err)
+		}
+		fileService.BasePath = server.URL + "/"
+		manager := &gcfsServiceManager{fileService: fileService, httpClient: server.Client()}
+		if vol, err := manager.GetVolumePoolVolume(ctx, name); err == nil || vol != nil {
+			t.Errorf("GetVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
+		}
+		if vol, err := manager.CreateVolumePoolVolume(ctx, "projects/test-project/locations/us-central1/volumePools/test-pool", "vol-1"); err == nil || vol != nil {
+			t.Errorf("CreateVolumePoolVolume with HTTP %d = %v, %v; want nil and an error", code, vol, err)
+		}
+		// HTTP 204 is a valid response to a delete.
+		if code != http.StatusNoContent {
+			if err := manager.DeleteVolumePoolVolume(ctx, name); err == nil {
+				t.Errorf("DeleteVolumePoolVolume with HTTP %d succeeded, want an error", code)
+			}
+		}
+		server.Close()
+	}
+}
+
+// TestFakeVolumePoolFullPoolBeforeName checks that the fake, like Filestore,
+// reports a full pool before an existing volume ID.
+func TestFakeVolumePoolFullPoolBeforeName(t *testing.T) {
+	const pool = "projects/test-project/locations/us-central1/volumePools/" + FakeVolumePoolExhausted + "-pool"
+	svc, err := NewFakeService()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := svc.(*fakeServiceManager)
+	fake.allocatedVolumes[pool+"/volumes/vol-1"] = &PoolVolume{Name: pool + "/volumes/vol-1", IpAddress: "10.1.1.1", MountName: "vol_1", State: VolumePoolVolumeStateHot}
+	_, err = fake.CreateVolumePoolVolume(context.Background(), pool, "vol-1")
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) || googleErr.Code != http.StatusTooManyRequests {
+		t.Errorf("CreateVolumePoolVolume for an existing ID in a full pool: error = %v, want HTTP 429", err)
+	}
+	// The fake's 404 has no error reason, like Filestore's.
+	_, err = fake.GetVolumePoolVolume(context.Background(), pool+"/volumes/missing")
+	if !IsHTTPNotFoundErr(err) || IsNotFoundErr(err) {
+		t.Errorf("GetVolumePoolVolume for a missing volume: error = %v, want an HTTP 404 without an error reason", err)
 	}
 }

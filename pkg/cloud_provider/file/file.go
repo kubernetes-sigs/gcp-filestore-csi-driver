@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"regexp"
 	"runtime"
 	"strings"
@@ -79,10 +80,29 @@ type Share struct {
 }
 
 type PoolVolume struct {
-	Name      string
+	Name string
+	// IpAddress and MountName are the volume's mount point. They are empty if
+	// the API reported no mount point, for example for a WARM volume.
 	IpAddress string
 	MountName string
+	// State is the volume's lifecycle state, such as VolumePoolVolumeStateHot.
+	// It is empty if the API did not report a state.
+	State string
 }
+
+// Lifecycle states of a volume pool volume, as reported by the Filestore API.
+// The API reports a mount point only for HOT volumes and for older volumes
+// without a recorded state, which it reports as STATE_UNSPECIFIED. A volume
+// whose instance is being recovered is STATE_UNSPECIFIED too, but has no mount
+// point. CreateVolume returns a new volume HOT, or WARM when its share allows no
+// clients; CREATING is reported only for a volume being restored from a backup.
+const (
+	VolumePoolVolumeStateUnspecified = "STATE_UNSPECIFIED"
+	VolumePoolVolumeStateCreating    = "CREATING"
+	VolumePoolVolumeStateHot         = "HOT"
+	VolumePoolVolumeStateWarm        = "WARM"
+	VolumePoolVolumeStateCold        = "COLD"
+)
 
 type VolumePoolMountPoint struct {
 	IpAddress string `json:"ipAddress,omitempty"`
@@ -93,6 +113,19 @@ type VolumePoolVolume struct {
 	Name        string                `json:"name,omitempty"`
 	Description string                `json:"description,omitempty"`
 	MountPoint  *VolumePoolMountPoint `json:"mountPoint,omitempty"`
+	State       string                `json:"state,omitempty"`
+}
+
+func (v *VolumePoolVolume) toPoolVolume() *PoolVolume {
+	vol := &PoolVolume{
+		Name:  v.Name,
+		State: v.State,
+	}
+	if v.MountPoint != nil {
+		vol.IpAddress = v.MountPoint.IpAddress
+		vol.MountName = v.MountPoint.MountName
+	}
+	return vol
 }
 
 type MultishareInstance struct {
@@ -214,6 +247,7 @@ type Service interface {
 	ListOps(ctx context.Context, resource *ListFilter) ([]*filev1beta1multishare.Operation, error)
 	// Volume pool ops
 	CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error)
+	GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error)
 	DeleteVolumePoolVolume(ctx context.Context, name string) error
 }
 
@@ -760,6 +794,67 @@ func IsNotFoundErr(err error) bool {
 		}
 	}
 	return false
+}
+
+// IsHTTPNotFoundErr reports whether err is a googleapi error with HTTP status
+// 404. Unlike IsNotFoundErr, it doesn't need an error reason, which the Volume
+// Pool API's JSON error bodies (https://google.aip.dev/193) don't carry.
+func IsHTTPNotFoundErr(err error) bool {
+	var googleErr *googleapi.Error
+	return errors.As(err, &googleErr) && googleErr.Code == http.StatusNotFound
+}
+
+// IsHTTPTooManyRequestsErr reports whether err is a googleapi error with HTTP
+// status 429: a full Volume Pool (RESOURCE_EXHAUSTED) or rate limiting.
+func IsHTTPTooManyRequestsErr(err error) bool {
+	var googleErr *googleapi.Error
+	return errors.As(err, &googleErr) && googleErr.Code == http.StatusTooManyRequests
+}
+
+// IsAbortedErr reports whether err is an HTTP 409 googleapi error whose
+// canonical status is ABORTED. The Filestore Volume Pool API returns this when
+// concurrent CreateVolume calls contend for the same free volume in a pool
+// ("Resource is in an invalid state for update: concurrency contention ...,
+// please retry"); a retry succeeds. HTTP 409 is also used for ALREADY_EXISTS,
+// so the HTTP code alone does not tell the two apart and the status field of
+// the JSON error body (https://google.aip.dev/193) is checked instead.
+func IsAbortedErr(err error) bool {
+	return isHTTPErrorWithStatus(err, http.StatusConflict, "ABORTED")
+}
+
+// IsAlreadyExistsErr reports whether err is an HTTP 409 googleapi error whose
+// canonical status is ALREADY_EXISTS, for example a Volume Pool CreateVolume
+// call for a volume ID that already exists in the pool.
+func IsAlreadyExistsErr(err error) bool {
+	return isHTTPErrorWithStatus(err, http.StatusConflict, "ALREADY_EXISTS")
+}
+
+// IsFailedPreconditionErr reports whether err is an HTTP 400 googleapi error
+// whose canonical status is FAILED_PRECONDITION. The Filestore Volume Pool API
+// returns this, for example, when a volume can't be deleted because another
+// operation is in progress on it or because of its current state, or when
+// Volume Pools aren't enabled in the location. HTTP 400 is also used for
+// INVALID_ARGUMENT, so the status field of the JSON error body is checked.
+func IsFailedPreconditionErr(err error) bool {
+	return isHTTPErrorWithStatus(err, http.StatusBadRequest, "FAILED_PRECONDITION")
+}
+
+// isHTTPErrorWithStatus reports whether err is a googleapi error with the HTTP
+// status httpCode whose JSON body has the given canonical status.
+func isHTTPErrorWithStatus(err error, httpCode int, canonicalStatus string) bool {
+	var googleErr *googleapi.Error
+	if !errors.As(err, &googleErr) || googleErr.Code != httpCode {
+		return false
+	}
+	var reply struct {
+		Error struct {
+			Status string `json:"status"`
+		} `json:"error"`
+	}
+	if jsonErr := json.Unmarshal([]byte(googleErr.Body), &reply); jsonErr != nil {
+		return false
+	}
+	return reply.Error.Status == canonicalStatus
 }
 
 // isUserError returns a pointer to the grpc error code that maps to the http
@@ -1547,8 +1642,30 @@ func (manager *gcfsServiceManager) executeRESTRequest(ctx context.Context, metho
 	return manager.httpClient.Do(req)
 }
 
+// escapeResourceName escapes each segment of a resource name, such as
+// projects/{project}/locations/{location}/volumePools/{pool}, for use as a URL
+// path, so that no segment can change the path or add a query.
+func escapeResourceName(name string) string {
+	segments := strings.Split(name, "/")
+	for i, s := range segments {
+		segments[i] = url.PathEscape(s)
+	}
+	return strings.Join(segments, "/")
+}
+
+// volumePoolResponseError returns the error for an HTTP response that a Volume
+// Pool call did not expect. googleapi.CheckResponse returns nil for every 2xx
+// status, so an unexpected 2xx status gets an explicit error instead of being
+// treated as success.
+func volumePoolResponseError(resp *http.Response, call string) error {
+	if err := googleapi.CheckResponse(resp); err != nil {
+		return err
+	}
+	return fmt.Errorf("%s: unexpected HTTP status %d", call, resp.StatusCode)
+}
+
 func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, parentPool string, volumeID string) (*PoolVolume, error) {
-	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", parentPool, volumeID)
+	endpointURI := fmt.Sprintf("%s/volumes?volumeId=%s", escapeResourceName(parentPool), url.QueryEscape(volumeID))
 
 	// We purposefully populate the Description field to bypass a Google API Gateway
 	// REST-to-gRPC transcoding bug. The backend CreateVolumeRequest protobuf marks
@@ -1568,34 +1685,52 @@ func (manager *gcfsServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		return nil, googleapi.CheckResponse(resp)
+		return nil, volumePoolResponseError(resp, "CreateVolume")
 	}
 
 	var vol VolumePoolVolume
 	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
 		return nil, fmt.Errorf("failed to decode CreateVolume response: %w", err)
 	}
-
-	if vol.MountPoint == nil {
-		return nil, fmt.Errorf("volume %q created without mount details information", vol.Name)
-	}
-
-	return &PoolVolume{
-		Name:      vol.Name,
-		IpAddress: vol.MountPoint.IpAddress,
-		MountName: vol.MountPoint.MountName,
-	}, nil
+	// The volume is returned whatever its state; the caller checks that it
+	// can be mounted.
+	return vol.toPoolVolume(), nil
 }
 
+// GetVolumePoolVolume gets the Volume Pool volume with the given resource name,
+// projects/{project}/locations/{location}/volumePools/{pool}/volumes/{volume},
+// whatever its state.
+func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name string) (*PoolVolume, error) {
+	resp, err := manager.executeRESTRequest(ctx, http.MethodGet, escapeResourceName(name), nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, volumePoolResponseError(resp, "GetVolume")
+	}
+
+	var vol VolumePoolVolume
+	if err := json.NewDecoder(resp.Body).Decode(&vol); err != nil {
+		return nil, fmt.Errorf("failed to decode GetVolume response: %w", err)
+	}
+	return vol.toPoolVolume(), nil
+}
+
+// DeleteVolumePoolVolume deletes the Volume Pool volume with the given resource
+// name. Like the other delete calls, it returns every status other than 200 and
+// 204 as an error, including 404; the caller decides whether a missing volume
+// counts as deleted.
 func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
-	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, name, nil)
+	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, escapeResourceName(name), nil)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
-		return googleapi.CheckResponse(resp)
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return volumePoolResponseError(resp, "DeleteVolume")
 	}
 	return nil
 }
