@@ -287,13 +287,16 @@ func newVolumePoolTestController(t *testing.T) (*controllerServer, *volumePoolTe
 	return cs, fs
 }
 
-// googleAPIError returns an error like the one the Filestore client returns for
-// an HTTP error response with canonical status st in its body.
-func googleAPIError(httpCode int, st string) *googleapi.Error {
-	return &googleapi.Error{
-		Code:    httpCode,
-		Message: strings.ToLower(st),
-		Body:    fmt.Sprintf(`{"error": {"code": %d, "message": %q, "status": %q}}`, httpCode, strings.ToLower(st), st),
+// newVolumePoolCreateRequest returns a CreateVolume request for the volume name
+// in the Volume Pool pool, with one single-node-writer mount capability.
+func newVolumePoolCreateRequest(name, pool string) *csi.CreateVolumeRequest {
+	return &csi.CreateVolumeRequest{
+		Name:       name,
+		Parameters: map[string]string{paramKeyVolumePool: pool},
+		VolumeCapabilities: []*csi.VolumeCapability{{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+		}},
 	}
 }
 
@@ -303,19 +306,11 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 	const volName = "test-volumepool-idempotent"
 	volumePath := poolPath + "/volumes/" + volName
 	newReq := func(pool string) *csi.CreateVolumeRequest {
-		return &csi.CreateVolumeRequest{
-			Name: volName,
-			Parameters: map[string]string{
-				paramKeyVolumePool: pool,
-				paramFileProtocol:  v4_1FileProtocol,
-				paramMountOptions:  "nconnect=8",
-			},
-			VolumeCapabilities: []*csi.VolumeCapability{{
-				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-			}},
-			CapacityRange: &csi.CapacityRange{RequiredBytes: 1 * util.Gb},
-		}
+		req := newVolumePoolCreateRequest(volName, pool)
+		req.Parameters[paramFileProtocol] = v4_1FileProtocol
+		req.Parameters[paramMountOptions] = "nconnect=8"
+		req.CapacityRange = &csi.CapacityRange{RequiredBytes: 1 * util.Gb}
+		return req
 	}
 	wantContext := map[string]string{attrIP: "10.1.1.1", attrVolume: "vol_" + volName, attrFileProtocol: v4_1FileProtocol, attrMountOptions: "nconnect=8"}
 
@@ -324,9 +319,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 	// the GET's errors.
 	const fullPoolMsg = "no free share in the pool"
 	tooManyRequests := func(context.Context, string, string) (*file.PoolVolume, error) {
-		err := googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
-		err.Message = fullPoolMsg
-		return nil, err
+		return nil, file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", fullPoolMsg)
 	}
 	// getFailsAfter429 makes the create fail with 429 and the GET with getErr.
 	getFailsAfter429 := func(getErr error) func(*testing.T, *controllerServer, *volumePoolTestService) {
@@ -336,7 +329,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		}
 	}
 	alreadyExists := func(context.Context, string, string) (*file.PoolVolume, error) {
-		return nil, googleAPIError(http.StatusConflict, "ALREADY_EXISTS")
+		return nil, file.FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")
 	}
 	createFirst := func(t *testing.T, cs *controllerServer, _ *volumePoolTestService) {
 		if _, err := cs.CreateVolume(ctx, newReq(poolPath)); err != nil {
@@ -411,7 +404,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		},
 		{
 			name:       "GET 403 after 429 returns the 429",
-			setup:      getFailsAfter429(googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")),
+			setup:      getFailsAfter429(file.FakeVolumePoolError(http.StatusForbidden, "PERMISSION_DENIED", "permission denied")),
 			wantCode:   codes.ResourceExhausted,
 			wantMsg:    fullPoolMsg,
 			wantCreate: 1,
@@ -419,7 +412,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		},
 		{
 			name:       "GET 500 after 429 returns the 429",
-			setup:      getFailsAfter429(googleAPIError(http.StatusInternalServerError, "INTERNAL")),
+			setup:      getFailsAfter429(file.FakeVolumePoolError(http.StatusInternalServerError, "INTERNAL", "internal error")),
 			wantCode:   codes.ResourceExhausted,
 			wantMsg:    fullPoolMsg,
 			wantCreate: 1,
@@ -427,7 +420,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		},
 		{
 			name:       "GET 503 after 429 returns the 429",
-			setup:      getFailsAfter429(googleAPIError(http.StatusServiceUnavailable, "UNAVAILABLE")),
+			setup:      getFailsAfter429(file.FakeVolumePoolError(http.StatusServiceUnavailable, "UNAVAILABLE", "service unavailable")),
 			wantCode:   codes.ResourceExhausted,
 			wantMsg:    fullPoolMsg,
 			wantCreate: 1,
@@ -435,7 +428,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 		},
 		{
 			name:       "GET 429 after 429 returns the 429",
-			setup:      getFailsAfter429(googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")),
+			setup:      getFailsAfter429(file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "rate limit exceeded")),
 			wantCode:   codes.ResourceExhausted,
 			wantMsg:    fullPoolMsg,
 			wantCreate: 1,
@@ -504,7 +497,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				fs.createVolume = alreadyExists
 				fs.getVolume = func(context.Context, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")
+					return nil, file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "rate limit exceeded")
 				}
 			},
 			wantCode:   codes.ResourceExhausted,
@@ -535,7 +528,7 @@ func TestCreateVolume_VolumePoolIdempotent(t *testing.T) {
 			name: "other create errors keep their mapping without a lookup",
 			setup: func(_ *testing.T, _ *controllerServer, fs *volumePoolTestService) {
 				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-					return nil, googleAPIError(http.StatusForbidden, "PERMISSION_DENIED")
+					return nil, file.FakeVolumePoolError(http.StatusForbidden, "PERMISSION_DENIED", "permission denied")
 				}
 			},
 			wantCode:   codes.PermissionDenied,
@@ -646,8 +639,8 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 		createErr error
 	}{
 		{name: "new"},
-		{name: "existing after 409 ALREADY_EXISTS", createErr: googleAPIError(http.StatusConflict, "ALREADY_EXISTS")},
-		{name: "existing after 429 RESOURCE_EXHAUSTED", createErr: googleAPIError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED")},
+		{name: "existing after 409 ALREADY_EXISTS", createErr: file.FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+		{name: "existing after 429 RESOURCE_EXHAUSTED", createErr: file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "rate limit exceeded")},
 	} {
 		for _, st := range states {
 			t.Run(mode.name+"/"+st.name, func(t *testing.T) {
@@ -673,14 +666,7 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 						return vol(parent + "/volumes/" + id), nil
 					}
 				}
-				_, err := cs.CreateVolume(ctx, &csi.CreateVolumeRequest{
-					Name:       "state-vol",
-					Parameters: map[string]string{paramKeyVolumePool: poolPath},
-					VolumeCapabilities: []*csi.VolumeCapability{{
-						AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-						AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-					}},
-				})
+				_, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest("state-vol", poolPath))
 				if got := status.Code(err); got != st.wantCode {
 					t.Errorf("got error code %v, want %v (error: %v)", got, st.wantCode, err)
 				}
@@ -710,19 +696,19 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 		"quotaMib":   "1024",
 		"mountPoint": map[string]any{"ipAddress": "10.0.0.5", "mountName": "share_abc"},
 	}
-	errorBody := func(code int, canonicalStatus string) map[string]any {
-		return map[string]any{"error": map[string]any{"code": code, "message": "test error", "status": canonicalStatus}}
+	errorBody := func(code int, canonicalStatus string) json.RawMessage {
+		return json.RawMessage(file.FakeVolumePoolError(code, canonicalStatus, "test error").Body)
 	}
 	type response struct {
 		code int
-		body map[string]any
+		body any // encoded as JSON; nil: no body
 	}
 	notFound := response{http.StatusNotFound, errorBody(http.StatusNotFound, "NOT_FOUND")}
 	alreadyExists := response{http.StatusConflict, errorBody(http.StatusConflict, "ALREADY_EXISTS")}
 	// The create's 429 has its own message, so that the tests can tell it from
 	// the GET's errors.
 	const fullPoolMsg = "no free share in the pool"
-	exhausted := response{http.StatusTooManyRequests, map[string]any{"error": map[string]any{"code": http.StatusTooManyRequests, "message": fullPoolMsg, "status": "RESOURCE_EXHAUSTED"}}}
+	exhausted := response{http.StatusTooManyRequests, json.RawMessage(file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", fullPoolMsg).Body)}
 
 	tests := []struct {
 		name    string
@@ -887,14 +873,7 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			cs.config.features.FeatureVolumePools = &FeatureVolumePools{Enabled: true}
 			cs.config.fileService = fileService
 
-			resp, err := cs.CreateVolume(ctx, &csi.CreateVolumeRequest{
-				Name:       volName,
-				Parameters: map[string]string{paramKeyVolumePool: poolPath},
-				VolumeCapabilities: []*csi.VolumeCapability{{
-					AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-					AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-				}},
-			})
+			resp, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest(volName, poolPath))
 			if got := status.Code(err); got != tc.want {
 				t.Fatalf("got error code %v, want %v (error: %v)", got, tc.want, err)
 			}
@@ -927,14 +906,7 @@ func TestVolumePoolLockReleased(t *testing.T) {
 	ctx := context.Background()
 	const poolPath = "projects/test-project/locations/us-central1/volumePools/my-pool"
 	cs, fs := newVolumePoolTestController(t)
-	req := &csi.CreateVolumeRequest{
-		Name:       "lock-vol",
-		Parameters: map[string]string{paramKeyVolumePool: poolPath},
-		VolumeCapabilities: []*csi.VolumeCapability{{
-			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-		}},
-	}
+	req := newVolumePoolCreateRequest("lock-vol", poolPath)
 	resp, err := cs.CreateVolume(ctx, req)
 	if err != nil {
 		t.Fatalf("CreateVolume: %v", err)
@@ -1113,14 +1085,7 @@ func TestCheckVolumePoolVolumeName(t *testing.T) {
 	// CreateVolume rejects an invalid name before any API call.
 	cs, fs := newVolumePoolTestController(t)
 	for _, name := range []string{"..", "?x", "a/b"} {
-		_, err := cs.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
-			Name:       name,
-			Parameters: map[string]string{paramKeyVolumePool: "projects/test-project/locations/us-central1/volumePools/my-pool"},
-			VolumeCapabilities: []*csi.VolumeCapability{{
-				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-			}},
-		})
+		_, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest(name, "projects/test-project/locations/us-central1/volumePools/my-pool"))
 		if got := status.Code(err); got != codes.InvalidArgument {
 			t.Errorf("CreateVolume(name %q) code = %v, want InvalidArgument", name, got)
 		}
@@ -1168,18 +1133,11 @@ func TestCanonicalVolumePoolName(t *testing.T) {
 func TestVolumePoolLockReleasedAfterFailure(t *testing.T) {
 	ctx := context.Background()
 	const poolPath = "projects/test-project/locations/us-central1/volumePools/my-pool"
-	req := &csi.CreateVolumeRequest{
-		Name:       "fail-vol",
-		Parameters: map[string]string{paramKeyVolumePool: poolPath},
-		VolumeCapabilities: []*csi.VolumeCapability{{
-			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-		}},
-	}
+	req := newVolumePoolCreateRequest("fail-vol", poolPath)
 	failures := map[string]func(fs *volumePoolTestService){
 		"409 ABORTED": func(fs *volumePoolTestService) {
 			fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
-				return nil, googleAPIError(http.StatusConflict, "ABORTED")
+				return nil, file.FakeVolumePoolError(http.StatusConflict, "ABORTED", "concurrency contention, please retry")
 			}
 		},
 		"WARM volume": func(fs *volumePoolTestService) {
@@ -1208,7 +1166,7 @@ func TestVolumePoolLockReleasedAfterFailure(t *testing.T) {
 			t.Fatalf("CreateVolume: %v", err)
 		}
 		fs.deleteVolume = func(context.Context, string) error {
-			return googleAPIError(http.StatusConflict, "ABORTED")
+			return file.FakeVolumePoolError(http.StatusConflict, "ABORTED", "concurrency contention, please retry")
 		}
 		del := &csi.DeleteVolumeRequest{VolumeId: resp.GetVolume().GetVolumeId()}
 		if _, err := cs.DeleteVolume(ctx, del); status.Code(err) != codes.Aborted {
@@ -1228,14 +1186,7 @@ func TestVolumePoolLockExclusion(t *testing.T) {
 	ctx := context.Background()
 	const canonicalPool = "projects/test-project/locations/us-central1/volumePools/my-pool"
 	newReq := func(name string) *csi.CreateVolumeRequest {
-		return &csi.CreateVolumeRequest{
-			Name:       name,
-			Parameters: map[string]string{paramKeyVolumePool: canonicalPool + "/"},
-			VolumeCapabilities: []*csi.VolumeCapability{{
-				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-			}},
-		}
+		return newVolumePoolCreateRequest(name, canonicalPool+"/")
 	}
 	cs, fs := newVolumePoolTestController(t)
 	entered := make(chan struct{})
@@ -1287,7 +1238,7 @@ func TestVolumePoolLockExclusion(t *testing.T) {
 func TestDeleteVolume_VolumePoolHTTP(t *testing.T) {
 	const poolPath = "projects/test-project/locations/us-central1/volumePools/my-pool"
 	errorBody := func(code int, canonicalStatus string) string {
-		return fmt.Sprintf(`{"error": {"code": %d, "message": "test error", "status": %q}}`, code, canonicalStatus)
+		return file.FakeVolumePoolError(code, canonicalStatus, "test error").Body
 	}
 	tests := []struct {
 		name string
@@ -1428,14 +1379,7 @@ func TestCreateVolume_VolumePoolInvalidPool(t *testing.T) {
 		"projects/test-project/locations/us-central1/volumePools/my-pool?x=y",
 	} {
 		cs, fs := newVolumePoolTestController(t)
-		_, err := cs.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
-			Name:       "pvc-a",
-			Parameters: map[string]string{paramKeyVolumePool: pool},
-			VolumeCapabilities: []*csi.VolumeCapability{{
-				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
-				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
-			}},
-		})
+		_, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest("pvc-a", pool))
 		if got := status.Code(err); got != codes.InvalidArgument {
 			t.Errorf("CreateVolume(volume-pool %q) code = %v, want InvalidArgument (error: %v)", pool, got, err)
 		}
@@ -1451,7 +1395,7 @@ func TestCreateVolume_VolumePoolInvalidPool(t *testing.T) {
 func TestDeleteVolume_VolumePoolHandlerNotFound(t *testing.T) {
 	cs, fs := newVolumePoolTestController(t)
 	fs.deleteVolume = func(context.Context, string) error {
-		return googleAPIError(http.StatusNotFound, "NOT_FOUND")
+		return file.FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found")
 	}
 	_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{
 		VolumeId: buildVolumePoolVolumeID("projects/test-project/locations/us-central1/volumePools/my-pool", "gone-vol", "10.1.1.1"),
@@ -1461,19 +1405,5 @@ func TestDeleteVolume_VolumePoolHandlerNotFound(t *testing.T) {
 	}
 	if got := fs.calls["DeleteVolumePoolVolume"]; got != 1 {
 		t.Errorf("DeleteVolumePoolVolume called %d times, want 1", got)
-	}
-}
-
-// TestDeleteVolume_VolumePoolInvalidPoolMessage checks that a bad pool part of
-// a volume ID is reported as such, not as a bad volume-pool parameter.
-func TestDeleteVolume_VolumePoolInvalidPoolMessage(t *testing.T) {
-	cs, _ := newVolumePoolTestController(t)
-	_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{
-		VolumeId: "volumepool://My-Project/us-central1/my-pool/volumes/pvc-a?ip=10.1.1.1",
-	})
-	msg := status.Convert(err).Message()
-	if status.Code(err) != codes.InvalidArgument || !strings.Contains(msg, "volume ID") || strings.Contains(msg, "parameter") ||
-		!strings.Contains(msg, "volumepool://{project}/{location}/{pool}/volumes/{volume}") {
-		t.Errorf("DeleteVolume error = %v, want InvalidArgument about the volume ID with the expected form, not a parameter", err)
 	}
 }

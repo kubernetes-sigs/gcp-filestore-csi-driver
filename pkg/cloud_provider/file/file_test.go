@@ -1254,18 +1254,6 @@ func TestCloudInstanceToMultishareInstance_PscEndpointProject(t *testing.T) {
 	}
 }
 
-// volumePoolErrorBody returns a Filestore JSON error body (https://google.aip.dev/193).
-func volumePoolErrorBody(httpCode int, canonicalStatus, message string) string {
-	body, _ := json.Marshal(map[string]any{
-		"error": map[string]any{
-			"code":    httpCode,
-			"message": message,
-			"status":  canonicalStatus,
-		},
-	})
-	return string(body)
-}
-
 func TestIsAbortedErr(t *testing.T) {
 	const contentionMsg = `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`
 	tests := []struct {
@@ -1283,17 +1271,17 @@ func TestIsAbortedErr(t *testing.T) {
 		},
 		{
 			name: "409 ABORTED",
-			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", contentionMsg)},
+			err:  FakeVolumePoolError(http.StatusConflict, "ABORTED", contentionMsg),
 			want: true,
 		},
 		{
 			name: "wrapped 409 ABORTED",
-			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", contentionMsg)}),
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusConflict, "ABORTED", contentionMsg)),
 			want: true,
 		},
 		{
 			name: "409 ALREADY_EXISTS",
-			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
 		},
 		{
 			name: "409 without a status in the body",
@@ -1305,11 +1293,11 @@ func TestIsAbortedErr(t *testing.T) {
 		},
 		{
 			name: "429 RESOURCE_EXHAUSTED",
-			err:  &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool")},
+			err:  FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool"),
 		},
 		{
 			name: "non-409 that claims ABORTED",
-			err:  &googleapi.Error{Code: http.StatusInternalServerError, Body: volumePoolErrorBody(http.StatusInternalServerError, "ABORTED", "aborted")},
+			err:  FakeVolumePoolError(http.StatusInternalServerError, "ABORTED", "aborted"),
 		},
 	}
 
@@ -1328,7 +1316,7 @@ func TestIsAbortedErr(t *testing.T) {
 // 409 ABORTED to codes.Aborted (see volumePoolStatusError in pkg/csi_driver).
 func TestStatusErrorHTTPConflictUnchanged(t *testing.T) {
 	for _, canonicalStatus := range []string{"ABORTED", "ALREADY_EXISTS"} {
-		err := &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, canonicalStatus, "conflict")}
+		err := FakeVolumePoolError(http.StatusConflict, canonicalStatus, "conflict")
 		if got := status.Code(StatusError(err)); got != codes.Internal {
 			t.Errorf("StatusError(409 %s) code = %v, want %v", canonicalStatus, got, codes.Internal)
 		}
@@ -1385,7 +1373,7 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.httpCode)
-				fmt.Fprint(w, volumePoolErrorBody(tc.httpCode, tc.canonicalStatus, "test error"))
+				fmt.Fprint(w, FakeVolumePoolError(tc.httpCode, tc.canonicalStatus, "test error").Body)
 			}))
 			defer server.Close()
 
@@ -1443,17 +1431,17 @@ func TestIsAlreadyExistsErr(t *testing.T) {
 		},
 		{
 			name: "409 ALREADY_EXISTS",
-			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
 			want: true,
 		},
 		{
 			name: "wrapped 409 ALREADY_EXISTS",
-			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")}),
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")),
 			want: true,
 		},
 		{
 			name: "409 ABORTED",
-			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ABORTED", "contention")},
+			err:  FakeVolumePoolError(http.StatusConflict, "ABORTED", "contention"),
 		},
 		{
 			name: "409 without a status in the body",
@@ -1461,7 +1449,7 @@ func TestIsAlreadyExistsErr(t *testing.T) {
 		},
 		{
 			name: "non-409 that claims ALREADY_EXISTS",
-			err:  &googleapi.Error{Code: http.StatusBadRequest, Body: volumePoolErrorBody(http.StatusBadRequest, "ALREADY_EXISTS", "exists")},
+			err:  FakeVolumePoolError(http.StatusBadRequest, "ALREADY_EXISTS", "exists"),
 		},
 	}
 
@@ -1485,7 +1473,7 @@ func TestIsHTTPTooManyRequestsErr(t *testing.T) {
 		},
 		{
 			name: "429 RESOURCE_EXHAUSTED",
-			err:  &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool")},
+			err:  FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "no available volumes in the pool"),
 			want: true,
 		},
 		{
@@ -1496,7 +1484,7 @@ func TestIsHTTPTooManyRequestsErr(t *testing.T) {
 		},
 		{
 			name: "wrapped 429",
-			err:  fmt.Errorf("create volume: %w", &googleapi.Error{Code: http.StatusTooManyRequests, Body: volumePoolErrorBody(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "quota exceeded")}),
+			err:  fmt.Errorf("create volume: %w", FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", "quota exceeded")),
 			want: true,
 		},
 		{
@@ -1505,11 +1493,11 @@ func TestIsHTTPTooManyRequestsErr(t *testing.T) {
 		},
 		{
 			name: "409 ALREADY_EXISTS",
-			err:  &googleapi.Error{Code: http.StatusConflict, Body: volumePoolErrorBody(http.StatusConflict, "ALREADY_EXISTS", "volume already exists")},
+			err:  FakeVolumePoolError(http.StatusConflict, "ALREADY_EXISTS", "volume already exists"),
 		},
 		{
 			name: "403 that claims RESOURCE_EXHAUSTED",
-			err:  &googleapi.Error{Code: http.StatusForbidden, Body: volumePoolErrorBody(http.StatusForbidden, "RESOURCE_EXHAUSTED", "denied")},
+			err:  FakeVolumePoolError(http.StatusForbidden, "RESOURCE_EXHAUSTED", "denied"),
 		},
 	}
 
@@ -1553,7 +1541,7 @@ func TestGetVolumePoolVolume(t *testing.T) {
 		{
 			testName:     "not found",
 			responseCode: http.StatusNotFound,
-			responseBody: volumePoolErrorBody(http.StatusNotFound, "NOT_FOUND", "volume not found"),
+			responseBody: FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found").Body,
 			expectErr:    true,
 		},
 	}
@@ -1611,7 +1599,7 @@ func TestVolumePoolRequestEscaping(t *testing.T) {
 		gotPath, gotRawQuery, gotVolumeID = r.URL.EscapedPath(), r.URL.RawQuery, r.URL.Query().Get("volumeId")
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		fmt.Fprint(w, volumePoolErrorBody(http.StatusNotFound, "NOT_FOUND", "not found"))
+		fmt.Fprint(w, FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "not found").Body)
 	}))
 	defer server.Close()
 	ctx := context.Background()

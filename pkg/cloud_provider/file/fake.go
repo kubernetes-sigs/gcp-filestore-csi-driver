@@ -551,16 +551,16 @@ func (manager *fakeServiceManager) CreateVolumePoolVolume(ctx context.Context, p
 	// Like Filestore, look for a free share before checking the name: a full
 	// pool fails with HTTP 429 even for an existing volume ID.
 	if strings.Contains(parentPool, FakeVolumePoolExhausted) {
-		return nil, fakeVolumePoolError(429, "RESOURCE_EXHAUSTED", "no available volumes in the pool")
+		return nil, FakeVolumePoolError(429, "RESOURCE_EXHAUSTED", "no available volumes in the pool")
 	}
 
 	// Like Filestore, fail with HTTP 409 ALREADY_EXISTS for an existing volume ID.
 	if _, exists := manager.allocatedVolumes[volumeURI]; exists {
-		return nil, fakeVolumePoolConflictError("ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
+		return nil, FakeVolumePoolError(409, "ALREADY_EXISTS", fmt.Sprintf("volume %q already exists in volume pool %q", volumeID, parentPool))
 	}
 
 	if strings.Contains(parentPool, FakeVolumePoolContended) {
-		return nil, fakeVolumePoolConflictError("ABORTED", `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`)
+		return nil, FakeVolumePoolError(409, "ABORTED", `Resource is in an invalid state for update: "concurrency contention: bind volume, please retry"`)
 	}
 
 	vol := &PoolVolume{
@@ -578,21 +578,21 @@ func (manager *fakeServiceManager) GetVolumePoolVolume(ctx context.Context, name
 	manager.volumePoolMu.Lock()
 	defer manager.volumePoolMu.Unlock()
 	if strings.Contains(name, FakeVolumePoolGetForbidden) {
-		return nil, fakeVolumePoolError(403, "PERMISSION_DENIED", "permission denied")
+		return nil, FakeVolumePoolError(403, "PERMISSION_DENIED", "permission denied")
 	}
 	if vol, ok := manager.allocatedVolumes[name]; ok {
 		copied := *vol
 		return &copied, nil
 	}
 	// Like Filestore, an AIP-193 error body without an error reason.
-	return nil, fakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
+	return nil, FakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
 }
 
 func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
 	manager.volumePoolMu.Lock()
 	defer manager.volumePoolMu.Unlock()
 	if strings.Contains(name, FakeVolumePoolContended) {
-		return fakeVolumePoolConflictError("ABORTED", "Resource is in an invalid state for update")
+		return FakeVolumePoolError(409, "ABORTED", "Resource is in an invalid state for update")
 	}
 	// Deleting a missing volume succeeds, as DeleteVolumePoolVolume treats
 	// HTTP 404 as success.
@@ -637,11 +637,12 @@ func FakeAddVolumePoolVolume(svc Service, vol *PoolVolume) error {
 	return nil
 }
 
-// fakeVolumePoolError returns a googleapi error with the given HTTP code and
-// canonical status, shaped like googleapi.CheckResponse's result for a
-// Filestore JSON error body (https://google.aip.dev/193), which carries no
-// error reason.
-func fakeVolumePoolError(httpCode int, canonicalStatus, message string) error {
+// FakeVolumePoolError returns the error that the Filestore client returns for
+// an HTTP error response with the given code, canonical status and message: a
+// googleapi error shaped like googleapi.CheckResponse's result for a Filestore
+// JSON error body (https://google.aip.dev/193), which carries no error reason.
+// The fake file service and the tests use it for Volume Pool API errors.
+func FakeVolumePoolError(httpCode int, canonicalStatus, message string) *googleapi.Error {
 	body, _ := json.Marshal(map[string]any{
 		"error": map[string]any{
 			"code":    httpCode,
@@ -654,11 +655,4 @@ func fakeVolumePoolError(httpCode int, canonicalStatus, message string) error {
 		Message: message,
 		Body:    string(body),
 	}
-}
-
-// fakeVolumePoolConflictError returns an HTTP 409 googleapi error with the
-// given canonical status, shaped like googleapi.CheckResponse's result for a
-// Filestore JSON error body.
-func fakeVolumePoolConflictError(canonicalStatus, message string) error {
-	return fakeVolumePoolError(409, canonicalStatus, message)
 }
