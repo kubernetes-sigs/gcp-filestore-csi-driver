@@ -1707,6 +1707,10 @@ func (manager *gcfsServiceManager) GetVolumePoolVolume(ctx context.Context, name
 	return vol.toPoolVolume(), nil
 }
 
+// DeleteVolumePoolVolume deletes the Volume Pool volume with the given resource
+// name. Like the other delete calls, it returns every status other than 200 and
+// 204 as an error, including 404; the caller decides whether a missing volume
+// counts as deleted.
 func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, name string) error {
 	resp, err := manager.executeRESTRequest(ctx, http.MethodDelete, escapeResourceName(name), nil)
 	if err != nil {
@@ -1714,7 +1718,7 @@ func (manager *gcfsServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusNotFound {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
 		return volumePoolResponseError(resp, "DeleteVolume")
 	}
 	return nil

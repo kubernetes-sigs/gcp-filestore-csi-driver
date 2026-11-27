@@ -1248,6 +1248,8 @@ func TestDeleteVolume_VolumePoolHTTP(t *testing.T) {
 	}{
 		{name: "200", code: http.StatusOK, body: "{}"},
 		{name: "204", code: http.StatusNoContent},
+		// The client returns the 404, without an error reason, and the handler
+		// treats it as already deleted.
 		{name: "404 is success", code: http.StatusNotFound, body: errorBody(http.StatusNotFound, "NOT_FOUND")},
 		{name: "409 ABORTED is retryable", code: http.StatusConflict, body: errorBody(http.StatusConflict, "ABORTED"), want: codes.Aborted},
 		{name: "other 409 keeps the default mapping", code: http.StatusConflict, body: errorBody(http.StatusConflict, "FAILED_PRECONDITION"), want: codes.Internal},
@@ -1386,24 +1388,5 @@ func TestCreateVolume_VolumePoolInvalidPool(t *testing.T) {
 		if len(fs.calls) != 0 {
 			t.Errorf("CreateVolume(volume-pool %q) made API calls: %v", pool, fs.calls)
 		}
-	}
-}
-
-// TestDeleteVolume_VolumePoolHandlerNotFound checks the handler's own 404
-// branch: an HTTP 404 with an AIP-193 body (no error reason) from the delete
-// call means the volume is already gone.
-func TestDeleteVolume_VolumePoolHandlerNotFound(t *testing.T) {
-	cs, fs := newVolumePoolTestController(t)
-	fs.deleteVolume = func(context.Context, string) error {
-		return file.FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found")
-	}
-	_, err := cs.DeleteVolume(context.Background(), &csi.DeleteVolumeRequest{
-		VolumeId: buildVolumePoolVolumeID("projects/test-project/locations/us-central1/volumePools/my-pool", "gone-vol", "10.1.1.1"),
-	})
-	if err != nil {
-		t.Errorf("DeleteVolume of a volume whose delete returns HTTP 404 = %v, want success", err)
-	}
-	if got := fs.calls["DeleteVolumePoolVolume"]; got != 1 {
-		t.Errorf("DeleteVolumePoolVolume called %d times, want 1", got)
 	}
 }

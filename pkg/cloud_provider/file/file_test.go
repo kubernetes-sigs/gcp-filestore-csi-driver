@@ -1019,6 +1019,12 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			responseCode: http.StatusBadRequest,
 			expectErr:    true,
 		},
+		{
+			// The caller decides whether a missing volume counts as deleted.
+			testName:     "404 is an error",
+			responseCode: http.StatusNotFound,
+			expectErr:    true,
+		},
 	}
 
 	for _, tc := range tests {
@@ -1052,6 +1058,9 @@ func TestDeleteVolumePoolVolume(t *testing.T) {
 			if tc.expectErr {
 				if err == nil {
 					t.Errorf("expected error, got nil")
+				}
+				if tc.responseCode == http.StatusNotFound && !IsHTTPNotFoundErr(err) {
+					t.Errorf("error = %v, want HTTP 404", err)
 				}
 				return
 			}
@@ -1628,9 +1637,9 @@ func TestVolumePoolRequestEscaping(t *testing.T) {
 	if want := "/v1beta1/" + parentPool + "%3Fz/volumes"; gotPath != want || gotRawQuery != "volumeId=vol-1" {
 		t.Errorf("POST path %q query %q, want %q and only volumeId", gotPath, gotRawQuery, want)
 	}
-	// DeleteVolumePoolVolume treats HTTP 404 as success.
-	if err := manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); err != nil {
-		t.Fatalf("DeleteVolumePoolVolume error = %v, want nil for HTTP 404", err)
+	// DeleteVolumePoolVolume returns HTTP 404 as an error.
+	if err := manager.DeleteVolumePoolVolume(ctx, parentPool+"/volumes/?x#y"); !IsHTTPNotFoundErr(err) {
+		t.Fatalf("DeleteVolumePoolVolume error = %v, want HTTP 404", err)
 	}
 	if want := "/v1beta1/" + parentPool + "/volumes/%3Fx%23y"; gotPath != want || gotRawQuery != "" {
 		t.Errorf("DELETE path %q query %q, want %q and no query", gotPath, gotRawQuery, want)

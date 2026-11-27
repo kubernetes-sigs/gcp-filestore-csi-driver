@@ -594,8 +594,11 @@ func (manager *fakeServiceManager) DeleteVolumePoolVolume(ctx context.Context, n
 	if strings.Contains(name, FakeVolumePoolContended) {
 		return FakeVolumePoolError(409, "ABORTED", "Resource is in an invalid state for update")
 	}
-	// Deleting a missing volume succeeds, as DeleteVolumePoolVolume treats
-	// HTTP 404 as success.
+	// A missing volume returns HTTP 404, like the client does for a 404
+	// response, so that tests run the caller's not-found handling.
+	if _, ok := manager.allocatedVolumes[name]; !ok {
+		return FakeVolumePoolError(404, "NOT_FOUND", fmt.Sprintf("volume %q not found", name))
+	}
 	delete(manager.allocatedVolumes, name)
 	return nil
 }

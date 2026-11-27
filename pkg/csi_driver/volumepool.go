@@ -376,16 +376,23 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 	}
 	defer s.config.volumeLocks.Release(name)
 
-	err = s.config.fileService.DeleteVolumePoolVolume(ctx, name)
-	if err != nil {
-		if file.IsNotFoundErr(err) || file.IsHTTPNotFoundErr(err) {
-			klog.Warningf("Volume Pool volume %q not found, returning success", volumeID)
-			return &csi.DeleteVolumeResponse{}, nil
-		}
+	if err := s.deleteVolumePoolVolume(ctx, name); err != nil {
 		klog.Errorf("Failed to delete Volume Pool volume %q: %v", volumeID, err)
 		return nil, volumePoolStatusError(err)
 	}
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
+}
+
+// deleteVolumePoolVolume deletes the Volume Pool volume volumeName. A volume
+// that doesn't exist (HTTP 404) counts as deleted. The caller holds the
+// volume's lock.
+func (s *controllerServer) deleteVolumePoolVolume(ctx context.Context, volumeName string) error {
+	err := s.config.fileService.DeleteVolumePoolVolume(ctx, volumeName)
+	if err != nil && (file.IsNotFoundErr(err) || file.IsHTTPNotFoundErr(err)) {
+		klog.Warningf("Volume Pool volume %q not found, treating it as deleted", volumeName)
+		return nil
+	}
+	return err
 }
