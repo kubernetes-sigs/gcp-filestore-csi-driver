@@ -5,12 +5,47 @@
 #
 # Usage (Automated):
 #   Use the deployment script to dynamically render and apply this template:
-#   deploy.sh --location <LOCATION> --volumepool-name <VOLUMEPOOL_NAME>
+#   deploy.sh --project-id <PROJECT_ID> --volumepool-location <LOCATION> --volumepool-name <VOLUMEPOOL_NAME>
 #
 # Usage (Manual):
 #   1. Copy this template to a new file (e.g., storageclass.yaml).
 #   2. Replace <PROJECT_ID>, <LOCATION>, <VOLUMEPOOL_NAME>, and <STORAGECLASS_NAME>.
 #   3. Apply: kubectl apply -f storageclass.yaml
+#
+# Mount options note:
+#   Agent Substrate reads only StorageClass.provisioner and StorageClass.parameters
+#   and ignores StorageClass.mountOptions, so NFS client options must be set under
+#   parameters.mount-options.
+#   - The value is ONE comma-separated string with no spaces. Never fold it with a
+#     YAML ">" or "|" block scalar, which would add spaces or newlines.
+#   - Any value replaces all of the CSI driver's default mount options, so list
+#     every option you want.
+#   - nconnect=8 requires Linux kernel 5.3 or later; older kernels fail to mount
+#     and need explicit parameters.mount-options without nconnect. Linux shares
+#     one NFS client per server IP, so nconnect takes effect for a server IP only
+#     once every earlier mount to that IP on the node is unmounted.
+#   - port=2049 and mountport=2050 are fixed (skipping rpcbind).
+#   - Privileged source-port budget: Linux NFS binds TCP connections to ports
+#     665-1023 by default (about 360 per node). With nconnect=8, each distinct
+#     server IP a node mounts uses 8 ports, so a node caps out at roughly 44
+#     distinct server IPs (fewer with other NFS mounts and TIME_WAIT sockets).
+#     If a node hits that limit, set parameters.mount-options with a lower
+#     nconnect.
+#   - nolock and actimeo=60 are only safe for dedicated single-actor workspaces
+#     where strictly one node mounts a volume at a time and the runtime unmounts
+#     it on the old node before mounting on the new one. Do NOT use this
+#     StorageClass for regular Kubernetes PVCs (neither ReadWriteOnce nor
+#     ReadWriteMany -- the CSIDriver sets attachRequired: false, so even
+#     ReadWriteOnce PVCs can overlap across two nodes during rolling updates) or
+#     for volumes shared by several actors. Otherwise, nolock gives no
+#     cross-node lock exclusion (corruption risk) and actimeo=60 can serve up to
+#     60 seconds of stale file/directory attributes and negative lookups. For
+#     shared actor volumes, use storageclass-shared.yaml.tmpl instead (without
+#     nolock and actimeo=60); for regular Kubernetes PVCs, see
+#     examples/kubernetes/volumepool/storageclass.yaml.
+#   - StorageClass parameters can't be changed after creation. To change them,
+#     replace or delete and re-create the StorageClass. Existing volumes keep the
+#     mount-options value they were created with.
 
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
@@ -19,6 +54,7 @@ metadata:
 provisioner: filestore.csi.storage.gke.io
 parameters:
   volume-pool: "projects/<PROJECT_ID>/locations/<LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
+  mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
 allowVolumeExpansion: false
 reclaimPolicy: Delete
 volumeBindingMode: Immediate

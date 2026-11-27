@@ -182,3 +182,62 @@ Run this on a test cluster only. `rotation_test_patch.yaml` sets `maxExpirationS
    kubectl -n gcp-filestore-csi-driver get deployment gcp-filestore-csi-controller \
        -o jsonpath='{.spec.template.spec.volumes[?(@.name=="servicedns-certs")].projected.sources[0].podCertificate.maxExpirationSeconds}'
    ```
+
+---
+
+## 🗂️ StorageClass & NFS Mount Options
+
+Agent Substrate reads only `StorageClass.provisioner` and `StorageClass.parameters`, and ignores the top-level `StorageClass.mountOptions` field. Set NFS client mount options for Substrate volumes in `parameters.mount-options`.
+
+### Driver defaults
+
+When a VolumePool NFSv3 volume has no mount options (neither `parameters.mount-options` nor `mountOptions`), the CSI driver mounts it with:
+
+```
+vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288,wsize=524288
+```
+
+These defaults are the same for every access mode and are safe when several nodes mount a volume at the same time. They don't include `nolock` or `actimeo`. NFSv4.1 volumes get no defaults.
+
+* The 8-option defaults apply from the first driver release that includes this change. Earlier releases set at most `vers=3,proto=tcp,mountproto=tcp` (for example `v1.14.3`, pinned in the Substrate and Volume Pool overlays; see `kustomization.yaml`), and older releases set none, so an installation keeps those earlier defaults until that image is updated. (Explicit `parameters.mount-options` in the Substrate StorageClass template still takes effect immediately on the pinned image.)
+* `port=2049` and `mountport=2050` are fixed (skipping `rpcbind`). Any VolumePool endpoint or test server whose MOUNT daemon is not on port 2050 needs explicit mount options.
+* `rsize` and `wsize` set read and write payloads of up to 512 KiB. They cap the transfer size that the client and server would otherwise negotiate.
+* `nconnect` requires a Linux client kernel that supports it (5.3 or later; see `nfs(5)` on the node). Kernels older than 5.3 fail to mount with `nconnect=8` and need explicit options without `nconnect` (`parameters.mount-options` for Substrate, `mountOptions` for regular PVCs).
+* Linux shares one NFS client per server IP, so `nconnect=8` takes effect for a server IP only once every earlier mount to that IP on the node is unmounted.
+* Privileged source-port budget: Linux NFS binds each TCP connection to a privileged source port (`665`–`1023` by default, about 360 per node). With `nconnect=8`, each distinct server IP a node mounts uses 8 ports, so a node caps out at roughly 44 distinct NFS server IPs (fewer with other NFS mounts and `TIME_WAIT` sockets). If a node mounts more distinct server IPs than that, set explicit mount options (`parameters.mount-options` for Substrate, `mountOptions` for regular PVCs) with a lower `nconnect`.
+
+### Substrate StorageClass template
+
+`deploy.sh` and `examples/kubernetes/substrate/storageclass.yaml.tmpl` set these options for dedicated single-actor workspaces, where strictly one node mounts a volume at a time:
+
+```yaml
+parameters:
+  volume-pool: "projects/<PROJECT_ID>/locations/<LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
+  mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nolock,nconnect=8,rsize=524288,wsize=524288,actimeo=60"
+```
+
+`nolock` keeps file locks local to the node, and `actimeo=60` sets `acregmin=60`, `acregmax=60`, `acdirmin=60`, and `acdirmax=60` to cache file and directory attributes for 60 seconds (`/proc/mounts` prints only `acregmin=60,acdirmin=60`, because the max values equal the kernel defaults). Do not use this StorageClass for regular Kubernetes PVCs—neither `ReadWriteOnce` nor `ReadWriteMany` (the driver's `CSIDriver` sets `attachRequired: false`, so even `ReadWriteOnce` PVCs can overlap across two nodes during rolling updates)—or for volumes shared by several actors. `nolock` and `actimeo=60` are safe only when the runtime unmounts the volume on the old node before mounting it on the new one; otherwise, `nolock` gives no cross-node lock exclusion (corruption risk) and `actimeo=60` can serve up to 60 seconds of stale attributes and negative lookups. For volumes several actors share, or when you can't confirm the runtime unmounts on the old node first, use `examples/kubernetes/substrate/storageclass-shared.yaml.tmpl` (driver defaults only). For regular Kubernetes PVCs, use `examples/kubernetes/volumepool/storageclass.yaml`, or `examples/kubernetes/volumepool/storageclass-single-node.yaml` with a `ReadWriteOncePod` PVC (`examples/kubernetes/volumepool/pvc-single-node.yaml`) for volumes one Pod uses at a time.
+
+Other VolumePool StorageClass examples (applied manually; `deploy.sh` only renders `storageclass.yaml.tmpl`):
+
+* `examples/kubernetes/substrate/storageclass-shared.yaml.tmpl` — shared Substrate actor volumes, or when you can't confirm the runtime unmounts on the old node first (the 8 safe defaults without `nolock` and `actimeo=60`). Render and apply it manually:
+  ```bash
+  sed -e "s|<PROJECT_ID>|${PROJECT_ID}|g" \
+      -e "s|<LOCATION>|${VOLUMEPOOL_LOCATION}|g" \
+      -e "s|<VOLUMEPOOL_NAME>|${VOLUMEPOOL_NAME}|g" \
+      -e "s|<STORAGECLASS_NAME>|substrate-volumepool-shared-sc|g" \
+      examples/kubernetes/substrate/storageclass-shared.yaml.tmpl | kubectl apply -f -
+  ```
+* `examples/kubernetes/volumepool/storageclass.yaml` — regular Kubernetes PVCs (sets the 8 safe defaults in `mountOptions`).
+* `examples/kubernetes/volumepool/storageclass-single-node.yaml` and `examples/kubernetes/volumepool/pvc-single-node.yaml` — `ReadWriteOncePod` single-Pod PVC example with `nolock` and `actimeo=60`.
+
+When you write your own `parameters.mount-options`:
+
+* Any value replaces all of the driver defaults, so list every option you want.
+* Write one comma-separated string with no spaces. Don't fold it with a YAML `>` or `|` block scalar.
+
+### Changing the StorageClass
+
+StorageClass `provisioner`, `parameters`, `reclaimPolicy` and `volumeBindingMode` can't be changed after the StorageClass is created. To change the mount options, replace or delete and re-create the StorageClass. Existing volumes keep the `mount-options` value they were created with, and new volumes get the new value. Volumes created without mount options get the driver defaults when they're next staged on a node, so a volume still staged on the node keeps its current options until it is unstaged and staged again (and `nconnect` takes effect for a server IP once every earlier mount to that IP on the node is unmounted). While the StorageClass is deleted, creating actors or volumes that use it fails.
+
+If a StorageClass of this driver already exists with different settings (`reclaimPolicy`, `volumeBindingMode`, `allowVolumeExpansion`, `mountOptions`, `allowedTopologies`, or `parameters`), `deploy.sh` leaves it unchanged, writes the rendered manifest to a temporary file, and prints a one-step `kubectl replace --force -f <file>` command (along with the delete + re-run alternative and `--storageclass-name` zero-downtime option). When **only** `parameters.mount-options` differs (for example, the class was created by an earlier version of `deploy.sh` without `mount-options`), `deploy.sh` prints a warning and exits 0 (the driver overlay is already applied). When anything else differs (`volume-pool` or another parameter key, `reclaimPolicy`, `volumeBindingMode`, `allowVolumeExpansion`, `mountOptions`, or `allowedTopologies`), alone or together with `parameters.mount-options`, `deploy.sh` prints an error and exits 1 after deploying the driver so the run isn't reported as a success with the wrong StorageClass. If the existing StorageClass has a different provisioner, it may belong to another driver: `deploy.sh` leaves it unchanged, doesn't suggest deleting or replacing it, and exits 1 after deploying the driver; re-run it with another `--storageclass-name`.

@@ -1,0 +1,50 @@
+# Sample StorageClass for GKE Substrate shared volumes on GCP Filestore VolumePools.
+#
+# Use this template for Substrate volumes that several actors share, or whenever
+# you cannot confirm that the runtime unmounts a volume on the old node before
+# mounting it on the new one. It omits nolock and actimeo=60.
+#
+# deploy.sh does not apply this file. Render and apply it manually (for example
+# with STORAGECLASS_NAME=substrate-volumepool-shared-sc):
+#   sed -e "s|<PROJECT_ID>|${PROJECT_ID}|g" \
+#       -e "s|<LOCATION>|${VOLUMEPOOL_LOCATION}|g" \
+#       -e "s|<VOLUMEPOOL_NAME>|${VOLUMEPOOL_NAME}|g" \
+#       -e "s|<STORAGECLASS_NAME>|substrate-volumepool-shared-sc|g" \
+#       examples/kubernetes/substrate/storageclass-shared.yaml.tmpl | kubectl apply -f -
+#
+# Mount options note:
+#   Agent Substrate reads only StorageClass.provisioner and StorageClass.parameters
+#   and ignores StorageClass.mountOptions, so NFS client options must be set under
+#   parameters.mount-options.
+#   - These options match the CSI driver's safe VolumePool NFSv3 defaults. They
+#     are set explicitly because earlier driver releases (for example v1.14.3,
+#     pinned in the Substrate and Volume Pool overlays) default to at most
+#     vers=3,proto=tcp,mountproto=tcp (and older releases set none).
+#   - The value is ONE comma-separated string with no spaces. Never fold it with a
+#     YAML ">" or "|" block scalar, which would add spaces or newlines.
+#   - Any value replaces all of the CSI driver's default mount options, so list
+#     every option you want.
+#   - nconnect=8 requires Linux kernel 5.3 or later (older kernels fail to mount
+#     and need explicit parameters.mount-options without nconnect) and uses 8 of
+#     the ~360 privileged source ports (665-1023) per distinct server IP (~44
+#     distinct server IPs per node; lower nconnect if a node mounts more).
+#   - port=2049 and mountport=2050 are fixed (skipping rpcbind).
+#   - gVisor note: when actors run in gVisor, flock and fcntl locks stay inside
+#     each sandbox and do not coordinate across actors sharing a volume, with or
+#     without nolock. Have one actor write each file, or write to a temporary file
+#     and rename.
+#   - StorageClass parameters can't be changed after creation. To change them,
+#     replace or delete and re-create the StorageClass. Existing volumes keep the
+#     mount-options value they were created with.
+
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: <STORAGECLASS_NAME>
+provisioner: filestore.csi.storage.gke.io
+parameters:
+  volume-pool: "projects/<PROJECT_ID>/locations/<LOCATION>/volumePools/<VOLUMEPOOL_NAME>"
+  mount-options: "vers=3,proto=tcp,mountproto=tcp,port=2049,mountport=2050,nconnect=8,rsize=524288,wsize=524288"
+allowVolumeExpansion: false
+reclaimPolicy: Delete
+volumeBindingMode: Immediate

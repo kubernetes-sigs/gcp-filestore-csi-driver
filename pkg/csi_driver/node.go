@@ -636,14 +636,49 @@ func (s *nodeServer) generateLockInfoKeyFromVolumeID(volumeID string) (string, e
 }
 
 // volumePoolNFSv3DefaultMountOptions returns the mount options applied to VolumePool
-// NFSv3 volumes when the user specifies none. Pinning vers=3 and TCP for both the NFS
-// and MOUNT protocols skips mount.nfs version/transport negotiation, which otherwise
-// stalls for ~3s on a UDP portmapper/mountd timeout, because today's VolumePool
-// instances serve only NFSv3. Volumes provisioned with protocol NFS_V4_1 are left
-// alone (see shouldApplyVolumePoolNFSv3DefaultMountOptions). A new slice is returned
-// on every call so callers may modify it freely.
+// NFSv3 volumes when the user specifies none, for every access mode:
+//   - vers=3, proto=tcp, mountproto=tcp, port=2049, mountport=2050: VolumePool
+//     NFSv3 shares serve NFS on fixed port 2049 and MOUNT on fixed port 2050
+//     (servers using a different MOUNT port need explicit mount options).
+//     Pinning the version and TCP for both protocols skips mount.nfs version and
+//     transport negotiation, avoiding UDP portmapper/mountd timeouts; pinning the
+//     ports also skips the rpcbind lookups for them.
+//   - nconnect=8: let the client open up to 8 TCP connections per distinct server
+//     IP instead of one (see nfs(5)). Requires Linux kernel 5.3 or later; older
+//     kernels fail to mount and need explicit options without nconnect
+//     (parameters.mount-options for Substrate, mountOptions for regular PVCs).
+//     Because Linux shares one NFS client per server IP, nconnect=8 takes effect
+//     for a server IP only once every earlier mount to that IP on the node is
+//     unmounted. Each NFS TCP connection binds a privileged source port
+//     (sunrpc.min_resvport..max_resvport, 665-1023 by default, about 360 per
+//     node), so with nconnect=8 a node can mount roughly 44 distinct NFS server
+//     IPs (fewer with other NFS mounts and TIME_WAIT sockets); nodes hitting
+//     that limit need explicit options with a lower nconnect.
+//   - rsize=524288, wsize=524288: read and write RPC payloads of up to 512 KiB.
+//     These cap the transfer size that the client and server would otherwise
+//     negotiate (see nfs(5)).
+//
+// The defaults leave out nolock and actimeo, which are only safe when one node
+// mounts the volume at a time and unmounts on the old node before mounting on
+// the new one. The access mode doesn't guarantee that: the CSIDriver has
+// attachRequired: false, so even a ReadWriteOnce volume can be mounted on two
+// nodes during a rolling update. Workloads where strictly one node mounts a
+// volume at a time can set those options explicitly.
+//
+// Volumes provisioned with protocol NFS_V4_1 are left alone (see
+// shouldApplyVolumePoolNFSv3DefaultMountOptions). A new slice is returned on every
+// call so callers may modify it freely.
 func volumePoolNFSv3DefaultMountOptions() []string {
-	return []string{"vers=3", "proto=tcp", "mountproto=tcp"}
+	return []string{
+		"vers=3",
+		"proto=tcp",
+		"mountproto=tcp",
+		"port=2049",
+		"mountport=2050",
+		"nconnect=8",
+		"rsize=524288",
+		"wsize=524288",
+	}
 }
 
 // shouldApplyVolumePoolNFSv3DefaultMountOptions reports whether the VolumePool NFSv3

@@ -7,3 +7,38 @@ reclaimPolicy: Delete
 volumeBindingMode: Immediate
 parameters:
   volume-pool: "projects/demo-project/locations/us-central1/volumePools/demo-pool-1"
+# NFSv3 mount options that are safe when several nodes mount a volume at the same
+# time. They match the CSI driver's defaults for VolumePool volumes; they are set
+# explicitly because earlier driver releases set at most
+# vers=3,proto=tcp,mountproto=tcp (for example v1.14.3, pinned in the Substrate and
+# Volume Pool overlays; older releases set none).
+# Any value here replaces all of the driver's default mount options, so list every
+# option you want.
+# - port=2049 and mountport=2050 are fixed (skipping rpcbind).
+# - nconnect=8 requires Linux kernel 5.3 or later; older kernels fail to mount and
+#   need explicit mountOptions without nconnect. Linux shares one NFS client per
+#   server IP, so nconnect takes effect for a server IP only once every earlier
+#   mount to that IP on the node is unmounted.
+# - Privileged source-port budget: Linux NFS binds TCP connections to ports
+#   665-1023 by default (about 360 per node). With nconnect=8, each distinct
+#   server IP a node mounts uses 8 ports, so a node caps out at roughly 44
+#   distinct server IPs (fewer with other NFS mounts and TIME_WAIT sockets).
+#   If a node hits that limit, set mountOptions with a lower nconnect.
+# - Do not add nolock or actimeo=60 to this class. It is for volumes that Pods
+#   on several nodes may mount at once, including ReadWriteOnce PVCs (the
+#   CSIDriver sets attachRequired: false, so a ReadWriteOnce PVC can be mounted
+#   on two nodes during a rolling update). Otherwise, nolock gives no cross-node
+#   lock exclusion (corruption risk) and actimeo=60 can serve up to 60 seconds
+#   of stale attributes and negative lookups. For volumes strictly one Pod on
+#   one node mounts at a time (and the runtime unmounts on the old node before
+#   mounting on the new one), use storageclass-single-node.yaml with a
+#   ReadWriteOncePod PVC (pvc-single-node.yaml).
+mountOptions:
+  - vers=3
+  - proto=tcp
+  - mountproto=tcp
+  - port=2049
+  - mountport=2050
+  - nconnect=8
+  - rsize=524288
+  - wsize=524288
