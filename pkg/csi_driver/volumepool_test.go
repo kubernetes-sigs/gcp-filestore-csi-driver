@@ -960,12 +960,16 @@ func TestCreateVolume_VolumePoolWarmCleanup(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name      string
-		deleteErr error
-		wantCode  codes.Code
-		wantMsg   string
+		name string
+		// responseName, if set, is the volume name in the create's response.
+		responseName string
+		deleteErr    error
+		wantCode     codes.Code
+		wantMsg      string
 	}{
 		{name: "deleted", wantCode: codes.Aborted, wantMsg: "was deleted; retry"},
+		// The requested volume is deleted, whatever name the response has.
+		{name: "deletes the requested volume, not the response's name", responseName: poolPath + "/volumes/other-vol", wantCode: codes.Aborted, wantMsg: "was deleted; retry"},
 		{name: "already gone (404)", deleteErr: file.FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found"), wantCode: codes.Aborted, wantMsg: "was deleted; retry"},
 		{name: "delete fails with 500", deleteErr: file.FakeVolumePoolError(http.StatusInternalServerError, "INTERNAL", "backend error"), wantCode: codes.FailedPrecondition, wantMsg: "backend error"},
 		{name: "delete fails with 400 FAILED_PRECONDITION", deleteErr: file.FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "another operation is in progress"), wantCode: codes.FailedPrecondition, wantMsg: "another operation is in progress"},
@@ -974,6 +978,11 @@ func TestCreateVolume_VolumePoolWarmCleanup(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cs, fs := newVolumePoolTestController(t)
 			fs.createVolume = createdWarm
+			if tc.responseName != "" {
+				fs.createVolume = func(context.Context, string, string) (*file.PoolVolume, error) {
+					return &file.PoolVolume{Name: tc.responseName, State: file.VolumePoolVolumeStateWarm}, nil
+				}
+			}
 			var deleted []string
 			fs.deleteVolume = func(_ context.Context, name string) error {
 				deleted = append(deleted, name)
@@ -1012,6 +1021,7 @@ func TestCreateVolume_VolumePoolWarmCleanup(t *testing.T) {
 			deadline, hasDeadline = c.Deadline()
 			return nil
 		}
+		start := time.Now()
 		if _, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest(volName, poolPath)); status.Code(err) != codes.Aborted {
 			t.Fatalf("CreateVolume error = %v, want Aborted", err)
 		}
@@ -1022,10 +1032,14 @@ func TestCreateVolume_VolumePoolWarmCleanup(t *testing.T) {
 		if !hasDeadline {
 			t.Fatal("delete context has no deadline")
 		}
-		// The delete started before CreateVolume returned, so its deadline is
-		// at most the 15 s timeout after that.
+		// The delete started after CreateVolume was called and before it
+		// returned, so its 15 s deadline is at most 15 s after the return and
+		// more than 14 s after the call.
 		if d := deadline.Sub(end); d <= 0 || d > 15*time.Second {
 			t.Errorf("delete context deadline is %v after CreateVolume returned, want more than 0 and at most 15s", d)
+		}
+		if d := deadline.Sub(start); d <= 14*time.Second {
+			t.Errorf("delete context deadline is %v after CreateVolume was called, want more than 14s", d)
 		}
 	})
 

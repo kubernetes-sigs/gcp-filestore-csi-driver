@@ -245,10 +245,12 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // state, or nil if it does not exist.
 //
 // Two CreateVolume requests with the same name for the same pool can't ask for
-// different backend volumes: the driver sends no quota or ip_acls, so Filestore
-// applies the pool's defaults, and the response fields (capacity, protocol,
-// mount options) come from the request. So an existing volume is always
-// compatible, and codes.AlreadyExists is never returned. Once the driver sends
+// different backend volumes: the driver sends no quota or ip_acls, so the
+// volume gets the pool's default quota (or its share's size) and the access
+// rules of the share it is bound to (which is why some new volumes come back
+// WARM), and the response fields (capacity, protocol, mount options) come from
+// the request. So an existing volume is always compatible, and
+// codes.AlreadyExists is never returned. Once the driver sends
 // a quota or ip_acls, compare them here and return codes.AlreadyExists on a
 // mismatch.
 //
