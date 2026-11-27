@@ -818,21 +818,31 @@ func IsHTTPTooManyRequestsErr(err error) bool {
 // so the HTTP code alone does not tell the two apart and the status field of
 // the JSON error body (https://google.aip.dev/193) is checked instead.
 func IsAbortedErr(err error) bool {
-	return isConflictWithStatus(err, "ABORTED")
+	return isHTTPErrorWithStatus(err, http.StatusConflict, "ABORTED")
 }
 
 // IsAlreadyExistsErr reports whether err is an HTTP 409 googleapi error whose
 // canonical status is ALREADY_EXISTS, for example a Volume Pool CreateVolume
 // call for a volume ID that already exists in the pool.
 func IsAlreadyExistsErr(err error) bool {
-	return isConflictWithStatus(err, "ALREADY_EXISTS")
+	return isHTTPErrorWithStatus(err, http.StatusConflict, "ALREADY_EXISTS")
 }
 
-// isConflictWithStatus reports whether err is an HTTP 409 googleapi error whose
-// JSON body has the given canonical status.
-func isConflictWithStatus(err error, canonicalStatus string) bool {
+// IsFailedPreconditionErr reports whether err is an HTTP 400 googleapi error
+// whose canonical status is FAILED_PRECONDITION. The Filestore Volume Pool API
+// returns this, for example, when a volume can't be deleted because another
+// operation is in progress on it or because of its current state, or when
+// Volume Pools aren't enabled in the location. HTTP 400 is also used for
+// INVALID_ARGUMENT, so the status field of the JSON error body is checked.
+func IsFailedPreconditionErr(err error) bool {
+	return isHTTPErrorWithStatus(err, http.StatusBadRequest, "FAILED_PRECONDITION")
+}
+
+// isHTTPErrorWithStatus reports whether err is a googleapi error with the HTTP
+// status httpCode whose JSON body has the given canonical status.
+func isHTTPErrorWithStatus(err error, httpCode int, canonicalStatus string) bool {
 	var googleErr *googleapi.Error
-	if !errors.As(err, &googleErr) || googleErr.Code != http.StatusConflict {
+	if !errors.As(err, &googleErr) || googleErr.Code != httpCode {
 		return false
 	}
 	var reply struct {

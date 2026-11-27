@@ -826,6 +826,21 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			want:   codes.Internal,
 		},
 		{
+			name:   "400 FAILED_PRECONDITION on create without a lookup",
+			create: response{http.StatusBadRequest, errorBody(http.StatusBadRequest, "FAILED_PRECONDITION")},
+			want:   codes.FailedPrecondition,
+		},
+		{
+			name:   "400 INVALID_ARGUMENT on create keeps its mapping",
+			create: response{http.StatusBadRequest, errorBody(http.StatusBadRequest, "INVALID_ARGUMENT")},
+			want:   codes.InvalidArgument,
+		},
+		{
+			name:   "409 FAILED_PRECONDITION on create keeps the default mapping",
+			create: response{http.StatusConflict, errorBody(http.StatusConflict, "FAILED_PRECONDITION")},
+			want:   codes.Internal,
+		},
+		{
 			name:   "403 on create keeps its mapping without a lookup",
 			create: response{http.StatusForbidden, errorBody(http.StatusForbidden, "PERMISSION_DENIED")},
 			want:   codes.PermissionDenied,
@@ -1253,6 +1268,8 @@ func TestDeleteVolume_VolumePoolHTTP(t *testing.T) {
 		{name: "404 is success", code: http.StatusNotFound, body: errorBody(http.StatusNotFound, "NOT_FOUND")},
 		{name: "409 ABORTED is retryable", code: http.StatusConflict, body: errorBody(http.StatusConflict, "ABORTED"), want: codes.Aborted},
 		{name: "other 409 keeps the default mapping", code: http.StatusConflict, body: errorBody(http.StatusConflict, "FAILED_PRECONDITION"), want: codes.Internal},
+		{name: "400 FAILED_PRECONDITION", code: http.StatusBadRequest, body: errorBody(http.StatusBadRequest, "FAILED_PRECONDITION"), want: codes.FailedPrecondition},
+		{name: "400 INVALID_ARGUMENT keeps its mapping", code: http.StatusBadRequest, body: errorBody(http.StatusBadRequest, "INVALID_ARGUMENT"), want: codes.InvalidArgument},
 		{name: "unexpected 202", code: http.StatusAccepted, body: "{}", want: codes.Internal},
 	}
 	for _, tc := range tests {

@@ -1345,6 +1345,7 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 		canonicalStatus string
 		wantAborted     bool
 		wantExists      bool
+		wantFailedPrec  bool
 		wantStatusCode  codes.Code
 	}{
 		{
@@ -1374,6 +1375,15 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 			httpCode:        http.StatusBadRequest,
 			canonicalStatus: "INVALID_ARGUMENT",
 			wantStatusCode:  codes.InvalidArgument,
+		},
+		{
+			name:            "400 FAILED_PRECONDITION",
+			httpCode:        http.StatusBadRequest,
+			canonicalStatus: "FAILED_PRECONDITION",
+			wantFailedPrec:  true,
+			// StatusError alone is unchanged; the driver maps
+			// IsFailedPreconditionErr to codes.FailedPrecondition.
+			wantStatusCode: codes.InvalidArgument,
 		},
 	}
 
@@ -1421,6 +1431,9 @@ func TestVolumePoolVolumeHTTPErrors(t *testing.T) {
 				if got := IsAlreadyExistsErr(err); got != tc.wantExists {
 					t.Errorf("%s: IsAlreadyExistsErr(%v) = %v, want %v", callName, err, got, tc.wantExists)
 				}
+				if got := IsFailedPreconditionErr(err); got != tc.wantFailedPrec {
+					t.Errorf("%s: IsFailedPreconditionErr(%v) = %v, want %v", callName, err, got, tc.wantFailedPrec)
+				}
 				if got := status.Code(StatusError(err)); got != tc.wantStatusCode {
 					t.Errorf("%s: StatusError(%v) code = %v, want %v", callName, err, got, tc.wantStatusCode)
 				}
@@ -1466,6 +1479,56 @@ func TestIsAlreadyExistsErr(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := IsAlreadyExistsErr(tc.err); got != tc.want {
 				t.Errorf("IsAlreadyExistsErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestIsFailedPreconditionErr(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+		},
+		{
+			name: "400 FAILED_PRECONDITION",
+			err:  FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "volume cannot be deleted: another operation is in progress on it"),
+			want: true,
+		},
+		{
+			name: "wrapped 400 FAILED_PRECONDITION",
+			err:  fmt.Errorf("delete volume: %w", FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "volume cannot be deleted in its current state")),
+			want: true,
+		},
+		{
+			name: "400 INVALID_ARGUMENT",
+			err:  FakeVolumePoolError(http.StatusBadRequest, "INVALID_ARGUMENT", "invalid volume ID"),
+		},
+		{
+			name: "409 FAILED_PRECONDITION",
+			err:  FakeVolumePoolError(http.StatusConflict, "FAILED_PRECONDITION", "conflict"),
+		},
+		{
+			name: "400 without a body",
+			err:  &googleapi.Error{Code: http.StatusBadRequest},
+		},
+		{
+			name: "400 with a body that isn't JSON",
+			err:  &googleapi.Error{Code: http.StatusBadRequest, Body: "<html>FAILED_PRECONDITION</html>"},
+		},
+		{
+			name: "non-googleapi error that mentions FAILED_PRECONDITION",
+			err:  errors.New("googleapi: Error 400: FAILED_PRECONDITION"),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsFailedPreconditionErr(tc.err); got != tc.want {
+				t.Errorf("IsFailedPreconditionErr(%v) = %v, want %v", tc.err, got, tc.want)
 			}
 		})
 	}

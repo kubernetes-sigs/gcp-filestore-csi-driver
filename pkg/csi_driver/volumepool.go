@@ -140,11 +140,17 @@ func volumePoolVolumeName(poolName, volumeID string) string {
 // volumePoolStatusError converts an error from a Volume Pool API call to a gRPC
 // status error. An HTTP 409 ABORTED (concurrent claims on the same pool volume)
 // becomes codes.Aborted, which tells the caller that an immediate retry can
-// succeed. Everything else, including HTTP 409 ALREADY_EXISTS, keeps the
-// mapping of file.StatusError, which the non-Volume Pool paths also use.
+// succeed. An HTTP 400 FAILED_PRECONDITION (for example a volume that is busy
+// or can't be deleted in its current state) becomes codes.FailedPrecondition
+// instead of InvalidArgument. Everything else, including HTTP 409
+// ALREADY_EXISTS, keeps the mapping of file.StatusError, which the non-Volume
+// Pool paths also use.
 func volumePoolStatusError(err error) error {
 	if file.IsAbortedErr(err) {
 		return status.Error(codes.Aborted, err.Error())
+	}
+	if file.IsFailedPreconditionErr(err) {
+		return status.Error(codes.FailedPrecondition, err.Error())
 	}
 	// googleapi.Error.Error() doesn't print the canonical status, so log the
 	// body of any other HTTP 409 to show why it wasn't treated as ABORTED.
