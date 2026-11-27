@@ -39,8 +39,10 @@
 #     ReadWriteOnce PVCs can overlap across two nodes during rolling updates) or
 #     for volumes shared by several actors. Otherwise, nolock gives no
 #     cross-node lock exclusion (corruption risk) and actimeo=60 can serve up to
-#     60 seconds of stale file/directory attributes and negative lookups. Create a
-#     separate StorageClass without nolock and actimeo=60 for those workloads.
+#     60 seconds of stale file/directory attributes and negative lookups. For
+#     shared actor volumes, use storageclass-shared.yaml.tmpl instead (without
+#     nolock and actimeo=60); for regular Kubernetes PVCs, see
+#     examples/kubernetes/volumepool/storageclass.yaml.
 #   - StorageClass parameters can't be changed after creation. To change them,
 #     replace or delete and re-create the StorageClass. Existing volumes keep the
 #     mount-options value they were created with.

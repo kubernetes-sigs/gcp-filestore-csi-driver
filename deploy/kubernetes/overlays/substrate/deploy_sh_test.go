@@ -270,15 +270,18 @@ func TestDeployScriptStorageClass(t *testing.T) {
 		return string(b)
 	}
 	const (
-		scriptRel      = "deploy/kubernetes/overlays/substrate/deploy.sh"
-		saTmplRel      = "deploy/kubernetes/overlays/substrate/serviceaccount_patch.yaml.tmpl"
-		scTmplRel      = "examples/kubernetes/substrate/storageclass.yaml.tmpl"
-		customGSA      = "my-gsa@proj.iam.gserviceaccount.com"
-		warning        = "already exists with different settings"
-		provWarning    = "may belong to another driver"
-		completeBanner = "✅ Deployment complete!"
-		defaultSCName  = "substrate-volumepool-sc"
-		redundantNote  = "Use the same deploy.sh arguments"
+		scriptRel         = "deploy/kubernetes/overlays/substrate/deploy.sh"
+		saTmplRel         = "deploy/kubernetes/overlays/substrate/serviceaccount_patch.yaml.tmpl"
+		scTmplRel         = "examples/kubernetes/substrate/storageclass.yaml.tmpl"
+		customGSA         = "my-gsa@proj.iam.gserviceaccount.com"
+		diffMsg           = "already exists with different settings"
+		diffWarning       = "⚠️  [WARNING] StorageClass"
+		diffError         = "❌ [ERROR] StorageClass"
+		onlyMountOptsNote = "Only a parameters.mount-options difference is a warning"
+		provWarning       = "may belong to another driver"
+		completeBanner    = "✅ Deployment complete!"
+		defaultSCName     = "substrate-volumepool-sc"
+		redundantNote     = "Use the same deploy.sh arguments"
 	)
 	scTmplRaw := read(scTmplRel)
 	rendered := renderSubstrateSCTemplate(scTmplRaw, "proj", "us-central1", "pool", "sc1")
@@ -305,6 +308,10 @@ func TestDeployScriptStorageClass(t *testing.T) {
 	otherMountOpts := strings.Replace(rendered, "nolock,nconnect=8", "nolock,nconnect=4", 1)
 	if otherMountOpts == rendered {
 		t.Fatal("the template has no nolock,nconnect=8 to replace")
+	}
+	otherPoolAndMountOpts := strings.Replace(otherMountOpts, "/volumePools/pool", "/volumePools/other-pool", 1)
+	if otherPoolAndMountOpts == otherMountOpts {
+		t.Fatal("the template has no volumePools/pool to replace")
 	}
 	// Insert extra-key under parameters so it belongs to parameters.
 	extraParam := strings.Replace(rendered, "  volume-pool:", "  extra-key: \"extra-val\"\n  volume-pool:", 1)
@@ -382,7 +389,7 @@ volumeBindingMode: WaitForFirstConsumer
 			name:        "missing class is created",
 			state:       "missing",
 			wantApplied: true,
-			notWantOut:  []string{warning},
+			notWantOut:  []string{diffMsg},
 		},
 		{
 			name:           "default storageclass name is used when omitted in non-TTY",
@@ -392,7 +399,7 @@ volumeBindingMode: WaitForFirstConsumer
 			wantSCName:     defaultSCName,
 			wantRendered:   renderSubstrateSCTemplate(scTmplRaw, "proj", "us-central1", "pool", defaultSCName),
 			wantApplied:    true,
-			notWantOut:     []string{warning},
+			notWantOut:     []string{diffMsg},
 		},
 		{
 			name:           "env-var inputs configure project, location, volumepool and storageclass",
@@ -408,7 +415,7 @@ volumeBindingMode: WaitForFirstConsumer
 			wantSCName:   "env-sc",
 			wantRendered: renderSubstrateSCTemplate(scTmplRaw, "env-proj", "europe-west1", "env-pool", "env-sc"),
 			wantApplied:  true,
-			notWantOut:   []string{warning},
+			notWantOut:   []string{diffMsg},
 		},
 		{
 			name:           "step 5 is skipped when volumepool location and name are omitted",
@@ -429,23 +436,23 @@ volumeBindingMode: WaitForFirstConsumer
 			state:       "present",
 			existing:    rendered,
 			wantApplied: true,
-			notWantOut:  []string{warning},
+			notWantOut:  []string{diffMsg},
 		},
 		{
 			name:        "class without allowVolumeExpansion matches false and is applied",
 			state:       "present",
 			existing:    withoutAllowVolumeExpansion,
 			wantApplied: true,
-			notWantOut:  []string{warning, "<no value>"},
+			notWantOut:  []string{diffMsg, "<no value>"},
 		},
 		{
 			name:            "class with old parameters is left unchanged with a warning",
 			state:           "present",
 			existing:        oldClass,
 			wantReplaceFile: true,
-			wantOut:         []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1", "--storageclass-name", "when they're next staged on a node"},
+			wantOut:         []string{diffWarning, diffMsg, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1", "--storageclass-name", "when they're next staged on a node"},
 			wantLine:        "<SCRIPT_PATH> --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1",
-			notWantOut:      []string{"--service-account", redundantNote},
+			notWantOut:      []string{diffError, onlyMountOptsNote, "--service-account", redundantNote},
 		},
 		{
 			name:              "re-run hint uses invoked ./deploy.sh path from overlay dir and quotes spaces",
@@ -456,8 +463,8 @@ volumeBindingMode: WaitForFirstConsumer
 			args:              []string{"--project-id", "proj", "--volumepool-location", "us-central1", "--volumepool-name", "my pool", "--storageclass-name", "sc1"},
 			wantRendered:      renderSubstrateSCTemplate(scTmplRaw, "proj", "us-central1", "my pool", "sc1"),
 			wantReplaceFile:   true,
-			wantOut:           []string{warning, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1"},
-			notWantOut:        []string{"/volumePools/pool\n", "//substrate-storageclass."},
+			wantOut:           []string{diffWarning, diffMsg, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1"},
+			notWantOut:        []string{diffError, "/volumePools/pool\n", "//substrate-storageclass."},
 			wantLine:          "./deploy.sh --project-id proj --volumepool-location us-central1 --volumepool-name my\\ pool --storageclass-name sc1",
 		},
 		{
@@ -466,7 +473,8 @@ volumeBindingMode: WaitForFirstConsumer
 			existing:        oldClass,
 			repoSubdir:      "repo with spaces",
 			wantReplaceFile: true,
-			wantOut:         []string{warning, "kubectl replace --force -f "},
+			wantOut:         []string{diffWarning, diffMsg, "kubectl replace --force -f "},
+			notWantOut:      []string{diffError},
 			wantLine:        "<SCRIPT_PATH_QUOTED> --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1",
 		},
 		{
@@ -475,7 +483,8 @@ volumeBindingMode: WaitForFirstConsumer
 			existing:        oldClass,
 			args:            []string{"--service-account", customGSA},
 			wantReplaceFile: true,
-			wantOut:         []string{warning},
+			wantOut:         []string{diffWarning, diffMsg},
+			notWantOut:      []string{diffError},
 			wantLine:        "<SCRIPT_PATH> --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1 --service-account " + customGSA,
 		},
 		{
@@ -484,63 +493,98 @@ volumeBindingMode: WaitForFirstConsumer
 			existing:        oldClass,
 			env:             []string{"GCP_SERVICE_ACCOUNT=" + customGSA},
 			wantReplaceFile: true,
-			wantOut:         []string{warning},
+			wantOut:         []string{diffWarning, diffMsg},
+			notWantOut:      []string{diffError},
 			wantLine:        "<SCRIPT_PATH> --project-id proj --volumepool-location us-central1 --volumepool-name pool --storageclass-name sc1 --service-account " + customGSA,
 		},
 		{
-			name:     "class with different volume-pool value is left unchanged with a warning",
-			state:    "present",
-			existing: otherPool,
-			wantOut:  []string{warning, "parameters.volume-pool=projects/proj/locations/us-central1/volumePools/other-pool"},
+			name:            "class with different mount-options value is left unchanged with a warning",
+			state:           "present",
+			existing:        otherMountOpts,
+			wantReplaceFile: true,
+			wantOut:         []string{diffWarning, diffMsg, "nconnect=4"},
+			notWantOut:      []string{diffError, onlyMountOptsNote},
 		},
 		{
-			name:     "class with different mount-options value is left unchanged with a warning",
-			state:    "present",
-			existing: otherMountOpts,
-			wantOut:  []string{warning, "nconnect=4"},
+			name:            "class with different volume-pool value fails with an error",
+			state:           "present",
+			existing:        otherPool,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "kubectl replace --force -f ", "kubectl delete storageclass -- sc1", "parameters.volume-pool=projects/proj/locations/us-central1/volumePools/other-pool"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with extra parameter key is left unchanged with a warning",
-			state:    "present",
-			existing: extraParam,
-			wantOut:  []string{warning, "parameters.extra-key=extra-val"},
+			name:            "class with different mount-options and volume-pool fails with an error",
+			state:           "present",
+			existing:        otherPoolAndMountOpts,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "nconnect=4", "parameters.volume-pool=projects/proj/locations/us-central1/volumePools/other-pool"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with another reclaimPolicy is left unchanged with a warning",
-			state:    "present",
-			existing: otherPolicy,
-			wantOut:  []string{warning, "reclaimPolicy=Retain"},
+			name:            "class with extra parameter key fails with an error",
+			state:           "present",
+			existing:        extraParam,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "parameters.extra-key=extra-val"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with another volumeBindingMode is left unchanged with a warning",
-			state:    "present",
-			existing: otherBinding,
-			wantOut:  []string{warning, "volumeBindingMode=WaitForFirstConsumer"},
+			name:            "class with another reclaimPolicy fails with an error",
+			state:           "present",
+			existing:        otherPolicy,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "reclaimPolicy=Retain"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with allowVolumeExpansion true is left unchanged with a warning",
-			state:    "present",
-			existing: otherExpansion,
-			wantOut:  []string{warning, "allowVolumeExpansion=true"},
+			name:            "class with another volumeBindingMode fails with an error",
+			state:           "present",
+			existing:        otherBinding,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "volumeBindingMode=WaitForFirstConsumer"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with mountOptions is left unchanged with a warning",
-			state:    "present",
-			existing: withMountOptions,
-			wantOut:  []string{warning, "mountOptions=vers=3", "mountOptions=nolock"},
+			name:            "class with allowVolumeExpansion true fails with an error",
+			state:           "present",
+			existing:        otherExpansion,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "allowVolumeExpansion=true"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:     "class with allowedTopologies is left unchanged with a warning",
-			state:    "present",
-			existing: withAllowedTopologies,
-			wantOut:  []string{warning, "allowedTopologies="},
+			name:            "class with mountOptions fails with an error",
+			state:           "present",
+			existing:        withMountOptions,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "mountOptions=vers=3", "mountOptions=nolock"},
+			notWantOut:      []string{diffWarning},
 		},
 		{
-			name:       "class with no parameters is left unchanged with a warning",
-			state:      "present",
-			existing:   sameProvNoParams,
-			wantOut:    []string{warning},
-			notWantOut: []string{"<no value>"},
+			name:            "class with allowedTopologies fails with an error",
+			state:           "present",
+			existing:        withAllowedTopologies,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "allowedTopologies="},
+			notWantOut:      []string{diffWarning},
+		},
+		{
+			name:            "class with no parameters fails with an error",
+			state:           "present",
+			existing:        sameProvNoParams,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote},
+			notWantOut:      []string{diffWarning, "<no value>"},
 		},
 		{
 			name:       "class with no parameters belonging to another driver fails",
@@ -548,7 +592,7 @@ volumeBindingMode: WaitForFirstConsumer
 			existing:   otherDriverNoParams,
 			wantRC:     1,
 			wantOut:    []string{provWarning, "kubernetes.io/no-provisioner"},
-			notWantOut: []string{"kubectl delete storageclass", "kubectl replace", warning},
+			notWantOut: []string{"kubectl delete storageclass", "kubectl replace", diffMsg, diffWarning, onlyMountOptsNote},
 		},
 		{
 			name:       "class of another driver is left unchanged, without a delete hint, and fails",
@@ -556,14 +600,16 @@ volumeBindingMode: WaitForFirstConsumer
 			existing:   otherDriver,
 			wantRC:     1,
 			wantOut:    []string{provWarning, "example.com/other"},
-			notWantOut: []string{"kubectl delete storageclass", "kubectl replace", warning},
+			notWantOut: []string{"kubectl delete storageclass", "kubectl replace", diffMsg, diffWarning, onlyMountOptsNote},
 		},
 		{
-			name:       "multiline parameter containing provisioner= does not spoof provisioner",
-			state:      "present",
-			existing:   multilineSpoofParam,
-			wantOut:    []string{warning, "parameters.note="},
-			notWantOut: []string{provWarning},
+			name:            "multiline parameter containing provisioner= does not spoof provisioner",
+			state:           "present",
+			existing:        multilineSpoofParam,
+			wantRC:          1,
+			wantReplaceFile: true,
+			wantOut:         []string{diffError, diffMsg, onlyMountOptsNote, "parameters.note="},
+			notWantOut:      []string{provWarning, diffWarning},
 		},
 		{
 			name:   "other kubectl get errors stop the script",
@@ -686,6 +732,11 @@ volumeBindingMode: WaitForFirstConsumer
 			applied, readErr := os.ReadFile(filepath.Join(dir, "applied.yaml"))
 			if gotApplied := readErr == nil; gotApplied != tc.wantApplied {
 				t.Errorf("StorageClass applied = %t, want %t; output:\n%s", gotApplied, tc.wantApplied, out)
+			}
+			if !tc.wantApplied {
+				if strings.Contains(calls, "kubectl apply -f") || strings.Contains(calls, "kubectl replace") {
+					t.Errorf("StorageClass should stay unchanged, but calls include apply/replace:\n%s", calls)
+				}
 			}
 			if tc.wantApplied && strings.TrimSpace(string(applied)) != strings.TrimSpace(wantRendered) {
 				t.Errorf("applied manifest differs from the rendered template:\n%s", applied)

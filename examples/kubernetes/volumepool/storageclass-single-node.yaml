@@ -1,0 +1,39 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: volume-pool-single-node-sc
+provisioner: filestore.csi.storage.gke.io
+reclaimPolicy: Delete
+volumeBindingMode: Immediate
+parameters:
+  volume-pool: "projects/demo-project/locations/us-central1/volumePools/demo-pool-1"
+# Single-node NFSv3 mount options (adds nolock and actimeo=60 to the defaults).
+# Use this StorageClass ONLY for volumes that strictly one Pod on one node
+# mounts at a time, and pair it with ReadWriteOncePod PVCs (see
+# pvc-single-node.yaml), which Kubernetes lets only one Pod use at a time.
+# Plain ReadWriteOnce is NOT enough because the CSIDriver sets
+# attachRequired: false, allowing a ReadWriteOnce PVC to be mounted on two nodes
+# simultaneously during rolling updates.
+#
+# nolock keeps file locks local to the node, and actimeo=60 caches file and
+# directory attributes for 60 seconds. If two nodes mount the volume at once,
+# nolock provides no cross-node lock exclusion (risking data corruption) and
+# actimeo=60 can serve up to 60 seconds of stale attributes and negative lookups.
+# Note that ReadWriteOncePod cannot prevent overlap if a Pod is force-deleted
+# while its node is unreachable, because the old node can still keep the volume
+# mounted.
+#
+# Any value in mountOptions replaces all of the driver's default mount options,
+# so list every option you want. See storageclass.yaml for nconnect, Linux 5.3+,
+# fixed-port (2049/2050), and privileged source-port budget notes.
+mountOptions:
+  - vers=3
+  - proto=tcp
+  - mountproto=tcp
+  - port=2049
+  - mountport=2050
+  - nolock
+  - nconnect=8
+  - rsize=524288
+  - wsize=524288
+  - actimeo=60

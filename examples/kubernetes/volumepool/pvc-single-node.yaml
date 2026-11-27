@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: volumepool-single-node-pvc
+spec:
+  accessModes:
+  - ReadWriteOncePod
+  storageClassName: volume-pool-single-node-sc
+  resources:
+    requests:
+      storage: 10Gi

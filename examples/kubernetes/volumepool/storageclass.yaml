@@ -28,10 +28,12 @@ parameters:
 #   ReadWriteOnce nor ReadWriteMany -- the CSIDriver sets attachRequired: false,
 #   so ReadWriteOnce PVCs can overlap across nodes during rolling updates) or for
 #   volumes shared by several actors. Add them only in a separate StorageClass
-#   where strictly one node mounts a volume at a time and the runtime unmounts on
-#   the old node before mounting on the new one; otherwise nolock gives no
-#   cross-node lock exclusion (corruption risk) and actimeo=60 can serve up to
-#   60 seconds of stale attributes and negative lookups.
+#   (see storageclass-single-node.yaml and pvc-single-node.yaml for
+#   ReadWriteOncePod) where strictly one Pod on one node mounts a volume at a
+#   time and the runtime unmounts on the old node before mounting on the new
+#   one; otherwise nolock gives no cross-node lock exclusion (corruption risk)
+#   and actimeo=60 can serve up to 60 seconds of stale attributes and negative
+#   lookups.
 mountOptions:
   - vers=3
   - proto=tcp

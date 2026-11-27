@@ -184,8 +184,11 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
   # Only provisioner, parameters, reclaimPolicy and volumeBindingMode are
   # immutable; allowVolumeExpansion, mountOptions and allowedTopologies are
   # mutable, and are compared as well so deploy.sh doesn't overwrite or miss
-  # custom settings. If only settings differ, warn instead of failing: the
-  # rest of the deployment has already been applied.
+  # custom settings. If only parameters.mount-options differs (for example, an
+  # existing class from an earlier deploy.sh without mount-options), warn and
+  # continue (the rest of the deployment has already been applied). If anything
+  # else differs, fail so the run isn't reported as a success with the wrong
+  # StorageClass.
   SC_FIELDS_TEMPLATE='provisioner={{.provisioner}}{{"\n"}}reclaimPolicy={{.reclaimPolicy}}{{"\n"}}volumeBindingMode={{.volumeBindingMode}}{{"\n"}}allowVolumeExpansion={{if .allowVolumeExpansion}}true{{else}}false{{end}}{{"\n"}}{{range .mountOptions}}mountOptions={{.}}{{"\n"}}{{end}}{{range .allowedTopologies}}allowedTopologies={{.}}{{"\n"}}{{end}}{{range $k, $v := .parameters}}parameters.{{$k}}={{$v}}{{"\n"}}{{end}}'
   # Only NotFound counts as missing; any other error stops the script.
   HAVE_SC_FIELDS="$(kubectl get storageclass --ignore-not-found -o go-template="${SC_FIELDS_TEMPLATE}" -- "${STORAGECLASS_NAME}")"
@@ -203,6 +206,15 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       echo "" >&2
       exit 1
     elif [[ "${WANT_SC_FIELDS}" != "${HAVE_SC_FIELDS}" ]]; then
+      # Use sed rather than grep -v so an empty match under set -e doesn't fail.
+      HAVE_OTHER_FIELDS="$(printf '%s\n' "${HAVE_SC_FIELDS}" | sed '/^parameters\.mount-options=/d')"
+      WANT_OTHER_FIELDS="$(printf '%s\n' "${WANT_SC_FIELDS}" | sed '/^parameters\.mount-options=/d')"
+      SC_DIFF_EXIT=0
+      SC_DIFF_HEADER="⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged."
+      if [[ "${WANT_OTHER_FIELDS}" != "${HAVE_OTHER_FIELDS}" ]]; then
+        SC_DIFF_EXIT=1
+        SC_DIFF_HEADER="❌ [ERROR] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged."
+      fi
       TMP_BASE="${TMPDIR:-/tmp}"
       TMP_BASE="${TMP_BASE%/}"
       SC_MANIFEST_FILE="$(mktemp "${TMP_BASE:-/}/substrate-storageclass.XXXXXX")"
@@ -216,7 +228,11 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
         RERUN_CMD="${RERUN_CMD}$(printf ' --service-account %q' "${GCP_SERVICE_ACCOUNT}")"
       fi
       echo "" >&2
-      echo "⚠️  [WARNING] StorageClass '${STORAGECLASS_NAME}' already exists with different settings, so it was left unchanged." >&2
+      echo "${SC_DIFF_HEADER}" >&2
+      if [[ "${SC_DIFF_EXIT}" -ne 0 ]]; then
+        echo "   Only a parameters.mount-options difference is a warning; other differences fail so the run" >&2
+        echo "   isn't reported as a success with the wrong StorageClass." >&2
+      fi
       echo "   Current:" >&2
       printf '%s\n' "${HAVE_SC_FIELDS}" | sed 's/^/     /' >&2
       echo "   Template:" >&2
@@ -233,6 +249,9 @@ if [[ -n "${VOLUMEPOOL_LOCATION:-}" && -n "${VOLUMEPOOL_NAME:-}" ]]; then
       echo "   one get the driver's defaults when they're next staged on a node (volumes still staged keep" >&2
       echo "   their current options)." >&2
       echo "" >&2
+      if [[ "${SC_DIFF_EXIT}" -ne 0 ]]; then
+        exit 1
+      fi
     else
       echo "📦 StorageClass '${STORAGECLASS_NAME}' already exists with the same settings; applying it..."
       printf '%s\n' "${SC_MANIFEST}" | kubectl apply -f -

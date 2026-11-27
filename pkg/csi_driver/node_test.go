@@ -1392,9 +1392,71 @@ func TestVolumePoolExampleStorageClasses(t *testing.T) {
 		}
 	})
 
+	t.Run("Substrate shared StorageClass template sets safe driver defaults", func(t *testing.T) {
+		mainRaw := readFile(t, "examples", "kubernetes", "substrate", "storageclass.yaml.tmpl")
+		sharedRaw := readFile(t, "examples", "kubernetes", "substrate", "storageclass-shared.yaml.tmpl")
+
+		// Check both templates use the exact same placeholder set in manifest lines.
+		manifestPlaceholders := func(raw string) map[string]bool {
+			out := map[string]bool{}
+			for _, line := range strings.Split(raw, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "#") {
+					continue
+				}
+				for _, m := range regexp.MustCompile(`<[A-Za-z0-9_]+>`).FindAllString(line, -1) {
+					out[m] = true
+				}
+			}
+			return out
+		}
+		if diff := cmp.Diff(manifestPlaceholders(mainRaw), manifestPlaceholders(sharedRaw)); diff != "" {
+			t.Errorf("placeholder set mismatch between main and shared templates (-main +shared):\n%s", diff)
+		}
+
+		replacer := strings.NewReplacer(
+			"<PROJECT_ID>", "demo-project",
+			"<LOCATION>", "us-central1",
+			"<VOLUMEPOOL_NAME>", "demo-pool",
+			"<STORAGECLASS_NAME>", "substrate-volumepool-shared-sc",
+		)
+		var mainSC, sharedSC storagev1.StorageClass
+		if err := yaml.Unmarshal([]byte(replacer.Replace(mainRaw)), &mainSC); err != nil {
+			t.Fatalf("failed to unmarshal main template: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(replacer.Replace(sharedRaw)), &sharedSC); err != nil {
+			t.Fatalf("failed to unmarshal shared template: %v", err)
+		}
+		if len(sharedSC.MountOptions) != 0 {
+			t.Errorf("Substrate shared StorageClass must not set top-level mountOptions (got %v); Substrate ignores mountOptions", sharedSC.MountOptions)
+		}
+		wantDefaults := strings.Join(wantVolumePoolNFSv3DefaultMountOptions, ",")
+		if diff := cmp.Diff(wantDefaults, sharedSC.Parameters[paramMountOptions]); diff != "" {
+			t.Errorf("parameters[%q] mismatch (-want +got):\n%s", paramMountOptions, diff)
+		}
+		if sharedSC.Provisioner != mainSC.Provisioner {
+			t.Errorf("provisioner = %q, want %q", sharedSC.Provisioner, mainSC.Provisioner)
+		}
+		if diff := cmp.Diff(mainSC.ReclaimPolicy, sharedSC.ReclaimPolicy); diff != "" {
+			t.Errorf("reclaimPolicy mismatch (-main +shared):\n%s", diff)
+		}
+		if diff := cmp.Diff(mainSC.VolumeBindingMode, sharedSC.VolumeBindingMode); diff != "" {
+			t.Errorf("volumeBindingMode mismatch (-main +shared):\n%s", diff)
+		}
+		if diff := cmp.Diff(mainSC.AllowVolumeExpansion, sharedSC.AllowVolumeExpansion); diff != "" {
+			t.Errorf("allowVolumeExpansion mismatch (-main +shared):\n%s", diff)
+		}
+	})
+
 	t.Run("README carries the template and default mount options", func(t *testing.T) {
 		readme := readFile(t, "deploy", "kubernetes", "overlays", "substrate", "README.md")
-		for _, want := range []string{substrateTemplateMountOptions, strings.Join(wantVolumePoolNFSv3DefaultMountOptions, ",")} {
+		for _, want := range []string{
+			substrateTemplateMountOptions,
+			strings.Join(wantVolumePoolNFSv3DefaultMountOptions, ","),
+			"storageclass-shared.yaml.tmpl",
+			"storageclass-single-node.yaml",
+			"pvc-single-node.yaml",
+			"examples/kubernetes/volumepool/storageclass.yaml",
+		} {
 			if !strings.Contains(readme, want) {
 				t.Errorf("README.md doesn't contain %q", want)
 			}
@@ -1408,6 +1470,45 @@ func TestVolumePoolExampleStorageClasses(t *testing.T) {
 		}
 		if diff := cmp.Diff(wantVolumePoolNFSv3DefaultMountOptions, sc.MountOptions); diff != "" {
 			t.Errorf("mountOptions mismatch (-want +got):\n%s", diff)
+		}
+	})
+
+	t.Run("VolumePool single-node StorageClass and PVC example match ReadWriteOncePod", func(t *testing.T) {
+		var baseSC, singleSC storagev1.StorageClass
+		if err := yaml.Unmarshal([]byte(readFile(t, "examples", "kubernetes", "volumepool", "storageclass.yaml")), &baseSC); err != nil {
+			t.Fatalf("failed to unmarshal base example: %v", err)
+		}
+		if err := yaml.Unmarshal([]byte(readFile(t, "examples", "kubernetes", "volumepool", "storageclass-single-node.yaml")), &singleSC); err != nil {
+			t.Fatalf("failed to unmarshal single-node example: %v", err)
+		}
+		if singleSC.Name != "volume-pool-single-node-sc" {
+			t.Errorf("single-node StorageClass name = %q, want %q", singleSC.Name, "volume-pool-single-node-sc")
+		}
+		if singleSC.Provisioner != baseSC.Provisioner {
+			t.Errorf("provisioner = %q, want %q", singleSC.Provisioner, baseSC.Provisioner)
+		}
+		if diff := cmp.Diff(baseSC.ReclaimPolicy, singleSC.ReclaimPolicy); diff != "" {
+			t.Errorf("reclaimPolicy mismatch (-base +single):\n%s", diff)
+		}
+		if diff := cmp.Diff(baseSC.VolumeBindingMode, singleSC.VolumeBindingMode); diff != "" {
+			t.Errorf("volumeBindingMode mismatch (-base +single):\n%s", diff)
+		}
+		if diff := cmp.Diff(templateOpts, singleSC.MountOptions); diff != "" {
+			t.Errorf("single-node mountOptions mismatch (-want +got):\n%s", diff)
+		}
+
+		var pvc corev1.PersistentVolumeClaim
+		if err := yaml.Unmarshal([]byte(readFile(t, "examples", "kubernetes", "volumepool", "pvc-single-node.yaml")), &pvc); err != nil {
+			t.Fatalf("failed to unmarshal single-node PVC: %v", err)
+		}
+		if pvc.Name != "volumepool-single-node-pvc" {
+			t.Errorf("single-node PVC name = %q, want %q", pvc.Name, "volumepool-single-node-pvc")
+		}
+		if diff := cmp.Diff([]corev1.PersistentVolumeAccessMode{corev1.ReadWriteOncePod}, pvc.Spec.AccessModes); diff != "" {
+			t.Errorf("single-node PVC accessModes mismatch (-want +got):\n%s", diff)
+		}
+		if pvc.Spec.StorageClassName == nil || *pvc.Spec.StorageClassName != singleSC.Name {
+			t.Errorf("single-node PVC storageClassName = %v, want %q", pvc.Spec.StorageClassName, singleSC.Name)
 		}
 	})
 }
