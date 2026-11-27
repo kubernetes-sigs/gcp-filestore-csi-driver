@@ -181,7 +181,7 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	}
 	defer s.config.volumeLocks.Release(volumeName)
 
-	poolVol, result, err := s.createVolumePoolVolume(ctx, poolPath, name)
+	poolVol, created, err := s.createVolumePoolVolume(ctx, poolPath, name)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +192,11 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 
 	compositeVolumeID := buildVolumePoolVolumeID(poolPath, name, poolVol.IpAddress)
 
-	klog.Infof("Successfully %s: %q, Composite ID: %q, IP: %q, MountName: %q", result, poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	if created {
+		klog.Infof("Successfully created Volume Pool volume: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	} else {
+		klog.Infof("Successfully found existing Volume Pool volume: %q, Composite ID: %q, IP: %q, MountName: %q", poolVol.Name, compositeVolumeID, poolVol.IpAddress, poolVol.MountName)
+	}
 
 	fileProtocol := v3FileProtocol
 	if protocol, ok := req.GetParameters()[paramFileProtocol]; ok {
@@ -224,11 +228,12 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 // state, or nil if it does not exist.
 //
 // Two CreateVolume requests with the same name for the same pool can't ask for
-// different backend volumes: the driver sends no quota or ip_acls, and the
-// response fields (capacity, protocol, mount options) come from the request. So
-// an existing volume is always compatible, and codes.AlreadyExists is never
-// returned. Once the driver sends a quota, compare it here and return
-// codes.AlreadyExists on a mismatch.
+// different backend volumes: the driver sends no quota or ip_acls, so Filestore
+// applies the pool's defaults, and the response fields (capacity, protocol,
+// mount options) come from the request. So an existing volume is always
+// compatible, and codes.AlreadyExists is never returned. Once the driver sends
+// a quota or ip_acls, compare them here and return codes.AlreadyExists on a
+// mismatch.
 //
 // Only an HTTP 404 from the API means that the volume doesn't exist. Any other
 // error is returned as is; the caller logs and maps it.
@@ -243,76 +248,58 @@ func (s *controllerServer) lookupVolumePoolVolume(ctx context.Context, volumeNam
 	return nil, err
 }
 
-// createVolumePoolVolume creates the volume name in poolPath, or returns the
-// existing volume of that name, whatever its state. result says which, for the
-// success log: "created Volume Pool volume", or "found existing Volume Pool
-// volume" and how.
+// createVolumePoolVolume creates the volume name in poolPath, or finds the
+// existing volume of that name, and returns it whatever its state. The bool is
+// true only if this call's create succeeded.
 //
-// CreateVolume must be idempotent: a retried request returns the volume that an
-// earlier attempt created (for example after its response was lost). The
-// volume is created first, so that the normal path, a new volume, is one API
-// call. Only two errors lead to a lookup (GET), so the get permission is needed
-// only on these paths:
-//   - HTTP 409 ALREADY_EXISTS: the volume exists, created by an earlier
-//     attempt or by a concurrent request (for example on another controller
-//     pod).
-//   - Any HTTP 429: Filestore looks for a free share before it checks the
-//     name, so in a full pool a create for an existing name fails with 429
-//     RESOURCE_EXHAUSTED, not ALREADY_EXISTS, and the lookup finds the volume.
-//     This also covers two pods competing for the last free share: the one
-//     that loses gets 429 and usually finds the volume the other created. If
-//     that volume isn't visible yet, the GET returns 404 and the call fails
-//     with ResourceExhausted; if it's still CREATING, the call fails with
-//     Aborted; either way the caller's retry finds it. A 429 from rate
-//     limiting costs one extra GET.
-//     If the GET doesn't return the volume, whether it returns 404 or fails
-//     in any other way (for example 403, 429, 5xx or a timeout), the original
-//     429 is returned (ResourceExhausted with Filestore's message), as before
-//     the lookup was added: the volume can't be confirmed, and a failure of
-//     the extra GET mustn't turn a full pool or a rate limit into another
-//     error. The GET error is logged as a warning. A missing get permission
-//     still shows as PermissionDenied on the 409 path, and in that log.
-//
-// HTTP 409 ABORTED (contention) and every other error keep their mapping
-// without a lookup.
-func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name string) (poolVol *file.PoolVolume, result string, err error) {
+// The create comes first, so a new volume costs one API call. Only two create
+// errors lead to a lookup (GET): HTTP 409 ALREADY_EXISTS, and any HTTP 429,
+// because Filestore looks for a free share before it checks the name, so a full
+// pool returns 429 for an existing name. Every other error, including HTTP 409
+// ABORTED (contention), keeps its mapping without a lookup.
+func (s *controllerServer) createVolumePoolVolume(ctx context.Context, poolPath, name string) (*file.PoolVolume, bool, error) {
 	volumeName := volumePoolVolumeName(poolPath, name)
-	poolVol, err = s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
-	if err == nil {
-		return poolVol, "created Volume Pool volume", nil
+	poolVol, createErr := s.config.fileService.CreateVolumePoolVolume(ctx, poolPath, name)
+	if createErr == nil {
+		return poolVol, true, nil
 	}
-	createErr := err
 	switch {
 	case file.IsAlreadyExistsErr(createErr):
+		// The volume exists, created by an earlier attempt or a concurrent
+		// request, so a failed lookup returns its own error.
 		klog.Infof("Volume Pool volume %q already exists (HTTP 409 ALREADY_EXISTS), looking it up", volumeName)
-		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
+		poolVol, err := s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
-			// The volume is known to exist, so the GET's error is the answer.
 			klog.Errorf("Failed to look up Volume Pool volume %q after HTTP 409 ALREADY_EXISTS: %v", volumeName, err)
-			return nil, "", volumePoolStatusError(err)
+			return nil, false, volumePoolStatusError(err)
 		}
 		if poolVol == nil {
 			// The volume was deleted between the two calls. Another
 			// CreateVolume can succeed, so ask the caller to retry.
 			klog.Warningf("Volume Pool volume %q was reported as existing but is not found", volumeName)
-			return nil, "", status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
+			return nil, false, status.Errorf(codes.Aborted, "volume %q was reported as existing but is not found, retry", volumeName)
 		}
-		return poolVol, "found existing Volume Pool volume (HTTP 409 ALREADY_EXISTS)", nil
+		return poolVol, false, nil
 	case file.IsHTTPTooManyRequestsErr(createErr):
+		// A full pool, or rate limiting. This also covers two pods racing for
+		// the last free share: the loser's lookup usually finds the volume the
+		// other created. If the lookup doesn't return the volume, for whatever
+		// reason (404, 403, 429, 5xx, a timeout), the original 429 is returned,
+		// as before the lookup was added, and the lookup error is logged.
 		klog.Infof("Creating Volume Pool volume %q failed with HTTP 429, looking it up in case it already exists: %v", volumeName, createErr)
-		poolVol, err = s.lookupVolumePoolVolume(ctx, volumeName)
+		poolVol, err := s.lookupVolumePoolVolume(ctx, volumeName)
 		if err != nil {
 			klog.Warningf("Failed to look up Volume Pool volume %q after HTTP 429 from its create, returning the 429: %v", volumeName, err)
 		}
 		if poolVol == nil {
 			klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
-			return nil, "", volumePoolStatusError(createErr)
+			return nil, false, volumePoolStatusError(createErr)
 		}
 		klog.Infof("Found existing Volume Pool volume %q after HTTP 429; the pool may be full", volumeName)
-		return poolVol, "found existing Volume Pool volume (after HTTP 429)", nil
+		return poolVol, false, nil
 	default:
 		klog.Errorf("Failed to create Volume Pool volume %q in pool %s: %v", name, poolPath, createErr)
-		return nil, "", volumePoolStatusError(createErr)
+		return nil, false, volumePoolStatusError(createErr)
 	}
 }
 
@@ -329,14 +316,16 @@ func hasVolumePoolMountPoint(vol *file.PoolVolume) bool {
 // is unfrozen or made HOT. The CO then gets no volume ID that it could delete,
 // so the volume must be unfrozen, made HOT or deleted out of band. That
 // happens if a volume with the requested name was frozen after an earlier
-// attempt created it, or if the API created the volume WARM, which it may do
-// when the volume's ip_acls are empty or its share denies all clients.
+// attempt created it, or if the create returned the volume WARM, which it does
+// when the share it gets allows no clients.
 //
-// A volume that is still being created, or that has no mount point for another
-// reason, gives Aborted, so that the caller retries until it has one. For
-// example, the API reports a volume whose instance is being recovered as
-// unspecified-state, without a mount point. A state this driver doesn't know
-// also gives Aborted, with a warning.
+// The create returns a new volume HOT or WARM, never CREATING. A lookup reports
+// CREATING only for a volume that is being restored from a backup, which this
+// driver doesn't do, so CREATING gives Aborted only as a defensive case. A
+// volume without a mount point gives Aborted too, so that the caller retries
+// until it has one: for example, the API reports a volume whose instance is
+// being recovered as unspecified-state, without a mount point. A state this
+// driver doesn't know also gives Aborted, with a warning.
 func checkVolumePoolVolumeMountable(vol *file.PoolVolume) error {
 	if vol == nil {
 		return status.Error(codes.Internal, "the Volume Pool API returned no volume")

@@ -94,7 +94,8 @@ type PoolVolume struct {
 // The API reports a mount point only for HOT volumes and for older volumes
 // without a recorded state, which it reports as STATE_UNSPECIFIED. A volume
 // whose instance is being recovered is STATE_UNSPECIFIED too, but has no mount
-// point.
+// point. CreateVolume returns a new volume HOT, or WARM when its share allows no
+// clients; CREATING is reported only for a volume being restored from a backup.
 const (
 	VolumePoolVolumeStateUnspecified = "STATE_UNSPECIFIED"
 	VolumePoolVolumeStateCreating    = "CREATING"
