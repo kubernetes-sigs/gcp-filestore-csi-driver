@@ -1,3 +1,7 @@
+# Single-Pod PVC for storageclass-single-node.yaml. Mount this claim from
+# exactly one Pod at a time (for example pod.yaml with
+# claimName: volumepool-single-node-pvc). Kubernetes keeps a second Pod that
+# uses this claim Pending until the first Pod is gone.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

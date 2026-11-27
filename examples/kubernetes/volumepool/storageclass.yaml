@@ -24,16 +24,15 @@ parameters:
 #   server IP a node mounts uses 8 ports, so a node caps out at roughly 44
 #   distinct server IPs (fewer with other NFS mounts and TIME_WAIT sockets).
 #   If a node hits that limit, set mountOptions with a lower nconnect.
-# - Do not add nolock or actimeo=60 for regular Kubernetes PVCs (neither
-#   ReadWriteOnce nor ReadWriteMany -- the CSIDriver sets attachRequired: false,
-#   so ReadWriteOnce PVCs can overlap across nodes during rolling updates) or for
-#   volumes shared by several actors. Add them only in a separate StorageClass
-#   (see storageclass-single-node.yaml and pvc-single-node.yaml for
-#   ReadWriteOncePod) where strictly one Pod on one node mounts a volume at a
-#   time and the runtime unmounts on the old node before mounting on the new
-#   one; otherwise nolock gives no cross-node lock exclusion (corruption risk)
-#   and actimeo=60 can serve up to 60 seconds of stale attributes and negative
-#   lookups.
+# - Do not add nolock or actimeo=60 to this class. It is for volumes that Pods
+#   on several nodes may mount at once, including ReadWriteOnce PVCs (the
+#   CSIDriver sets attachRequired: false, so a ReadWriteOnce PVC can be mounted
+#   on two nodes during a rolling update). Otherwise, nolock gives no cross-node
+#   lock exclusion (corruption risk) and actimeo=60 can serve up to 60 seconds
+#   of stale attributes and negative lookups. For volumes strictly one Pod on
+#   one node mounts at a time (and the runtime unmounts on the old node before
+#   mounting on the new one), use storageclass-single-node.yaml with a
+#   ReadWriteOncePod PVC (pvc-single-node.yaml).
 mountOptions:
   - vers=3
   - proto=tcp

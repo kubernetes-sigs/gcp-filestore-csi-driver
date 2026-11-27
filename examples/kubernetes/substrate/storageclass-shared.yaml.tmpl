@@ -17,7 +17,7 @@
 #   and ignores StorageClass.mountOptions, so NFS client options must be set under
 #   parameters.mount-options.
 #   - These options match the CSI driver's safe VolumePool NFSv3 defaults. They
-#     are set explicitly because releases before this change (for example v1.14.3,
+#     are set explicitly because earlier driver releases (for example v1.14.3,
 #     pinned in the Substrate and Volume Pool overlays) default to at most
 #     vers=3,proto=tcp,mountproto=tcp (and older releases set none).
 #   - The value is ONE comma-separated string with no spaces. Never fold it with a
