@@ -108,7 +108,8 @@ type GCFSDriverFeatureOptions struct {
 }
 
 type FeatureVolumePools struct {
-	Enabled bool
+	Enabled      bool
+	QuotaEnabled bool
 }
 
 type FeatureMultishareBackups struct {

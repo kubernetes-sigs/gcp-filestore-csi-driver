@@ -9,7 +9,7 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
 | Component | Manifest File | Rationale |
 | :--- | :--- | :--- |
 | **GKE Workload Identity** | `serviceaccount_patch.yaml` | Annotates `gcp-filestore-csi-controller-sa` with the GCP Service Account (`iam.gke.io/gcp-service-account`), eliminating static JSON key secrets. |
-| **Controller Patch** | `controller_patch.yaml` | 1. Sets `hostNetwork: false` so Workload Identity metadata server requests (`169.254.169.254`) succeed.<br>2. Deploys a privileged `envoy` mTLS proxy bridging TCP port `10000` to Unix domain socket `/csi/csi.sock`, with the image pinned by tag and digest.<br>3. Adds label `role: controller-plugin`.<br>4. Enables `--feature-volume-pools=true`. |
+| **Controller Patch** | `controller_patch.yaml` | 1. Sets `hostNetwork: false` so Workload Identity metadata server requests (`169.254.169.254`) succeed.<br>2. Deploys a privileged `envoy` mTLS proxy bridging TCP port `10000` to Unix domain socket `/csi/csi.sock`, with the image pinned by tag and digest.<br>3. Adds label `role: controller-plugin`.<br>4. Enables `--feature-volume-pools=true` and `--feature-volume-pool-quota=true`. |
 | **Node DaemonSet Patch** | `node_patch.yaml` | 1. Adds label `role: node-plugin`.<br>2. Mounts `/var/lib/ateom-gvisor` (Substrate up to release-0.2) and `/var/lib/ate` (Substrate release-0.3 and later) with `mountPropagation: Bidirectional` so NFS mounts are accessible to Substrate actors. |
 | **Envoy mTLS Config** | `envoy_configmap.yaml` | Envoy bootstrap plus two file-based SDS secrets: the serving certificate (`/run/servicedns/credential-bundle.pem`, a `podCertificate` projection) and the client CA bundle (`/run/podidentity-ca/trust-bundle.pem`, a `clusterTrustBundle` projection), with the client SAN pinned to `spiffe://cluster.local/ns/ate-system/sa/ate-api-server`. Kubelet rotates both in place, and Envoy reloads them through SDS `watched_directory` without a restart (see [Certificate rotation](#-certificate-rotation)). |
 | **gRPC Controller Service** | `service.yaml` | Creates `Service/csi-filestore-controller` (port `10000` -> targetPort `10000` over mTLS) selecting `app=gcp-filestore-csi-driver` and `role=controller-plugin`, guaranteeing traffic reaches only the controller. |
@@ -26,7 +26,7 @@ This overlay enables the **GCP Filestore CSI Driver** to integrate natively with
        --location=<CLUSTER_LOCATION> \
        --update-addons=GcpFilestoreCsiDriver=DISABLED
    ```
-3. **VolumePool Setup**: Ensure your GCP Project is allowlisted for Filestore VolumePools and that you have precreated a VolumePool instance in your target location before continuing. On the backend, a reconciler provisions pre-warmed shares on this VolumePool which are then instantly claimed by the GCP Filestore CSI driver for your Substrate workloads. You can reach out to the Filestore Control Plane team for allowlisting and creation.
+3. **VolumePool Setup**: Ensure your GCP Project is allowlisted for Filestore VolumePools and that you have precreated a VolumePool instance in your target location before continuing. On the backend, a reconciler provisions pre-warmed shares on this VolumePool which are then instantly claimed by the GCP Filestore CSI driver for your Substrate workloads (for volumes of the VolumePool's default volume quota; see [Volume Size](#-volume-size)). You can reach out to the Filestore Control Plane team for allowlisting and creation.
 
 4. **IAM Permissions Requirement**: The user or automation executing the deployment script *must* have the permissions to create Service Accounts and assign IAM bindings in the target GCP Project (e.g. `roles/iam.serviceAccountAdmin` and `roles/resourcemanager.projectIamAdmin`, or broadly `roles/owner`).
 
@@ -182,3 +182,15 @@ Run this on a test cluster only. `rotation_test_patch.yaml` sets `maxExpirationS
    kubectl -n gcp-filestore-csi-driver get deployment gcp-filestore-csi-controller \
        -o jsonpath='{.spec.template.spec.volumes[?(@.name=="servicedns-certs")].projected.sources[0].podCertificate.maxExpirationSeconds}'
    ```
+
+---
+
+## 📏 Volume Size
+
+When `--feature-volume-pool-quota=true` is set on the controller (enabled by default in `controller_patch.yaml`), the driver creates each volume with the capacity that it is asked for, a PVC's storage request or the capacity in an actor's external volume template, rounded up to a whole MiB. Substrate and Kubernetes always ask for a capacity.
+
+- A volume can be from 100 MiB to 100 GiB. Requests under 100 MiB are raised to 100 MiB unless a capacity limit below 100 MiB forbids it (in which case the driver refuses with `OutOfRange`). Requests above 100 GiB are refused with `OutOfRange`.
+- Use binary units, such as `1Gi` or `500Mi`. Decimal units are rounded up to a whole MiB: `1G` gets a volume of 954 MiB, and `100M` (95.4 MiB) is raised to 100 MiB.
+- A volume whose capacity differs from the VolumePool's default volume quota (1024 MiB unless the VolumePool sets another) — including a request raised to 100 MiB on a 1024 MiB pool — takes longer to create, because the pre-warmed share that it claims is resized. It also needs your GCP Project to be allowlisted for volume quota updates: without it, creating the volume fails with the message `Volume Quota Update API is not enabled` (`InvalidArgument`). Creating the volume fails with `ResourceExhausted` when the VolumePool has no free share, when the share can't grow to the requested capacity, or when the backend is throttling requests.
+- To disable per-volume sizing without rolling back the driver (for example, on projects not yet allowlisted for volume quota updates), set `--feature-volume-pool-quota=false` on `gcp-filestore-driver` in `controller_patch.yaml` (or remove the flag, as it defaults to `false`). The controller then omits `quotaMib` so every volume receives the VolumePool's default volume quota.
+- To keep volume creation fast, ask the Filestore Control Plane team to create the VolumePool with a default volume quota that matches the capacity that your volumes ask for.

@@ -20,8 +20,10 @@
 #    - The Envoy image is pinned by tag and digest. When bumping it, keep the SDS and
 #      watched_directory configuration in envoy_configmap.yaml and run envoy_config_test.go.
 #
-# 4. --feature-volume-pools=true
-#    - Enables VolumePool capacity management and volume claim/provisioning logic.
+# 4. --feature-volume-pools=true and --feature-volume-pool-quota=true
+#    - Enables VolumePool capacity management and per-volume quota sizing. Set
+#      --feature-volume-pool-quota=false to fall back to the pool default without
+#      rolling back the driver.
 #
 # 5. Workload Identity Cleanup ($patch: delete)
 #    - Removes static secret volume mounts (cloud-sa-volume) and GOOGLE_APPLICATION_CREDENTIALS
@@ -104,3 +106,4 @@ spec:
         - "--endpoint=unix:/csi/csi.sock"
         - "--controller=true"
         - "--feature-volume-pools=true"
+        - "--feature-volume-pool-quota=true"
