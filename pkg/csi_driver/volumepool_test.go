@@ -666,15 +666,24 @@ func TestCreateVolume_VolumePoolVolumeState(t *testing.T) {
 						return vol(parent + "/volumes/" + id), nil
 					}
 				}
-				_, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest("state-vol", poolPath))
-				if got := status.Code(err); got != st.wantCode {
-					t.Errorf("got error code %v, want %v (error: %v)", got, st.wantCode, err)
+				// A volume that this call created WARM is deleted, and the
+				// call returns Aborted. No other volume is ever deleted.
+				wantCode, wantMsg, wantDeletes := st.wantCode, st.wantMsg, 0
+				if mode.createErr == nil && st.state == file.VolumePoolVolumeStateWarm {
+					wantCode, wantMsg, wantDeletes = codes.Aborted, "was created WARM", 1
 				}
-				if st.wantMsg != "" && !strings.Contains(status.Convert(err).Message(), st.wantMsg) {
-					t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), st.wantMsg)
+				_, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest("state-vol", poolPath))
+				if got := status.Code(err); got != wantCode {
+					t.Errorf("got error code %v, want %v (error: %v)", got, wantCode, err)
+				}
+				if wantMsg != "" && !strings.Contains(status.Convert(err).Message(), wantMsg) {
+					t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), wantMsg)
 				}
 				if got, want := fs.calls["GetVolumePoolVolume"], map[bool]int{true: 1}[mode.createErr != nil]; got != want {
 					t.Errorf("GetVolumePoolVolume called %d times, want %d", got, want)
+				}
+				if got := fs.calls["DeleteVolumePoolVolume"]; got != wantDeletes {
+					t.Errorf("DeleteVolumePoolVolume called %d times, want %d", got, wantDeletes)
 				}
 			})
 		}
@@ -711,9 +720,12 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 	exhausted := response{http.StatusTooManyRequests, json.RawMessage(file.FakeVolumePoolError(http.StatusTooManyRequests, "RESOURCE_EXHAUSTED", fullPoolMsg).Body)}
 
 	tests := []struct {
-		name    string
-		create  response   // response to the create, which comes first
-		gets    []response // responses to the GET requests that follow, in order
+		name   string
+		create response   // response to the create, which comes first
+		gets   []response // responses to the GET requests that follow, in order
+		// delete is the response to the DELETE of a volume that the create
+		// returned WARM; nil: the test expects no DELETE.
+		delete  *response
 		want    codes.Code
 		wantMsg string // substring of the error message, if set
 	}{
@@ -816,8 +828,21 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			want:   codes.Internal,
 		},
 		{
-			name:   "new volume created WARM can't be mounted",
+			name:   "new volume created WARM is deleted",
 			create: response{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}},
+			delete: &response{http.StatusOK, map[string]any{}},
+			want:   codes.Aborted,
+		},
+		{
+			name:   "new volume created WARM that is already gone",
+			create: response{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}},
+			delete: &notFound,
+			want:   codes.Aborted,
+		},
+		{
+			name:   "new volume created WARM whose delete fails",
+			create: response{http.StatusOK, map[string]any{"name": volumePath, "state": "WARM"}},
+			delete: &response{http.StatusBadRequest, errorBody(http.StatusBadRequest, "FAILED_PRECONDITION")},
 			want:   codes.FailedPrecondition,
 		},
 		{
@@ -855,7 +880,7 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var gets, creates int
+			var gets, creates, deletes int
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				resp := response{http.StatusBadRequest, errorBody(http.StatusBadRequest, "INVALID_ARGUMENT")}
 				switch {
@@ -866,6 +891,11 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1beta1/"+volumePath && creates == 1 && gets < len(tc.gets):
 					resp = tc.gets[gets]
 					gets++
+				// A DELETE is expected only for a volume the create returned
+				// WARM, never after 409 or 429.
+				case r.Method == http.MethodDelete && r.URL.Path == "/v1beta1/"+volumePath && creates == 1 && tc.delete != nil && deletes == 0:
+					resp = *tc.delete
+					deletes++
 				default:
 					t.Errorf("unexpected request %s %s", r.Method, r.URL)
 				}
@@ -901,6 +931,9 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			if creates != 1 {
 				t.Errorf("got %d create requests, want 1", creates)
 			}
+			if wantDeletes := map[bool]int{true: 1}[tc.delete != nil]; deletes != wantDeletes {
+				t.Errorf("got %d DELETE requests, want %d", deletes, wantDeletes)
+			}
 			if tc.want != codes.OK {
 				return
 			}
@@ -913,6 +946,132 @@ func TestCreateVolume_VolumePoolHTTP(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCreateVolume_VolumePoolWarmCleanup checks the delete of a volume that
+// CreateVolume created WARM: its result, its context, and that it runs once,
+// under the volume's lock.
+func TestCreateVolume_VolumePoolWarmCleanup(t *testing.T) {
+	const poolPath = "projects/test-project/locations/us-central1/volumePools/my-pool"
+	const volName = "warm-vol"
+	volumePath := poolPath + "/volumes/" + volName
+	createdWarm := func(_ context.Context, parent, id string) (*file.PoolVolume, error) {
+		return &file.PoolVolume{Name: parent + "/volumes/" + id, State: file.VolumePoolVolumeStateWarm}, nil
+	}
+
+	for _, tc := range []struct {
+		name      string
+		deleteErr error
+		wantCode  codes.Code
+		wantMsg   string
+	}{
+		{name: "deleted", wantCode: codes.Aborted, wantMsg: "was deleted; retry"},
+		{name: "already gone (404)", deleteErr: file.FakeVolumePoolError(http.StatusNotFound, "NOT_FOUND", "volume not found"), wantCode: codes.Aborted, wantMsg: "was deleted; retry"},
+		{name: "delete fails with 500", deleteErr: file.FakeVolumePoolError(http.StatusInternalServerError, "INTERNAL", "backend error"), wantCode: codes.FailedPrecondition, wantMsg: "backend error"},
+		{name: "delete fails with 400 FAILED_PRECONDITION", deleteErr: file.FakeVolumePoolError(http.StatusBadRequest, "FAILED_PRECONDITION", "another operation is in progress"), wantCode: codes.FailedPrecondition, wantMsg: "another operation is in progress"},
+		{name: "delete times out", deleteErr: fmt.Errorf("delete volume: %w", context.DeadlineExceeded), wantCode: codes.FailedPrecondition, wantMsg: "deadline exceeded"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cs, fs := newVolumePoolTestController(t)
+			fs.createVolume = createdWarm
+			var deleted []string
+			fs.deleteVolume = func(_ context.Context, name string) error {
+				deleted = append(deleted, name)
+				return tc.deleteErr
+			}
+			_, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest(volName, poolPath))
+			if got := status.Code(err); got != tc.wantCode {
+				t.Fatalf("got error code %v, want %v (error: %v)", got, tc.wantCode, err)
+			}
+			if !strings.Contains(status.Convert(err).Message(), tc.wantMsg) {
+				t.Errorf("error message %q does not contain %q", status.Convert(err).Message(), tc.wantMsg)
+			}
+			if len(deleted) != 1 || deleted[0] != volumePath {
+				t.Errorf("deleted %q, want exactly [%q]", deleted, volumePath)
+			}
+			if got := fs.calls["GetVolumePoolVolume"]; got != 0 {
+				t.Errorf("GetVolumePoolVolume called %d times, want 0", got)
+			}
+		})
+	}
+
+	t.Run("delete gets a live context with a deadline after the request is canceled", func(t *testing.T) {
+		cs, fs := newVolumePoolTestController(t)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		// The CO gives up right after the create.
+		fs.createVolume = func(c context.Context, parent, id string) (*file.PoolVolume, error) {
+			cancel()
+			return createdWarm(c, parent, id)
+		}
+		var ctxErr error
+		var deadline time.Time
+		var hasDeadline bool
+		fs.deleteVolume = func(c context.Context, _ string) error {
+			ctxErr = c.Err()
+			deadline, hasDeadline = c.Deadline()
+			return nil
+		}
+		if _, err := cs.CreateVolume(ctx, newVolumePoolCreateRequest(volName, poolPath)); status.Code(err) != codes.Aborted {
+			t.Fatalf("CreateVolume error = %v, want Aborted", err)
+		}
+		end := time.Now()
+		if ctxErr != nil {
+			t.Errorf("delete context error = %v, want a live context", ctxErr)
+		}
+		if !hasDeadline {
+			t.Fatal("delete context has no deadline")
+		}
+		// The delete started before CreateVolume returned, so its deadline is
+		// at most the 15 s timeout after that.
+		if d := deadline.Sub(end); d <= 0 || d > 15*time.Second {
+			t.Errorf("delete context deadline is %v after CreateVolume returned, want more than 0 and at most 15s", d)
+		}
+	})
+
+	t.Run("lock is held during the delete and released after it", func(t *testing.T) {
+		cs, fs := newVolumePoolTestController(t)
+		fs.createVolume = createdWarm
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var deletes atomic.Int32
+		fs.deleteVolume = func(context.Context, string) error {
+			if deletes.Add(1) == 1 {
+				close(entered)
+				<-release
+			}
+			return nil
+		}
+		held := make(chan error, 1)
+		go func() {
+			_, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest(volName, poolPath))
+			held <- err
+		}()
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatal("CreateVolume did not reach the delete")
+		}
+		if _, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest(volName, poolPath)); status.Code(err) != codes.Aborted || strings.Contains(status.Convert(err).Message(), "WARM") {
+			t.Errorf("concurrent CreateVolume of the same volume: error = %v, want Aborted by the lock", err)
+		}
+		del := &csi.DeleteVolumeRequest{VolumeId: buildVolumePoolVolumeID(poolPath, volName, "10.1.1.1")}
+		if _, err := cs.DeleteVolume(context.Background(), del); status.Code(err) != codes.Aborted {
+			t.Errorf("concurrent DeleteVolume of the same volume: error = %v, want Aborted", err)
+		}
+		close(release)
+		if err := <-held; status.Code(err) != codes.Aborted {
+			t.Errorf("CreateVolume of a volume created WARM: error = %v, want Aborted", err)
+		}
+		if got := deletes.Load(); got != 1 {
+			t.Errorf("got %d deletes, want 1", got)
+		}
+		// The retry gets a new volume.
+		fs.createVolume = nil
+		if _, err := cs.CreateVolume(context.Background(), newVolumePoolCreateRequest(volName, poolPath)); err != nil {
+			t.Errorf("retried CreateVolume: %v (lock not released?)", err)
+		}
+	})
 }
 
 // TestVolumePoolLockReleased checks that CreateVolume and DeleteVolume release

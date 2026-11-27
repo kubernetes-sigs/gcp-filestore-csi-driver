@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/api/googleapi"
@@ -39,6 +40,9 @@ const (
 	defaultVolumePoolVolumeCapacityGb = 1
 	volumePoolURLScheme               = "volumepool"
 	volumePoolURLPrefix               = volumePoolURLScheme + "://"
+	// volumePoolCleanupTimeout bounds the delete of a volume that CreateVolume
+	// created WARM.
+	volumePoolCleanupTimeout = 15 * time.Second
 )
 
 func buildVolumePoolVolumeID(parentPool, volumeID, ipAddress string) string {
@@ -191,6 +195,13 @@ func (s *controllerServer) handleCreateVolumePoolVolume(ctx context.Context, req
 	if err != nil {
 		return nil, err
 	}
+	// The CO gets no volume ID for a volume that can't be mounted, so it could
+	// never delete one that this call created WARM: delete it now, while still
+	// holding the lock. An existing WARM or COLD volume may hold data, so it is
+	// never deleted.
+	if created && poolVol != nil && poolVol.State == file.VolumePoolVolumeStateWarm {
+		return nil, s.deleteCreatedWarmVolumePoolVolume(ctx, volumeName)
+	}
 	// Check the volume however it was found: new, or existing.
 	if err := checkVolumePoolVolumeMountable(poolVol); err != nil {
 		return nil, err
@@ -322,8 +333,10 @@ func hasVolumePoolMountPoint(vol *file.PoolVolume) bool {
 // is unfrozen or made HOT. The CO then gets no volume ID that it could delete,
 // so the volume must be unfrozen, made HOT or deleted out of band. That
 // happens if a volume with the requested name was frozen after an earlier
-// attempt created it, or if the create returned the volume WARM, which it does
-// when the share it gets allows no clients.
+// attempt created it, or if an earlier create made it WARM (which it does when
+// the share it gets allows no clients) and the volume wasn't deleted: that
+// create's response was lost, or the delete failed. A volume that this call's
+// create returned WARM is deleted before this check.
 //
 // The create returns a new volume HOT or WARM, never CREATING. A lookup reports
 // CREATING only for a volume that is being restored from a backup, which this
@@ -389,6 +402,26 @@ func (s *controllerServer) handleDeleteVolumePoolVolume(ctx context.Context, req
 
 	klog.Infof("Successfully deleted Volume Pool volume: %q", volumeID)
 	return &csi.DeleteVolumeResponse{}, nil
+}
+
+// deleteCreatedWarmVolumePoolVolume deletes the volume volumeName, which this
+// CreateVolume call just created WARM, and returns the error for the call:
+// Aborted if the volume is gone, so that the caller retries and gets a new
+// volume, or FailedPrecondition with the delete error if it isn't.
+//
+// The delete gets its own context, detached from the request and bounded by
+// volumePoolCleanupTimeout, so that a CO timeout right after the create doesn't
+// leak the volume. It is tried once: a Filestore DELETE has no precondition, so
+// a late retry could delete a volume that another replica has created since.
+func (s *controllerServer) deleteCreatedWarmVolumePoolVolume(ctx context.Context, volumeName string) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), volumePoolCleanupTimeout)
+	defer cancel()
+	if err := s.deleteVolumePoolVolume(cleanupCtx, volumeName); err != nil {
+		klog.Errorf("Volume Pool volume %q was created WARM, which can't be mounted, and deleting it failed; delete it out of band: %v", volumeName, err)
+		return status.Errorf(codes.FailedPrecondition, "volume %q was created WARM, which cannot be mounted, and deleting it failed: %v", volumeName, err)
+	}
+	klog.Warningf("Volume Pool volume %q was created WARM, which can't be mounted; deleted it, returning Aborted so that the caller retries", volumeName)
+	return status.Errorf(codes.Aborted, "volume %q was created WARM, which cannot be mounted, and was deleted; retry to get a new volume", volumeName)
 }
 
 // deleteVolumePoolVolume deletes the Volume Pool volume volumeName. A volume
