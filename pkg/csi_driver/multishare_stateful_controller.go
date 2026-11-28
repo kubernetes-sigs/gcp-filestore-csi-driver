@@ -153,7 +153,7 @@ func (m *MultishareStatefulController) CreateVolume(ctx context.Context, req *cs
 	if err != nil {
 		return nil, err
 	}
-	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, maxShareSizeBytes)
+	return m.mc.getShareAndGenerateCSICreateVolumeResponse(ctx, instanceSCLabel, share, maxShareSizeBytes, req.GetParameters())
 }
 
 func (m *MultishareStatefulController) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
